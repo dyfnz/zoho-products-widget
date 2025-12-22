@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Distributor Product Lookup</title>
+    <!-- Zoho CRM Widget SDK -->
+    <script src="https://live.zwidgets.com/js-sdk/1.2/ZohoEmbededAppSDK.min.js"></script>
+    <!-- Widget Styles -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Distributor Selection -->
+    <div class="distributor-selector">
+        <button class="distributor-btn active" data-distributor="ingram" onclick="selectDistributor('ingram')">
+            Ingram Micro
+        </button>
+        <button class="distributor-btn" data-distributor="tdsynnex" onclick="selectDistributor('tdsynnex')" disabled>
+            TD SYNNEX (Coming Soon)
+        </button>
+    </div>
+
+    <!-- Filter Section -->
+    <div class="filter-section">
+        <div id="filterStatus" class="status info show">Select a manufacturer to begin</div>
+
+        <div class="filter-row">
+            <!-- Manufacturer Search -->
+            <div class="filter-group">
+                <label>
+                    <span class="step">1</span>Manufacturer
+                    <span class="count" id="mfrCount"></span>
+                </label>
+                <input type="text" id="manufacturerSearch"
+                       placeholder="Type 2+ characters to search..."
+                       autocomplete="off">
+                <select id="manufacturerSelect" onchange="onManufacturerSelect()" style="margin-top: 6px;">
+                    <option value="">Type to search manufacturers...</option>
+                </select>
+            </div>
+
+            <!-- Category -->
+            <div class="filter-group">
+                <label>
+                    <span class="step">2</span>Category
+                    <span class="count" id="catCount"></span>
+                </label>
+                <select id="categorySelect" onchange="onCategorySelect()" disabled>
+                    <option value="">-- Select manufacturer first --</option>
+                </select>
+            </div>
+
+            <!-- Subcategory -->
+            <div class="filter-group">
+                <label>
+                    <span class="step">3</span>Subcategory
+                    <span class="count" id="subCatCount"></span>
+                </label>
+                <select id="subcategorySelect" onchange="onSubcategorySelect()" disabled>
+                    <option value="">-- Select category first --</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="filter-row filter-row-actions">
+            <div class="action-left">
+                <button onclick="loadProducts(1)" id="loadProductsBtn" disabled>
+                    Load Products
+                </button>
+                <button onclick="resetFilters()" class="secondary">
+                    Reset
+                </button>
+            </div>
+            <div class="connection-status">
+                <div class="status-indicator" id="statusIndicator"></div>
+                <span id="statusText">Checking...</span>
+                <button onclick="authenticate()" id="authButton" class="small">Reconnect</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Products Section -->
+    <div class="products-section" id="productsSection" style="display: none;">
+        <div class="products-header">
+            <h2>Products <span id="productCount" style="font-weight: normal; color: #666;">0 products</span></h2>
+        </div>
+
+        <div class="products-container">
+            <table class="products-table">
+                <thead>
+                    <tr>
+                        <th style="width: 40px;">
+                            <input type="checkbox" id="selectAll" title="Select all">
+                        </th>
+                        <th>Part Number</th>
+                        <th>Description</th>
+                        <th>Manufacturer</th>
+                        <th>Ingram SKU</th>
+                        <th style="text-align: right;">MSRP</th>
+                        <th style="width: 30px;"></th>
+                    </tr>
+                </thead>
+                <tbody id="productsBody"></tbody>
+            </table>
+        </div>
+
+        <div class="pagination" id="pagination"></div>
+    </div>
+
+    <!-- Product Details Section -->
+    <div class="product-details-section" id="productDetailsSection" style="display: none;">
+        <div class="details-header">
+            <h3>Product Details</h3>
+            <button onclick="hideProductDetails()" class="small secondary">Close</button>
+        </div>
+
+        <div class="details-title" id="detailsTitle"></div>
+        <div class="details-subtitle" id="detailsSubtitle"></div>
+        <div class="details-long-desc" id="detailsLongDesc"></div>
+
+        <!-- Zoho CRM Field Mapping -->
+        <div class="details-subsection">
+            <h4>Zoho CRM Field Mapping</h4>
+            <div class="field-mapping-grid" id="fieldMappingGrid"></div>
+        </div>
+
+        <!-- Warehouse Availability -->
+        <div class="details-subsection" id="warehouseSection" style="display: none;">
+            <h4>Warehouse Availability</h4>
+            <table class="warehouse-table">
+                <thead>
+                    <tr>
+                        <th>Warehouse</th>
+                        <th>Location</th>
+                        <th style="text-align: right;">Available</th>
+                        <th style="text-align: right;">Backordered</th>
+                    </tr>
+                </thead>
+                <tbody id="warehouseBody"></tbody>
+            </table>
+        </div>
+
+        <!-- Raw API Response -->
+        <div class="details-subsection">
+            <h4>Raw API Response</h4>
+            <pre class="raw-json" id="rawApiResponse"></pre>
+        </div>
+    </div>
+
+    <!-- Action Bar -->
+    <div class="action-bar">
+        <div class="selected-count">
+            <strong id="selectedCount">0</strong> product(s) selected
+        </div>
+        <div class="action-buttons">
+            <button onclick="cancelSelection()" class="secondary">
+                Cancel
+            </button>
+            <button onclick="addSelectedProducts()" id="addSelectedBtn" disabled>
+                Add Selected to Quote
+            </button>
+        </div>
+    </div>
+
+    <!-- Widget JavaScript -->
+    <script src="js/widget.js"></script>
+</body>
+</html>
