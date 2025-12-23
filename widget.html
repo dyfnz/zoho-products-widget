@@ -118,10 +118,51 @@
         <div class="details-subtitle" id="detailsSubtitle"></div>
         <div class="details-long-desc" id="detailsLongDesc"></div>
 
-        <!-- Zoho CRM Field Mapping -->
+        <!-- Extended Details -->
         <div class="details-subsection">
-            <h4>Zoho CRM Field Mapping</h4>
-            <div class="field-mapping-grid" id="fieldMappingGrid"></div>
+            <h4>Extended Details</h4>
+
+            <!-- Product Information Group -->
+            <div class="details-group">
+                <h5>Product Information</h5>
+                <div class="field-mapping-grid" id="productInfoGrid"></div>
+            </div>
+
+            <!-- Pricing Group -->
+            <div class="details-group">
+                <h5>Pricing</h5>
+                <div class="field-mapping-grid" id="pricingGrid"></div>
+            </div>
+
+            <!-- Discounts Group (may have multiple) -->
+            <div class="details-group" id="discountsGroup" style="display: none;">
+                <h5>Available Discounts</h5>
+                <table class="discounts-table" id="discountsTable">
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>Bid Number</th>
+                            <th style="text-align: right;">Discount</th>
+                            <th style="text-align: right;">Qty Available</th>
+                            <th>Effective</th>
+                            <th>Expires</th>
+                        </tr>
+                    </thead>
+                    <tbody id="discountsBody"></tbody>
+                </table>
+            </div>
+
+            <!-- Availability Group -->
+            <div class="details-group">
+                <h5>Availability</h5>
+                <div class="field-mapping-grid" id="availabilityGrid"></div>
+            </div>
+
+            <!-- Product Flags Group -->
+            <div class="details-group">
+                <h5>Product Flags</h5>
+                <div class="field-mapping-grid" id="flagsGrid"></div>
+            </div>
         </div>
 
         <!-- Warehouse Availability -->
