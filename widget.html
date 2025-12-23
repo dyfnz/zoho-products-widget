@@ -24,11 +24,11 @@
     <div class="filter-section">
         <div id="filterStatus" class="status info show">Select a manufacturer to begin</div>
 
+        <!-- Row 1: Manufacturer (Required) -->
         <div class="filter-row">
-            <!-- Manufacturer Search -->
-            <div class="filter-group">
+            <div class="filter-group filter-group-wide">
                 <label>
-                    <span class="step">1</span>Manufacturer
+                    <span class="step">1</span>Manufacturer (Required)
                     <span class="count" id="mfrCount"></span>
                 </label>
                 <input type="text" id="manufacturerSearch"
@@ -38,43 +38,73 @@
                     <option value="">Type to search manufacturers...</option>
                 </select>
             </div>
+            <div class="connection-status">
+                <div class="status-indicator" id="statusIndicator"></div>
+                <span id="statusText">Checking...</span>
+                <button onclick="authenticate()" id="authButton" class="small">Reconnect</button>
+            </div>
+        </div>
 
+        <!-- Row 2: Optional Filters (any combination) -->
+        <div class="filter-row" id="optionalFiltersRow" style="display: none;">
             <!-- Category -->
             <div class="filter-group">
                 <label>
-                    <span class="step">2</span>Category
+                    Category
                     <span class="count" id="catCount"></span>
                 </label>
-                <select id="categorySelect" onchange="onCategorySelect()" disabled>
-                    <option value="">-- Select manufacturer first --</option>
+                <select id="categorySelect" onchange="onFilterChange('category')" onfocus="loadFilterOptions('category')">
+                    <option value="">-- Any --</option>
                 </select>
             </div>
 
             <!-- Subcategory -->
             <div class="filter-group">
                 <label>
-                    <span class="step">3</span>Subcategory
+                    Subcategory
                     <span class="count" id="subCatCount"></span>
                 </label>
-                <select id="subcategorySelect" onchange="onSubcategorySelect()" disabled>
-                    <option value="">-- Select category first --</option>
+                <select id="subcategorySelect" onchange="onFilterChange('subcategory')" onfocus="loadFilterOptions('subcategory')">
+                    <option value="">-- Any --</option>
+                </select>
+            </div>
+
+            <!-- Product Type -->
+            <div class="filter-group">
+                <label>
+                    Product Type
+                    <span class="count" id="typeCount"></span>
+                </label>
+                <select id="productTypeSelect" onchange="onFilterChange('productType')" onfocus="loadFilterOptions('productType')">
+                    <option value="">-- Any --</option>
                 </select>
             </div>
         </div>
 
-        <div class="filter-row filter-row-actions">
+        <!-- Row 3: SKU Search + Actions -->
+        <div class="filter-row filter-row-actions" id="skuActionsRow" style="display: none;">
+            <!-- SKU Search -->
+            <div class="filter-group filter-group-sku">
+                <label>
+                    SKU / Part Number Search
+                    <span class="count" id="skuCount"></span>
+                </label>
+                <input type="text" id="skuSearch"
+                       placeholder="Type 2+ chars to search SKU..."
+                       autocomplete="off">
+                <select id="skuSelect" onchange="onSkuSelect()" style="margin-top: 6px; display: none;">
+                    <option value="">Type to search SKUs...</option>
+                </select>
+            </div>
+
+            <!-- Action Buttons -->
             <div class="action-left">
-                <button onclick="loadProducts(1)" id="loadProductsBtn" disabled>
+                <button onclick="loadProducts(1)" id="loadProductsBtn">
                     Load Products
                 </button>
                 <button onclick="resetFilters()" class="secondary">
                     Reset
                 </button>
-            </div>
-            <div class="connection-status">
-                <div class="status-indicator" id="statusIndicator"></div>
-                <span id="statusText">Checking...</span>
-                <button onclick="authenticate()" id="authButton" class="small">Reconnect</button>
             </div>
         </div>
     </div>
