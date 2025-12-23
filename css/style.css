@@ -73,7 +73,17 @@ body {
 
 .filter-group {
     flex: 1;
-    min-width: 200px;
+    min-width: 180px;
+}
+
+.filter-group-wide {
+    flex: 2;
+    min-width: 300px;
+}
+
+.filter-group-sku {
+    flex: 2;
+    min-width: 300px;
 }
 
 .filter-group label {
