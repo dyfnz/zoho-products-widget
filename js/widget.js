@@ -605,7 +605,7 @@ async function showProductDetails(productIndex) {
                          pricingData?.productAuthorized === true;
     const authorizedText = isAuthorized ? 'Yes' : 'No';
 
-    // Set title and subtitle
+    // Set title and subtitle (HEADER - UNCHANGED)
     document.getElementById('detailsTitle').textContent = product.description || 'No Description';
     document.getElementById('detailsSubtitle').innerHTML = `
         <strong>Ingram SKU:</strong> ${ingramPn || 'N/A'} |
@@ -624,36 +624,123 @@ async function showProductDetails(productIndex) {
         longDescEl.style.display = 'none';
     }
 
-    // Build field mapping grid - Use retailPrice for Unit_Price (MSRP)
-    const fieldMappingGrid = document.getElementById('fieldMappingGrid');
-    const msrpValue = pricingData?.pricing?.retailPrice ? `$${pricingData.pricing.retailPrice.toFixed(2)}` : '-';
-    const fields = [
-        { label: 'Product_Code', value: product.vendorPartNumber || '-' },
-        { label: 'Product_Name', value: product.description || '-' },
-        { label: 'Manufacturer', value: product.vendorName || state.manufacturer },
-        { label: 'Ingram_Micro_SKU', value: ingramPn || '-' },
-        { label: 'UPC', value: pricingData?.upc || product.upcCode || '-' },
+    // =========================================================================
+    // EXTENDED DETAILS - Grouped Layout
+    // =========================================================================
+
+    // Helper to render a grid
+    const renderGrid = (elementId, fields) => {
+        const grid = document.getElementById(elementId);
+        if (grid) {
+            grid.innerHTML = fields.map(f => `
+                <div class="field-mapping-item">
+                    <span class="field-label">${f.label}</span>
+                    <span class="field-value">${f.value}</span>
+                </div>
+            `).join('');
+        }
+    };
+
+    // Helper for Yes/No/- display
+    const yesNo = (val) => {
+        if (val === true || val === 'true') return 'Yes';
+        if (val === false || val === 'false') return 'No';
+        return '-';
+    };
+
+    // Format currency
+    const formatCurrency = (val) => {
+        if (val === null || val === undefined) return '-';
+        return `$${Number(val).toFixed(2)}`;
+    };
+
+    // ----- GROUP 1: Product Information -----
+    const productInfoFields = [
+        { label: 'Product Name', value: product.description || '-' },
         { label: 'Category', value: product.category || state.category || '-' },
         { label: 'Subcategory', value: product.subCategory || state.subcategory || '-' },
-        { label: 'MSRP', value: msrpValue },
-        { label: 'Unit_Price', value: msrpValue },  // Use retailPrice for Unit_Price
-        { label: 'Currency', value: pricingData?.pricing?.currencyCode || 'USD' },
-        { label: 'Total_Availability', value: pricingData?.availability?.totalAvailability ?? '-' },
-        { label: 'Is_Available', value: pricingData?.availability?.available ? 'Yes' : 'No' },
-        { label: 'Product_Class', value: pricingData?.productClass || '-' },
-        { label: 'Is_Discontinued', value: product.discontinued === 'true' ? 'Yes' : 'No' },
-        { label: 'Is_New_Product', value: product.newProduct === 'true' ? 'Yes' : 'No' },
-        { label: 'Is_Directship', value: product.directShip === 'true' ? 'Yes' : 'No' }
+        { label: 'Product Type', value: product.productType || '-' },
+        { label: 'SKU Type', value: product.type || '-' },
+        { label: 'Product Class', value: pricingData?.productClass || product.productClass || '-' },
+        { label: 'Replacement SKU', value: product.replacementSku || '-' }
     ];
+    renderGrid('productInfoGrid', productInfoFields);
 
-    fieldMappingGrid.innerHTML = fields.map(f => `
-        <div class="field-mapping-item">
-            <span class="field-label">${f.label}</span>
-            <span class="field-value">${f.value}</span>
-        </div>
-    `).join('');
+    // ----- GROUP 2: Pricing -----
+    const msrpValue = formatCurrency(pricingData?.pricing?.retailPrice);
+    const customerPriceValue = formatCurrency(pricingData?.pricing?.customerPrice);
 
-    // Build warehouse availability table
+    // Check for subscription pricing (for cloud/subscription products)
+    let subscriptionPriceValue = '-';
+    if (pricingData?.subscriptionPrice && Array.isArray(pricingData.subscriptionPrice) && pricingData.subscriptionPrice.length > 0) {
+        const subPrice = pricingData.subscriptionPrice[0];
+        if (subPrice?.options?.[0]?.resourcePricing?.[0]?.msrp) {
+            subscriptionPriceValue = formatCurrency(subPrice.options[0].resourcePricing[0].msrp);
+        }
+    }
+
+    const pricingFields = [
+        { label: 'MSRP', value: msrpValue },
+        { label: 'Customer Price', value: customerPriceValue },
+        { label: 'Subscription Price', value: subscriptionPriceValue }
+    ];
+    renderGrid('pricingGrid', pricingFields);
+
+    // ----- GROUP 3: Discounts (Table - Option B: Show ALL) -----
+    const discountsGroup = document.getElementById('discountsGroup');
+    const discountsBody = document.getElementById('discountsBody');
+
+    // Extract all discounts from the pricing response
+    let allDiscounts = [];
+    if (pricingData?.discounts && Array.isArray(pricingData.discounts)) {
+        pricingData.discounts.forEach(discountGroup => {
+            if (discountGroup.specialPricing && Array.isArray(discountGroup.specialPricing)) {
+                allDiscounts.push(...discountGroup.specialPricing);
+            }
+        });
+    }
+
+    if (allDiscounts.length > 0) {
+        discountsGroup.style.display = 'block';
+        discountsBody.innerHTML = allDiscounts.map(d => `
+            <tr>
+                <td>${d.discountType || '-'}</td>
+                <td>${d.specialBidNumber || '-'}</td>
+                <td style="text-align: right;">${formatCurrency(d.specialPricingDiscount)}</td>
+                <td style="text-align: right;">${d.specialPricingAvailableQuantity ?? '-'}</td>
+                <td>${d.specialPricingEffectiveDate || '-'}</td>
+                <td>${d.specialPricingExpirationDate || '-'}</td>
+            </tr>
+        `).join('');
+    } else {
+        discountsGroup.style.display = 'none';
+    }
+
+    // ----- GROUP 4: Availability -----
+    const availabilityFields = [
+        { label: 'Available Qty', value: pricingData?.availability?.totalAvailability ?? '-' },
+        { label: 'In Stock', value: yesNo(pricingData?.availability?.available) }
+    ];
+    renderGrid('availabilityGrid', availabilityFields);
+
+    // ----- GROUP 5: Product Flags -----
+    // These come from catalog search (product) or pricing response indicators
+    const indicators = pricingData?.indicators?.[0] || {};
+
+    const flagsFields = [
+        { label: 'Digital Product', value: yesNo(indicators.isDigitalType || product.type === 'Digital') },
+        { label: 'License Product', value: yesNo(indicators.isLicenseProduct) },
+        { label: 'Service SKU', value: yesNo(indicators.isServiceSku) },
+        { label: 'Has Bundle', value: yesNo(indicators.hasBundle || pricingData?.bundlePartIndicator) },
+        { label: 'Direct Ship', value: yesNo(product.directShip) },
+        { label: 'Discontinued', value: yesNo(product.discontinued) },
+        { label: 'New Product', value: yesNo(product.newProduct) }
+    ];
+    renderGrid('flagsGrid', flagsFields);
+
+    // =========================================================================
+    // WAREHOUSE AVAILABILITY (Unchanged)
+    // =========================================================================
     const warehouseSection = document.getElementById('warehouseSection');
     const warehouseBody = document.getElementById('warehouseBody');
 
@@ -715,6 +802,9 @@ function addSelectedProducts() {
             // Additional fields
             UPC: pricingData?.upc || product.upcCode || '',
             Description: product.extraDescription || pricingData?.description || '',
+
+            // Sync tracking - identifies which distributor created/updated this product
+            Last_Sync_Source: DISTRIBUTORS[state.currentDistributor]?.name || 'Ingram Micro',
 
             // Quantity (default)
             Quantity: 1
