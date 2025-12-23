@@ -1,6 +1,7 @@
 /**
  * Distributor Product Lookup Widget
  * For Zoho CRM Quotes module integration
+ * Updated: December 2025 - Flexible filter system
  */
 
 // =====================================================
@@ -30,9 +31,25 @@ const DISTRIBUTORS = {
 // =====================================================
 const state = {
     currentDistributor: 'ingram',
+    // Filters - manufacturer is required, others are optional
     manufacturer: '',
     category: '',
     subcategory: '',
+    productType: '',
+    skuKeyword: '',
+    // Filter loading state (prevent duplicate loads)
+    loadingFilters: {
+        category: false,
+        subcategory: false,
+        productType: false
+    },
+    // Filter loaded state (don't reload if already loaded with same params)
+    filterParams: {
+        category: '',
+        subcategory: '',
+        productType: ''
+    },
+    // Pagination and products
     currentPage: 1,
     selectedProducts: new Map(), // Map of partNumber -> product
     isAuthenticated: false,
@@ -43,6 +60,7 @@ const state = {
 };
 
 let searchTimeout = null;
+let skuSearchTimeout = null;
 
 // =====================================================
 // ZOHO SDK INITIALIZATION
@@ -93,6 +111,12 @@ function initEventListeners() {
     const mfrSearch = document.getElementById('manufacturerSearch');
     if (mfrSearch) {
         mfrSearch.addEventListener('input', debounceManufacturerSearch);
+    }
+
+    // SKU search with debounce
+    const skuSearch = document.getElementById('skuSearch');
+    if (skuSearch) {
+        skuSearch.addEventListener('input', debounceSkuSearch);
     }
 
     // Select all checkbox
@@ -216,106 +240,261 @@ async function searchManufacturers() {
 }
 
 // =====================================================
-// CATEGORY LOADING
+// MANUFACTURER SELECTION
 // =====================================================
 async function onManufacturerSelect() {
     const select = document.getElementById('manufacturerSelect');
     state.manufacturer = select.value;
 
-    // Reset downstream
-    resetCategory();
-    resetSubcategory();
+    // Reset all optional filters
+    resetOptionalFilters();
     resetProducts();
 
     if (!state.manufacturer) {
-        document.getElementById('categorySelect').disabled = true;
+        // Hide optional filter rows
+        document.getElementById('optionalFiltersRow').style.display = 'none';
+        document.getElementById('skuActionsRow').style.display = 'none';
         return;
     }
 
-    showStatus(`Loading categories for ${state.manufacturer}...`, 'loading');
-    document.getElementById('categorySelect').innerHTML = '<option value="">Loading...</option>';
+    // Show optional filter rows
+    document.getElementById('optionalFiltersRow').style.display = 'flex';
+    document.getElementById('skuActionsRow').style.display = 'flex';
 
-    try {
-        const response = await fetch(
-            `${PROXY_BASE}?action=categories&vendor=${encodeURIComponent(state.manufacturer)}`
-        );
-        const data = await response.json();
-
-        const catSelect = document.getElementById('categorySelect');
-        catSelect.innerHTML = '<option value="">-- All Categories --</option>';
-
-        if (data.categories && data.categories.length > 0) {
-            data.categories.forEach(cat => {
-                const option = document.createElement('option');
-                option.value = cat;
-                option.textContent = cat;
-                catSelect.appendChild(option);
-            });
-            catSelect.disabled = false;
-            document.getElementById('catCount').textContent = `(${data.categories.length})`;
-            document.getElementById('loadProductsBtn').disabled = false;
-            showStatus(`${data.categories.length} categories. Select one or click Load Products.`, 'success');
-        } else {
-            catSelect.innerHTML = '<option value="">No categories found</option>';
-            showStatus('No categories found for this manufacturer.', 'info');
-        }
-    } catch (error) {
-        showStatus('Error loading categories: ' + error.message, 'error');
-    }
+    showStatus(`Manufacturer: ${state.manufacturer}. Use filters below or click Load Products.`, 'success');
 }
 
 // =====================================================
-// SUBCATEGORY LOADING
+// FLEXIBLE FILTER LOADING (on-demand)
 // =====================================================
-async function onCategorySelect() {
-    const select = document.getElementById('categorySelect');
-    state.category = select.value;
+async function loadFilterOptions(filterType) {
+    // Build current filter params string for cache check
+    const currentParams = `${state.manufacturer}|${state.category}|${state.subcategory}|${state.productType}`;
 
-    // Reset downstream
-    resetSubcategory();
+    // Skip if already loading or already loaded with same params
+    if (state.loadingFilters[filterType]) return;
+    if (state.filterParams[filterType] === currentParams) return;
+
+    state.loadingFilters[filterType] = true;
+
+    let url = `${PROXY_BASE}?vendor=${encodeURIComponent(state.manufacturer)}`;
+    let selectEl, countEl, dataKey;
+
+    switch (filterType) {
+        case 'category':
+            url += `&action=categories`;
+            if (state.subcategory) url += `&subCategory=${encodeURIComponent(state.subcategory)}`;
+            if (state.productType) url += `&type=${encodeURIComponent(state.productType)}`;
+            selectEl = document.getElementById('categorySelect');
+            countEl = document.getElementById('catCount');
+            dataKey = 'categories';
+            break;
+
+        case 'subcategory':
+            url += `&action=subcategories`;
+            if (state.category) url += `&category=${encodeURIComponent(state.category)}`;
+            if (state.productType) url += `&type=${encodeURIComponent(state.productType)}`;
+            selectEl = document.getElementById('subcategorySelect');
+            countEl = document.getElementById('subCatCount');
+            dataKey = 'subcategories';
+            break;
+
+        case 'productType':
+            url += `&action=productTypes`;
+            if (state.category) url += `&category=${encodeURIComponent(state.category)}`;
+            if (state.subcategory) url += `&subCategory=${encodeURIComponent(state.subcategory)}`;
+            selectEl = document.getElementById('productTypeSelect');
+            countEl = document.getElementById('typeCount');
+            dataKey = 'productTypes';
+            break;
+    }
+
+    // Show loading state
+    const currentValue = selectEl.value;
+    selectEl.innerHTML = '<option value="">Loading...</option>';
+
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+
+        selectEl.innerHTML = '<option value="">-- Any --</option>';
+
+        const items = data[dataKey] || [];
+        if (items.length > 0) {
+            items.forEach(item => {
+                const option = document.createElement('option');
+                // For product types, show friendly names
+                if (filterType === 'productType') {
+                    option.value = item;
+                    option.textContent = formatProductType(item);
+                } else {
+                    option.value = item;
+                    option.textContent = item;
+                }
+                selectEl.appendChild(option);
+            });
+            countEl.textContent = `(${items.length})`;
+
+            // Restore previous selection if still valid
+            if (currentValue && items.includes(currentValue)) {
+                selectEl.value = currentValue;
+            }
+        } else {
+            countEl.textContent = '(0)';
+        }
+
+        // Cache the params used
+        state.filterParams[filterType] = currentParams;
+
+    } catch (error) {
+        console.error(`Error loading ${filterType}:`, error);
+        selectEl.innerHTML = '<option value="">-- Error --</option>';
+    }
+
+    state.loadingFilters[filterType] = false;
+}
+
+// Format product type for display (productType field from Ingram catalog)
+function formatProductType(type) {
+    // productType field contains values like "PRODUCT", "SERVICE", etc.
+    // Display as-is
+    return type || '-';
+}
+
+// Format SKU type for display (type field from Ingram - IM::Physical, etc.)
+function formatSKUType(type) {
+    switch (type) {
+        case 'IM::physical':
+        case 'IM::Physical':
+        case 'Physical':
+            return 'Physical';
+        case 'IM::digital':
+        case 'IM::Digital':
+        case 'Digital':
+            return 'Digital';
+        case 'IM::subscription':
+        case 'IM::Subscription':
+        case 'Subscription':
+            return 'Subscription';
+        case 'IM::any':
+        case 'IM::Any':
+        case 'Any':
+            return 'Any';
+        default:
+            return type || '-';
+    }
+}
+
+// Handle filter selection change
+function onFilterChange(filterType) {
+    const selectEl = document.getElementById(
+        filterType === 'category' ? 'categorySelect' :
+        filterType === 'subcategory' ? 'subcategorySelect' :
+        'productTypeSelect'
+    );
+
+    // Update state
+    state[filterType] = selectEl.value;
+
+    // Invalidate other filter caches (they may need to reload with new params)
+    if (filterType !== 'category') state.filterParams.category = '';
+    if (filterType !== 'subcategory') state.filterParams.subcategory = '';
+    if (filterType !== 'productType') state.filterParams.productType = '';
+
+    // Reset products when filters change
     resetProducts();
-
-    if (!state.category) {
-        document.getElementById('subcategorySelect').disabled = true;
-        return;
-    }
-
-    showStatus(`Loading subcategories for ${state.category}...`, 'loading');
-    document.getElementById('subcategorySelect').innerHTML = '<option value="">Loading...</option>';
-
-    try {
-        const response = await fetch(
-            `${PROXY_BASE}?action=subcategories&vendor=${encodeURIComponent(state.manufacturer)}&category=${encodeURIComponent(state.category)}`
-        );
-        const data = await response.json();
-
-        const subSelect = document.getElementById('subcategorySelect');
-        subSelect.innerHTML = '<option value="">-- All Subcategories --</option>';
-
-        if (data.subcategories && data.subcategories.length > 0) {
-            data.subcategories.forEach(sub => {
-                const option = document.createElement('option');
-                option.value = sub;
-                option.textContent = sub;
-                subSelect.appendChild(option);
-            });
-            subSelect.disabled = false;
-            document.getElementById('subCatCount').textContent = `(${data.subcategories.length})`;
-            showStatus(`${data.subcategories.length} subcategories. Select one or click Load Products.`, 'success');
-        } else {
-            subSelect.innerHTML = '<option value="">No subcategories</option>';
-        }
-    } catch (error) {
-        showStatus('Error loading subcategories: ' + error.message, 'error');
-    }
-}
-
-function onSubcategorySelect() {
-    state.subcategory = document.getElementById('subcategorySelect').value;
 }
 
 // =====================================================
-// PRODUCTS LOADING
+// SKU SEARCH (Type-ahead with all filters)
+// =====================================================
+function debounceSkuSearch() {
+    clearTimeout(skuSearchTimeout);
+    skuSearchTimeout = setTimeout(searchSkus, 400);
+}
+
+async function searchSkus() {
+    const searchTerm = document.getElementById('skuSearch').value.trim();
+    const selectEl = document.getElementById('skuSelect');
+
+    state.skuKeyword = searchTerm;
+
+    if (searchTerm.length < 2) {
+        selectEl.style.display = 'none';
+        selectEl.innerHTML = '<option value="">Type 2+ chars to search...</option>';
+        document.getElementById('skuCount').textContent = '';
+        return;
+    }
+
+    if (!state.manufacturer) {
+        showStatus('Select a manufacturer first', 'error');
+        return;
+    }
+
+    showStatus(`Searching SKUs matching "${searchTerm}"...`, 'loading');
+
+    try {
+        // Build URL with all active filters
+        let url = `${PROXY_BASE}?action=skuSearch&vendor=${encodeURIComponent(state.manufacturer)}&keyword=${encodeURIComponent(searchTerm)}`;
+        if (state.category) url += `&category=${encodeURIComponent(state.category)}`;
+        if (state.subcategory) url += `&subCategory=${encodeURIComponent(state.subcategory)}`;
+        if (state.productType) url += `&type=${encodeURIComponent(state.productType)}`;
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        selectEl.innerHTML = '<option value="">-- Select a product --</option>';
+
+        if (data.products && data.products.length > 0) {
+            data.products.forEach(product => {
+                const option = document.createElement('option');
+                option.value = JSON.stringify(product);
+                const desc = (product.description || '').substring(0, 30);
+                option.textContent = `${product.vendorPartNumber || product.ingramPartNumber} - ${desc}`;
+                selectEl.appendChild(option);
+            });
+
+            selectEl.style.display = 'block';
+            document.getElementById('skuCount').textContent = `(${data.products.length}${data.recordsFound > 25 ? '+' : ''})`;
+            showStatus(`Found ${data.recordsFound} products matching "${searchTerm}"`, 'success');
+        } else {
+            selectEl.innerHTML = '<option value="">No products found</option>';
+            selectEl.style.display = 'block';
+            document.getElementById('skuCount').textContent = '(0)';
+            showStatus('No products found', 'info');
+        }
+    } catch (error) {
+        showStatus('Error searching SKUs: ' + error.message, 'error');
+    }
+}
+
+// Handle SKU selection from dropdown
+function onSkuSelect() {
+    const selectEl = document.getElementById('skuSelect');
+    const value = selectEl.value;
+
+    if (!value) return;
+
+    try {
+        const product = JSON.parse(value);
+        // Add to selected products and show details
+        const partNumber = product.ingramPartNumber || product.vendorPartNumber;
+        state.selectedProducts.set(partNumber, product);
+        updateSelectedCount();
+
+        // Show product in results table
+        state.currentProducts = [product];
+        displayProducts([product], { page: 1, pageSize: 1, totalPages: 1, totalRecords: 1 });
+        document.getElementById('productsSection').style.display = 'block';
+
+        showStatus(`Selected: ${product.vendorPartNumber}`, 'success');
+    } catch (e) {
+        console.error('Error parsing product:', e);
+    }
+}
+
+// =====================================================
+// PRODUCTS LOADING (with all flexible filters + pricing in one call)
 // =====================================================
 async function loadProducts(page = 1) {
     if (!state.manufacturer) {
@@ -326,22 +505,28 @@ async function loadProducts(page = 1) {
     state.currentPage = page;
     const productsSection = document.getElementById('productsSection');
     productsSection.style.display = 'block';
-    showStatus('Loading products...', 'loading');
+    showStatus('Loading products with pricing...', 'loading');
 
     try {
-        let url = `${PROXY_BASE}?action=products&vendor=${encodeURIComponent(state.manufacturer)}&page=${page}`;
+        // Use productsWithPricing for faster MSRP display (single call instead of two)
+        let url = `${PROXY_BASE}?action=productsWithPricing&vendor=${encodeURIComponent(state.manufacturer)}&page=${page}`;
         if (state.category) url += `&category=${encodeURIComponent(state.category)}`;
         if (state.subcategory) url += `&subCategory=${encodeURIComponent(state.subcategory)}`;
+        if (state.productType) url += `&type=${encodeURIComponent(state.productType)}`;
+        if (state.skuKeyword && state.skuKeyword.length >= 2) {
+            url += `&keyword=${encodeURIComponent(state.skuKeyword)}`;
+        }
 
         const response = await fetch(url);
         const data = await response.json();
 
         if (data.products && data.products.length > 0) {
-            displayProducts(data.products, data.pagination);
+            // Products already include pricingData from the combined endpoint
+            displayProductsWithPricing(data.products, data.pagination);
             showStatus('', ''); // Clear status
         } else {
             document.getElementById('productsBody').innerHTML =
-                '<tr><td colspan="6" class="no-results">No products found</td></tr>';
+                '<tr><td colspan="7" class="no-results">No products found</td></tr>';
             document.getElementById('pagination').innerHTML = '';
             document.getElementById('productCount').textContent = '0 products';
             showStatus('No products found with current filters', 'info');
@@ -349,6 +534,64 @@ async function loadProducts(page = 1) {
     } catch (error) {
         showStatus('Error loading products: ' + error.message, 'error');
     }
+}
+
+// Display products with pre-fetched pricing (faster than separate call)
+function displayProductsWithPricing(products, pagination) {
+    const tbody = document.getElementById('productsBody');
+    tbody.innerHTML = '';
+
+    // Store products for later use
+    state.currentProducts = products;
+    state.pricingData = {};
+
+    products.forEach((product, index) => {
+        const partNumber = product.ingramPartNumber || product.vendorPartNumber;
+        const isSelected = state.selectedProducts.has(partNumber);
+
+        // Extract pricing from pre-fetched data
+        const pricingData = product.pricingData;
+        const msrp = pricingData?.pricing?.retailPrice;
+        const msrpDisplay = msrp ? `<span class="price-available">$${msrp.toFixed(2)}</span>` : '<span class="price-unavailable">-</span>';
+
+        // Cache pricing data
+        if (pricingData && product.ingramPartNumber) {
+            state.pricingData[product.ingramPartNumber] = pricingData;
+        }
+
+        const tr = document.createElement('tr');
+        tr.className = isSelected ? 'selected' : '';
+        tr.id = `product-row-${index}`;
+        tr.innerHTML = `
+            <td>
+                <input type="checkbox"
+                       onchange="toggleProduct('${partNumber}', this.checked)"
+                       ${isSelected ? 'checked' : ''}>
+            </td>
+            <td><strong>${product.vendorPartNumber || '-'}</strong></td>
+            <td>${(product.description || '-').substring(0, 40)}${(product.description || '').length > 40 ? '...' : ''}</td>
+            <td>${product.vendorName || state.manufacturer}</td>
+            <td>${product.ingramPartNumber || '-'}</td>
+            <td class="price">${msrpDisplay}</td>
+            <td>
+                <span class="info-icon" onclick="showProductDetails(${index})" title="Show product details">i</span>
+            </td>
+        `;
+        tbody.appendChild(tr);
+
+        // Store product data for later use
+        tr.dataset.product = JSON.stringify(product);
+    });
+
+    // Update product count
+    document.getElementById('productCount').textContent =
+        `${pagination.totalRecords.toLocaleString()} products`;
+
+    // Update pagination
+    renderPagination(pagination);
+    updateSelectedCount();
+
+    // No need to call fetchBatchPricing - pricing already included!
 }
 
 function displayProducts(products, pagination) {
@@ -660,7 +903,7 @@ async function showProductDetails(productIndex) {
         { label: 'Category', value: product.category || state.category || '-' },
         { label: 'Subcategory', value: product.subCategory || state.subcategory || '-' },
         { label: 'Product Type', value: product.productType || '-' },
-        { label: 'SKU Type', value: product.type || '-' },
+        { label: 'SKU Type', value: formatSKUType(product.type) },
         { label: 'Product Class', value: pricingData?.productClass || product.productClass || '-' },
         { label: 'Replacement SKU', value: product.replacementSku || '-' }
     ];
@@ -728,7 +971,7 @@ async function showProductDetails(productIndex) {
     const indicators = pricingData?.indicators?.[0] || {};
 
     const flagsFields = [
-        { label: 'Digital Product', value: yesNo(indicators.isDigitalType || product.type === 'Digital') },
+        { label: 'Digital Product', value: yesNo(indicators.isDigitalType || product.type === 'IM::Digital' || product.type === 'IM::digital' || product.type === 'Digital') },
         { label: 'License Product', value: yesNo(indicators.isLicenseProduct) },
         { label: 'Service SKU', value: yesNo(indicators.isServiceSku) },
         { label: 'Has Bundle', value: yesNo(indicators.hasBundle || pricingData?.bundlePartIndicator) },
@@ -845,8 +1088,6 @@ function cancelSelection() {
 // =====================================================
 function resetFilters() {
     state.manufacturer = '';
-    state.category = '';
-    state.subcategory = '';
     state.currentPage = 1;
 
     document.getElementById('manufacturerSearch').value = '';
@@ -854,28 +1095,61 @@ function resetFilters() {
         '<option value="">Type to search manufacturers...</option>';
     document.getElementById('mfrCount').textContent = '';
 
-    resetCategory();
-    resetSubcategory();
+    // Hide optional filter rows
+    document.getElementById('optionalFiltersRow').style.display = 'none';
+    document.getElementById('skuActionsRow').style.display = 'none';
+
+    resetOptionalFilters();
     resetProducts();
 
-    document.getElementById('loadProductsBtn').disabled = true;
     document.getElementById('productsSection').style.display = 'none';
+    showStatus('Select a manufacturer to begin', 'info');
 }
 
-function resetCategory() {
-    document.getElementById('categorySelect').innerHTML =
-        '<option value="">-- Select manufacturer first --</option>';
-    document.getElementById('categorySelect').disabled = true;
-    document.getElementById('catCount').textContent = '';
+function resetOptionalFilters() {
+    // Reset state
     state.category = '';
-}
-
-function resetSubcategory() {
-    document.getElementById('subcategorySelect').innerHTML =
-        '<option value="">-- Select category first --</option>';
-    document.getElementById('subcategorySelect').disabled = true;
-    document.getElementById('subCatCount').textContent = '';
     state.subcategory = '';
+    state.productType = '';
+    state.skuKeyword = '';
+
+    // Reset filter param cache
+    state.filterParams.category = '';
+    state.filterParams.subcategory = '';
+    state.filterParams.productType = '';
+
+    // Reset Category dropdown
+    const catSelect = document.getElementById('categorySelect');
+    if (catSelect) {
+        catSelect.innerHTML = '<option value="">-- Any --</option>';
+        document.getElementById('catCount').textContent = '';
+    }
+
+    // Reset Subcategory dropdown
+    const subSelect = document.getElementById('subcategorySelect');
+    if (subSelect) {
+        subSelect.innerHTML = '<option value="">-- Any --</option>';
+        document.getElementById('subCatCount').textContent = '';
+    }
+
+    // Reset Product Type dropdown
+    const typeSelect = document.getElementById('productTypeSelect');
+    if (typeSelect) {
+        typeSelect.innerHTML = '<option value="">-- Any --</option>';
+        document.getElementById('typeCount').textContent = '';
+    }
+
+    // Reset SKU search
+    const skuSearch = document.getElementById('skuSearch');
+    if (skuSearch) {
+        skuSearch.value = '';
+    }
+    const skuSelect = document.getElementById('skuSelect');
+    if (skuSelect) {
+        skuSelect.innerHTML = '<option value="">Type to search SKUs...</option>';
+        skuSelect.style.display = 'none';
+        document.getElementById('skuCount').textContent = '';
+    }
 }
 
 function resetProducts() {
