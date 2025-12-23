@@ -549,3 +549,61 @@ button.small {
 .price-unavailable {
     color: #dc3545;
 }
+
+/* Extended Details Groups */
+.details-group {
+    margin-bottom: 16px;
+}
+
+.details-group:last-child {
+    margin-bottom: 0;
+}
+
+.details-group h5 {
+    font-size: 11px;
+    text-transform: uppercase;
+    color: #555;
+    margin: 0 0 8px 0;
+    padding-bottom: 4px;
+    border-bottom: 1px dashed #ddd;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+/* Discounts Table */
+.discounts-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.discounts-table th, .discounts-table td {
+    padding: 8px 10px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+}
+
+.discounts-table th {
+    background: #e9ecef;
+    font-weight: 600;
+    color: #333;
+    font-size: 10px;
+    text-transform: uppercase;
+}
+
+.discounts-table tr:last-child td {
+    border-bottom: none;
+}
+
+.discounts-table tr:hover {
+    background: #e9ecef;
+}
+
+/* Discount highlight for special bids */
+.discounts-table td:nth-child(3) {
+    color: #28a745;
+    font-weight: 600;
+}
