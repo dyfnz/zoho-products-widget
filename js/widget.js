@@ -259,6 +259,11 @@ async function onManufacturerSelect() {
     document.getElementById('optionalFiltersRow').style.display = 'flex';
     document.getElementById('skuActionsRow').style.display = 'flex';
 
+    showStatus(`Manufacturer: ${state.manufacturer}. Loading categories...`, 'loading');
+
+    // Pre-populate Category dropdown for this manufacturer
+    await loadFilterOptions('category');
+
     showStatus(`Manufacturer: ${state.manufacturer}. Use filters below or click Load Products.`, 'success');
 }
 
@@ -367,7 +372,7 @@ function formatSKUType(type) {
 }
 
 // Handle filter selection change
-function onFilterChange(filterType) {
+async function onFilterChange(filterType) {
     const selectEl = document.getElementById(
         filterType === 'category' ? 'categorySelect' :
         filterType === 'subcategory' ? 'subcategorySelect' :
@@ -383,6 +388,12 @@ function onFilterChange(filterType) {
 
     // Reset products when filters change
     resetProducts();
+
+    // Pre-populate dependent dropdowns
+    if (filterType === 'category' && state.category) {
+        // When category is selected, pre-load subcategories
+        await loadFilterOptions('subcategory');
+    }
 }
 
 // =====================================================
@@ -521,11 +532,25 @@ function displayProductsWithPricing(products, pagination) {
     const tbody = document.getElementById('productsBody');
     tbody.innerHTML = '';
 
-    // Store products for later use
-    state.currentProducts = products;
+    // Clear local filter
+    const localFilter = document.getElementById('localPartFilter');
+    if (localFilter) {
+        localFilter.value = '';
+        document.getElementById('filteredCount').textContent = '';
+    }
+
+    // Sort products by Part Number (vendorPartNumber) ascending
+    const sortedProducts = [...products].sort((a, b) => {
+        const partA = (a.vendorPartNumber || '').toLowerCase();
+        const partB = (b.vendorPartNumber || '').toLowerCase();
+        return partA.localeCompare(partB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    // Store sorted products for later use
+    state.currentProducts = sortedProducts;
     state.pricingData = {};
 
-    products.forEach((product, index) => {
+    sortedProducts.forEach((product, index) => {
         const partNumber = product.ingramPartNumber || product.vendorPartNumber;
         const isSelected = state.selectedProducts.has(partNumber);
 
@@ -578,10 +603,24 @@ function displayProducts(products, pagination) {
     const tbody = document.getElementById('productsBody');
     tbody.innerHTML = '';
 
-    // Store products for batch pricing lookup
-    state.currentProducts = products;
+    // Clear local filter
+    const localFilter = document.getElementById('localPartFilter');
+    if (localFilter) {
+        localFilter.value = '';
+        document.getElementById('filteredCount').textContent = '';
+    }
 
-    products.forEach((product, index) => {
+    // Sort products by Part Number (vendorPartNumber) ascending
+    const sortedProducts = [...products].sort((a, b) => {
+        const partA = (a.vendorPartNumber || '').toLowerCase();
+        const partB = (b.vendorPartNumber || '').toLowerCase();
+        return partA.localeCompare(partB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    // Store sorted products for batch pricing lookup
+    state.currentProducts = sortedProducts;
+
+    sortedProducts.forEach((product, index) => {
         const partNumber = product.ingramPartNumber || product.vendorPartNumber;
         const isSelected = state.selectedProducts.has(partNumber);
 
@@ -618,7 +657,39 @@ function displayProducts(products, pagination) {
     updateSelectedCount();
 
     // Fetch batch pricing after displaying products
-    fetchBatchPricing(products);
+    fetchBatchPricing(sortedProducts);
+}
+
+// Filter products locally by Part Number (client-side filter for displayed results)
+function filterProductsLocal() {
+    const filterValue = document.getElementById('localPartFilter').value.toLowerCase().trim();
+    const tbody = document.getElementById('productsBody');
+    const rows = tbody.querySelectorAll('tr');
+    let visibleCount = 0;
+
+    rows.forEach(row => {
+        const partNumberCell = row.querySelector('td:nth-child(2)');
+        const ingramSkuCell = row.querySelector('td:nth-child(5)');
+
+        if (partNumberCell && ingramSkuCell) {
+            const partNumber = (partNumberCell.textContent || '').toLowerCase();
+            const ingramSku = (ingramSkuCell.textContent || '').toLowerCase();
+
+            // Match against both Part Number and Ingram SKU
+            const matches = !filterValue || partNumber.includes(filterValue) || ingramSku.includes(filterValue);
+
+            row.style.display = matches ? '' : 'none';
+            if (matches) visibleCount++;
+        }
+    });
+
+    // Update filtered count display
+    const filteredCountEl = document.getElementById('filteredCount');
+    if (filterValue) {
+        filteredCountEl.textContent = `(showing ${visibleCount} of ${rows.length})`;
+    } else {
+        filteredCountEl.textContent = '';
+    }
 }
 
 function renderPagination(pagination) {
@@ -850,6 +921,7 @@ async function showProductDetails(productIndex) {
                          product.authorizedToPurchase === true ||
                          pricingData?.productAuthorized === true;
     const authorizedText = isAuthorized ? 'Yes' : 'No';
+    const authorizedClass = isAuthorized ? 'authorized-yes' : 'authorized-no';
 
     // Set title and subtitle (HEADER - UNCHANGED)
     document.getElementById('detailsTitle').textContent = product.description || 'No Description';
@@ -857,7 +929,7 @@ async function showProductDetails(productIndex) {
         <strong>Ingram SKU:</strong> ${ingramPn || 'N/A'} |
         <strong>Vendor Part:</strong> ${product.vendorPartNumber || 'N/A'} |
         <strong>Manufacturer:</strong> ${product.vendorName || state.manufacturer} |
-        <strong>Authorized:</strong> ${authorizedText}
+        <strong>Authorized:</strong> <span class="${authorizedClass}">${authorizedText}</span>
     `;
 
     // Set long description (extraDescription from catalog or description from pricing)
