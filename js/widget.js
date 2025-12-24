@@ -952,7 +952,14 @@ async function showProductDetails(productIndex) {
     renderGrid('availabilityGrid', availabilityFields);
 
     // ----- GROUP 5: Product Flags -----
-    // Indicators come from pricing response - can be object or array depending on API version
+    // DEBUG: Log actual values to diagnose flag display issues
+    console.log('[Flags Debug] product.directShip:', product.directShip, typeof product.directShip);
+    console.log('[Flags Debug] product.discontinued:', product.discontinued, typeof product.discontinued);
+    console.log('[Flags Debug] product.newProduct:', product.newProduct, typeof product.newProduct);
+    console.log('[Flags Debug] product.type:', product.type);
+    console.log('[Flags Debug] pricingData?.indicators:', pricingData?.indicators);
+
+    // Indicators come from Product Details endpoint (NOT pricing) - will be undefined unless we add that call
     const rawIndicators = pricingData?.indicators;
     const indicators = Array.isArray(rawIndicators) ? (rawIndicators[0] || {}) : (rawIndicators || {});
 
