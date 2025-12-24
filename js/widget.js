@@ -864,10 +864,15 @@ async function showProductDetails(productIndex) {
         }
     };
 
-    // Helper for Yes/No/- display
+    // Helper for Yes/No/- display (handles boolean, string "True"/"False", "true"/"false")
     const yesNo = (val) => {
-        if (val === true || val === 'true') return 'Yes';
-        if (val === false || val === 'false') return 'No';
+        if (val === true) return 'Yes';
+        if (val === false) return 'No';
+        if (typeof val === 'string') {
+            const lower = val.toLowerCase();
+            if (lower === 'true' || lower === 'yes') return 'Yes';
+            if (lower === 'false' || lower === 'no') return 'No';
+        }
         return '-';
     };
 
@@ -947,17 +952,18 @@ async function showProductDetails(productIndex) {
     renderGrid('availabilityGrid', availabilityFields);
 
     // ----- GROUP 5: Product Flags -----
-    // These come from catalog search (product) or pricing response indicators
-    const indicators = pricingData?.indicators?.[0] || {};
+    // Indicators come from pricing response - can be object or array depending on API version
+    const rawIndicators = pricingData?.indicators;
+    const indicators = Array.isArray(rawIndicators) ? (rawIndicators[0] || {}) : (rawIndicators || {});
 
     const flagsFields = [
         { label: 'Digital Product', value: yesNo(indicators.isDigitalType || product.type === 'IM::Digital' || product.type === 'IM::digital' || product.type === 'Digital') },
         { label: 'License Product', value: yesNo(indicators.isLicenseProduct) },
         { label: 'Service SKU', value: yesNo(indicators.isServiceSku) },
         { label: 'Has Bundle', value: yesNo(indicators.hasBundle || pricingData?.bundlePartIndicator) },
-        { label: 'Direct Ship', value: yesNo(product.directShip) },
+        { label: 'Direct Ship', value: yesNo(product.directShip || indicators.isDirectshipOrderable) },
         { label: 'Discontinued', value: yesNo(product.discontinued) },
-        { label: 'New Product', value: yesNo(product.newProduct) }
+        { label: 'New Product', value: yesNo(product.newProduct || indicators.isNewProduct) }
     ];
     renderGrid('flagsGrid', flagsFields);
 
