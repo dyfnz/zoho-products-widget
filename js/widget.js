@@ -35,19 +35,17 @@ const state = {
     manufacturer: '',
     category: '',
     subcategory: '',
-    productType: '',
+    skuType: '',  // SKU Type: IM::physical, IM::digital, IM::subscription (API param: type)
     skuKeyword: '',
     // Filter loading state (prevent duplicate loads)
     loadingFilters: {
         category: false,
-        subcategory: false,
-        productType: false
+        subcategory: false
     },
     // Filter loaded state (don't reload if already loaded with same params)
     filterParams: {
         category: '',
-        subcategory: '',
-        productType: ''
+        subcategory: ''
     },
     // Pagination and products
     currentPage: 1,
@@ -269,7 +267,7 @@ async function onManufacturerSelect() {
 // =====================================================
 async function loadFilterOptions(filterType) {
     // Build current filter params string for cache check
-    const currentParams = `${state.manufacturer}|${state.category}|${state.subcategory}|${state.productType}`;
+    const currentParams = `${state.manufacturer}|${state.category}|${state.subcategory}|${state.skuType}`;
 
     // Skip if already loading or already loaded with same params
     if (state.loadingFilters[filterType]) return;
@@ -284,7 +282,7 @@ async function loadFilterOptions(filterType) {
         case 'category':
             url += `&action=categories`;
             if (state.subcategory) url += `&subCategory=${encodeURIComponent(state.subcategory)}`;
-            if (state.productType) url += `&type=${encodeURIComponent(state.productType)}`;
+            if (state.skuType) url += `&type=${encodeURIComponent(state.skuType)}`;
             selectEl = document.getElementById('categorySelect');
             countEl = document.getElementById('catCount');
             dataKey = 'categories';
@@ -293,20 +291,16 @@ async function loadFilterOptions(filterType) {
         case 'subcategory':
             url += `&action=subcategories`;
             if (state.category) url += `&category=${encodeURIComponent(state.category)}`;
-            if (state.productType) url += `&type=${encodeURIComponent(state.productType)}`;
+            if (state.skuType) url += `&type=${encodeURIComponent(state.skuType)}`;
             selectEl = document.getElementById('subcategorySelect');
             countEl = document.getElementById('subCatCount');
             dataKey = 'subcategories';
             break;
 
-        case 'productType':
-            url += `&action=productTypes`;
-            if (state.category) url += `&category=${encodeURIComponent(state.category)}`;
-            if (state.subcategory) url += `&subCategory=${encodeURIComponent(state.subcategory)}`;
-            selectEl = document.getElementById('productTypeSelect');
-            countEl = document.getElementById('typeCount');
-            dataKey = 'productTypes';
-            break;
+        default:
+            // SKU Type has fixed options (no API call needed)
+            state.loadingFilters[filterType] = false;
+            return;
     }
 
     // Show loading state
@@ -323,14 +317,8 @@ async function loadFilterOptions(filterType) {
         if (items.length > 0) {
             items.forEach(item => {
                 const option = document.createElement('option');
-                // For product types, show friendly names
-                if (filterType === 'productType') {
-                    option.value = item;
-                    option.textContent = formatProductType(item);
-                } else {
-                    option.value = item;
-                    option.textContent = item;
-                }
+                option.value = item;
+                option.textContent = item;
                 selectEl.appendChild(option);
             });
             countEl.textContent = `(${items.length})`;
@@ -352,13 +340,6 @@ async function loadFilterOptions(filterType) {
     }
 
     state.loadingFilters[filterType] = false;
-}
-
-// Format product type for display (productType field from Ingram catalog)
-function formatProductType(type) {
-    // productType field contains values like "PRODUCT", "SERVICE", etc.
-    // Display as-is
-    return type || '-';
 }
 
 // Format SKU type for display (type field from Ingram - IM::Physical, etc.)
@@ -390,7 +371,7 @@ function onFilterChange(filterType) {
     const selectEl = document.getElementById(
         filterType === 'category' ? 'categorySelect' :
         filterType === 'subcategory' ? 'subcategorySelect' :
-        'productTypeSelect'
+        'skuTypeSelect'
     );
 
     // Update state
@@ -399,7 +380,6 @@ function onFilterChange(filterType) {
     // Invalidate other filter caches (they may need to reload with new params)
     if (filterType !== 'category') state.filterParams.category = '';
     if (filterType !== 'subcategory') state.filterParams.subcategory = '';
-    if (filterType !== 'productType') state.filterParams.productType = '';
 
     // Reset products when filters change
     resetProducts();
@@ -438,7 +418,7 @@ async function searchSkus() {
         let url = `${PROXY_BASE}?action=skuSearch&vendor=${encodeURIComponent(state.manufacturer)}&keyword=${encodeURIComponent(searchTerm)}`;
         if (state.category) url += `&category=${encodeURIComponent(state.category)}`;
         if (state.subcategory) url += `&subCategory=${encodeURIComponent(state.subcategory)}`;
-        if (state.productType) url += `&type=${encodeURIComponent(state.productType)}`;
+        if (state.skuType) url += `&type=${encodeURIComponent(state.skuType)}`;
 
         const response = await fetch(url);
         const data = await response.json();
@@ -512,7 +492,7 @@ async function loadProducts(page = 1) {
         let url = `${PROXY_BASE}?action=productsWithPricing&vendor=${encodeURIComponent(state.manufacturer)}&page=${page}`;
         if (state.category) url += `&category=${encodeURIComponent(state.category)}`;
         if (state.subcategory) url += `&subCategory=${encodeURIComponent(state.subcategory)}`;
-        if (state.productType) url += `&type=${encodeURIComponent(state.productType)}`;
+        if (state.skuType) url += `&type=${encodeURIComponent(state.skuType)}`;
         if (state.skuKeyword && state.skuKeyword.length >= 2) {
             url += `&keyword=${encodeURIComponent(state.skuKeyword)}`;
         }
@@ -1110,13 +1090,12 @@ function resetOptionalFilters() {
     // Reset state
     state.category = '';
     state.subcategory = '';
-    state.productType = '';
+    state.skuType = '';
     state.skuKeyword = '';
 
     // Reset filter param cache
     state.filterParams.category = '';
     state.filterParams.subcategory = '';
-    state.filterParams.productType = '';
 
     // Reset Category dropdown
     const catSelect = document.getElementById('categorySelect');
@@ -1132,11 +1111,10 @@ function resetOptionalFilters() {
         document.getElementById('subCatCount').textContent = '';
     }
 
-    // Reset Product Type dropdown
-    const typeSelect = document.getElementById('productTypeSelect');
-    if (typeSelect) {
-        typeSelect.innerHTML = '<option value="">-- Any --</option>';
-        document.getElementById('typeCount').textContent = '';
+    // Reset SKU Type dropdown (fixed options, just reset selection)
+    const skuTypeSelect = document.getElementById('skuTypeSelect');
+    if (skuTypeSelect) {
+        skuTypeSelect.value = '';
     }
 
     // Reset SKU search
