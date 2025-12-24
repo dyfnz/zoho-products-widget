@@ -796,31 +796,54 @@ async function showProductDetails(productIndex) {
 
     // Get pricing data (from state or fetch fresh)
     let pricingData = state.pricingData?.[ingramPn];
+    let productDetails = null;
     let fullProductData = product;
 
-    // If no pricing data, try to fetch it
-    if (!pricingData && ingramPn) {
-        try {
-            const response = await fetch(`${PROXY_BASE}?action=pricing`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    partNumbers: [ingramPn],
-                    sandbox: false
+    // Fetch pricing and product details in parallel
+    if (ingramPn) {
+        const fetchPromises = [];
+
+        // Fetch pricing if not cached
+        if (!pricingData) {
+            fetchPromises.push(
+                fetch(`${PROXY_BASE}?action=pricing`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        partNumbers: [ingramPn],
+                        sandbox: false
+                    })
                 })
-            });
-            const data = await response.json();
-            if (Array.isArray(data) && data.length > 0) {
-                pricingData = data[0];
-                state.pricingData[ingramPn] = pricingData;
-                fullProductData = { ...product, pricingData };
-            }
-        } catch (error) {
-            console.error('[Details] Error fetching pricing:', error);
+                .then(res => res.json())
+                .then(data => {
+                    if (Array.isArray(data) && data.length > 0) {
+                        pricingData = data[0];
+                        state.pricingData[ingramPn] = pricingData;
+                    }
+                })
+                .catch(err => console.error('[Details] Error fetching pricing:', err))
+            );
         }
-    } else if (pricingData) {
-        fullProductData = { ...product, pricingData };
+
+        // Always fetch product details to get indicators
+        fetchPromises.push(
+            fetch(`${PROXY_BASE}?action=productDetails&ingramPartNumber=${encodeURIComponent(ingramPn)}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data && !data.error) {
+                        productDetails = data;
+                        console.log('[Details] Got product details with indicators:', data.indicators ? 'yes' : 'no');
+                    }
+                })
+                .catch(err => console.error('[Details] Error fetching product details:', err))
+        );
+
+        // Wait for all fetches to complete
+        await Promise.all(fetchPromises);
     }
+
+    // Merge all data
+    fullProductData = { ...product, pricingData, productDetails };
 
     // Determine authorization status (from catalog search or pricing data)
     const isAuthorized = product.authorizedToPurchase === 'true' ||
@@ -952,24 +975,16 @@ async function showProductDetails(productIndex) {
     renderGrid('availabilityGrid', availabilityFields);
 
     // ----- GROUP 5: Product Flags -----
-    // DEBUG: Log actual values to diagnose flag display issues
-    console.log('[Flags Debug] product.directShip:', product.directShip, typeof product.directShip);
-    console.log('[Flags Debug] product.discontinued:', product.discontinued, typeof product.discontinued);
-    console.log('[Flags Debug] product.newProduct:', product.newProduct, typeof product.newProduct);
-    console.log('[Flags Debug] product.type:', product.type);
-    console.log('[Flags Debug] pricingData?.indicators:', pricingData?.indicators);
-
-    // Indicators come from Product Details endpoint (NOT pricing) - will be undefined unless we add that call
-    const rawIndicators = pricingData?.indicators;
-    const indicators = Array.isArray(rawIndicators) ? (rawIndicators[0] || {}) : (rawIndicators || {});
+    // Indicators come from Product Details endpoint (fetched above)
+    const indicators = productDetails?.indicators || {};
 
     const flagsFields = [
         { label: 'Digital Product', value: yesNo(indicators.isDigitalType || product.type === 'IM::Digital' || product.type === 'IM::digital' || product.type === 'Digital') },
         { label: 'License Product', value: yesNo(indicators.isLicenseProduct) },
         { label: 'Service SKU', value: yesNo(indicators.isServiceSku) },
         { label: 'Has Bundle', value: yesNo(indicators.hasBundle || pricingData?.bundlePartIndicator) },
-        { label: 'Direct Ship', value: yesNo(product.directShip || indicators.isDirectshipOrderable) },
-        { label: 'Discontinued', value: yesNo(product.discontinued) },
+        { label: 'Direct Ship', value: yesNo(product.directShip || indicators.isDirectship) },
+        { label: 'Discontinued', value: yesNo(product.discontinued || indicators.isDiscontinuedProduct) },
         { label: 'New Product', value: yesNo(product.newProduct || indicators.isNewProduct) }
     ];
     renderGrid('flagsGrid', flagsFields);
