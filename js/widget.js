@@ -58,7 +58,6 @@ const state = {
 };
 
 let searchTimeout = null;
-let skuSearchTimeout = null;
 
 // =====================================================
 // ZOHO SDK INITIALIZATION
@@ -111,10 +110,12 @@ function initEventListeners() {
         mfrSearch.addEventListener('input', debounceManufacturerSearch);
     }
 
-    // SKU search with debounce
+    // SKU search - capture value for use with Load Products button
     const skuSearch = document.getElementById('skuSearch');
     if (skuSearch) {
-        skuSearch.addEventListener('input', debounceSkuSearch);
+        skuSearch.addEventListener('input', () => {
+            state.skuKeyword = skuSearch.value.trim();
+        });
     }
 
     // Select all checkbox
@@ -397,94 +398,6 @@ async function onFilterChange(filterType) {
 }
 
 // =====================================================
-// SKU SEARCH (Type-ahead with all filters)
-// =====================================================
-function debounceSkuSearch() {
-    clearTimeout(skuSearchTimeout);
-    skuSearchTimeout = setTimeout(searchSkus, 400);
-}
-
-async function searchSkus() {
-    const searchTerm = document.getElementById('skuSearch').value.trim();
-    const selectEl = document.getElementById('skuSelect');
-
-    state.skuKeyword = searchTerm;
-
-    if (searchTerm.length < 2) {
-        selectEl.style.display = 'none';
-        selectEl.innerHTML = '<option value="">Type 2+ chars to search...</option>';
-        document.getElementById('skuCount').textContent = '';
-        return;
-    }
-
-    if (!state.manufacturer) {
-        showStatus('Select a manufacturer first', 'error');
-        return;
-    }
-
-    showStatus(`Searching SKUs matching "${searchTerm}"...`, 'loading');
-
-    try {
-        // Build URL with all active filters
-        let url = `${PROXY_BASE}?action=skuSearch&vendor=${encodeURIComponent(state.manufacturer)}&keyword=${encodeURIComponent(searchTerm)}`;
-        if (state.category) url += `&category=${encodeURIComponent(state.category)}`;
-        if (state.subcategory) url += `&subCategory=${encodeURIComponent(state.subcategory)}`;
-        if (state.skuType) url += `&type=${encodeURIComponent(state.skuType)}`;
-
-        const response = await fetch(url);
-        const data = await response.json();
-
-        selectEl.innerHTML = '<option value="">-- Select a product --</option>';
-
-        if (data.products && data.products.length > 0) {
-            data.products.forEach(product => {
-                const option = document.createElement('option');
-                option.value = JSON.stringify(product);
-                const desc = (product.description || '').substring(0, 30);
-                option.textContent = `${product.vendorPartNumber || product.ingramPartNumber} - ${desc}`;
-                selectEl.appendChild(option);
-            });
-
-            selectEl.style.display = 'block';
-            document.getElementById('skuCount').textContent = `(${data.products.length}${data.recordsFound > 25 ? '+' : ''})`;
-            showStatus(`Found ${data.recordsFound} products matching "${searchTerm}"`, 'success');
-        } else {
-            selectEl.innerHTML = '<option value="">No products found</option>';
-            selectEl.style.display = 'block';
-            document.getElementById('skuCount').textContent = '(0)';
-            showStatus('No products found', 'info');
-        }
-    } catch (error) {
-        showStatus('Error searching SKUs: ' + error.message, 'error');
-    }
-}
-
-// Handle SKU selection from dropdown
-function onSkuSelect() {
-    const selectEl = document.getElementById('skuSelect');
-    const value = selectEl.value;
-
-    if (!value) return;
-
-    try {
-        const product = JSON.parse(value);
-        // Add to selected products and show details
-        const partNumber = product.ingramPartNumber || product.vendorPartNumber;
-        state.selectedProducts.set(partNumber, product);
-        updateSelectedCount();
-
-        // Show product in results table
-        state.currentProducts = [product];
-        displayProducts([product], { page: 1, pageSize: 1, totalPages: 1, totalRecords: 1 });
-        document.getElementById('productsSection').style.display = 'block';
-
-        showStatus(`Selected: ${product.vendorPartNumber}`, 'success');
-    } catch (e) {
-        console.error('Error parsing product:', e);
-    }
-}
-
-// =====================================================
 // PRODUCTS LOADING (with all flexible filters + pricing in one call)
 // =====================================================
 async function loadProducts(page = 1) {
@@ -531,13 +444,6 @@ async function loadProducts(page = 1) {
 function displayProductsWithPricing(products, pagination) {
     const tbody = document.getElementById('productsBody');
     tbody.innerHTML = '';
-
-    // Clear local filter
-    const localFilter = document.getElementById('localPartFilter');
-    if (localFilter) {
-        localFilter.value = '';
-        document.getElementById('filteredCount').textContent = '';
-    }
 
     // Sort products by Part Number (vendorPartNumber) ascending
     const sortedProducts = [...products].sort((a, b) => {
@@ -603,13 +509,6 @@ function displayProducts(products, pagination) {
     const tbody = document.getElementById('productsBody');
     tbody.innerHTML = '';
 
-    // Clear local filter
-    const localFilter = document.getElementById('localPartFilter');
-    if (localFilter) {
-        localFilter.value = '';
-        document.getElementById('filteredCount').textContent = '';
-    }
-
     // Sort products by Part Number (vendorPartNumber) ascending
     const sortedProducts = [...products].sort((a, b) => {
         const partA = (a.vendorPartNumber || '').toLowerCase();
@@ -658,38 +557,6 @@ function displayProducts(products, pagination) {
 
     // Fetch batch pricing after displaying products
     fetchBatchPricing(sortedProducts);
-}
-
-// Filter products locally by Part Number (client-side filter for displayed results)
-function filterProductsLocal() {
-    const filterValue = document.getElementById('localPartFilter').value.toLowerCase().trim();
-    const tbody = document.getElementById('productsBody');
-    const rows = tbody.querySelectorAll('tr');
-    let visibleCount = 0;
-
-    rows.forEach(row => {
-        const partNumberCell = row.querySelector('td:nth-child(2)');
-        const ingramSkuCell = row.querySelector('td:nth-child(5)');
-
-        if (partNumberCell && ingramSkuCell) {
-            const partNumber = (partNumberCell.textContent || '').toLowerCase();
-            const ingramSku = (ingramSkuCell.textContent || '').toLowerCase();
-
-            // Match against both Part Number and Ingram SKU
-            const matches = !filterValue || partNumber.includes(filterValue) || ingramSku.includes(filterValue);
-
-            row.style.display = matches ? '' : 'none';
-            if (matches) visibleCount++;
-        }
-    });
-
-    // Update filtered count display
-    const filteredCountEl = document.getElementById('filteredCount');
-    if (filterValue) {
-        filteredCountEl.textContent = `(showing ${visibleCount} of ${rows.length})`;
-    } else {
-        filteredCountEl.textContent = '';
-    }
 }
 
 function renderPagination(pagination) {

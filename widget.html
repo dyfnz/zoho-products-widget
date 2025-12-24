@@ -83,18 +83,12 @@
 
         <!-- Row 3: SKU Search + Actions -->
         <div class="filter-row filter-row-actions" id="skuActionsRow" style="display: none;">
-            <!-- SKU Search -->
+            <!-- SKU Search (partial match - used with Load Products) -->
             <div class="filter-group filter-group-sku">
-                <label>
-                    SKU / Part Number Search
-                    <span class="count" id="skuCount"></span>
-                </label>
+                <label>SKU / Part Number Search</label>
                 <input type="text" id="skuSearch"
-                       placeholder="Type 2+ chars to search SKU..."
+                       placeholder="Enter partial SKU to filter results..."
                        autocomplete="off">
-                <select id="skuSelect" onchange="onSkuSelect()" style="margin-top: 6px; display: none;">
-                    <option value="">Type to search SKUs...</option>
-                </select>
             </div>
 
             <!-- Action Buttons -->
@@ -113,13 +107,6 @@
     <div class="products-section" id="productsSection" style="display: none;">
         <div class="products-header">
             <h2>Products <span id="productCount" style="font-weight: normal; color: #666;">0 products</span></h2>
-            <div class="local-filter">
-                <input type="text" id="localPartFilter"
-                       placeholder="Filter by Part Number..."
-                       oninput="filterProductsLocal()"
-                       style="width: 200px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
-                <span id="filteredCount" style="margin-left: 8px; color: #666; font-size: 12px;"></span>
-            </div>
         </div>
 
         <div class="products-container">
