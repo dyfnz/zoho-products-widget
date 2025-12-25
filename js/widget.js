@@ -35,7 +35,7 @@ const state = {
     manufacturer: '',
     category: '',
     subcategory: '',
-    skuType: '',  // SKU Type: IM::physical, IM::digital, IM::subscription (API param: type)
+    skuType: '',  // SKU Type: IM::physical, IM::digital (API param: type) - subscription requires different API
     skuKeyword: '',
     // Filter loading state (prevent duplicate loads)
     loadingFilters: {
