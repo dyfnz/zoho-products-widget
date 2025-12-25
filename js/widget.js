@@ -1,13 +1,12 @@
 /**
  * Distributor Product Lookup Widget
  * For Zoho CRM Quotes module integration
- * Updated: December 2025 - Flexible filter system
+ * Updated: December 2025 - UI Redesign with Products to Quote Queue
  */
 
 // =====================================================
 // CONFIGURATION
 // =====================================================
-// Supabase Edge Function URL for Ingram Micro API proxy
 const PROXY_BASE = 'https://tydxdpntshbobomemzxj.supabase.co/functions/v1/ingram-proxy';
 const PAGE_SIZE = 50;
 
@@ -16,13 +15,19 @@ const DISTRIBUTORS = {
     ingram: {
         name: 'Ingram Micro',
         apiPrefix: '/api',
-        color: '#0066cc'
+        color: '#0ea5e9'
     },
     tdsynnex: {
         name: 'TD SYNNEX',
         apiPrefix: '/tdsynnex',
-        color: '#00a550',
-        disabled: true // Will be enabled when TD SYNNEX API is integrated
+        color: '#10b981',
+        disabled: true
+    },
+    arrow: {
+        name: 'Arrow',
+        apiPrefix: '/arrow',
+        color: '#f59e0b',
+        disabled: true
     }
 };
 
@@ -31,72 +36,68 @@ const DISTRIBUTORS = {
 // =====================================================
 const state = {
     currentDistributor: 'ingram',
-    // Filters - manufacturer is required, others are optional
+    // Filters
     manufacturer: '',
     category: '',
     subcategory: '',
-    skuType: '',  // SKU Type: IM::physical, IM::digital (API param: type) - subscription requires different API
+    skuType: '',
     skuKeyword: '',
-    // Filter loading state (prevent duplicate loads)
+    // Filter loading state
     loadingFilters: {
         category: false,
         subcategory: false
     },
-    // Filter loaded state (don't reload if already loaded with same params)
     filterParams: {
         category: '',
         subcategory: ''
     },
     // Pagination and products
     currentPage: 1,
-    selectedProducts: new Map(), // Map of partNumber -> product
+    selectedProducts: new Map(), // Current page selections
+    queuedProducts: [], // Persistent queue across searches (array for ordering)
     isAuthenticated: false,
-    pendingResponseId: null, // For NotifyAndWait response
+    pendingResponseId: null,
     parentContext: null,
-    currentProducts: [], // Products currently displayed
-    pricingData: {} // Cached pricing data by ingramPartNumber
+    currentProducts: [],
+    pricingData: {}
 };
 
 let searchTimeout = null;
+let draggedItem = null;
 
 // =====================================================
 // ZOHO SDK INITIALIZATION
 // =====================================================
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('Widget DOM loaded, initializing Zoho SDK...');
+    console.log('Widget DOM loaded, initializing...');
     initZohoSDK();
     initEventListeners();
+    initDragAndDrop();
     checkProxyStatus();
+    updateQueueUI();
 });
 
 function initZohoSDK() {
-    // Check if ZOHO SDK is available
     if (typeof ZOHO === 'undefined') {
         console.warn('ZOHO SDK not loaded. Running in standalone mode.');
         showStatus('Running in standalone mode (Zoho SDK not available)', 'info');
         return;
     }
 
-    // Initialize the embedded app
     ZOHO.embeddedApp.init();
     console.log('ZOHO.embeddedApp.init() called');
 
-    // Note: Using openPopup with width/height parameters instead of Resize()
-    // ZOHO.CRM.UI.Resize() was causing issues with popup context
-
-    // Handle PageLoad event - receives initial context
     ZOHO.embeddedApp.on("PageLoad", function(data) {
         console.log('PageLoad event received:', data);
         state.parentContext = data;
         showStatus('Widget loaded. Select a manufacturer to begin.', 'info');
     });
 
-    // Handle NotifyAndWait event - Client Script is waiting for response
     ZOHO.embeddedApp.on("NotifyAndWait", function(data) {
         console.log('NotifyAndWait event received:', data);
         state.pendingResponseId = data.id;
         state.parentContext = data.data || {};
-        showStatus('Ready to search. Select products and click "Add Selected".', 'info');
+        showStatus('Ready to search. Select products and click "Add to Queue".', 'info');
     });
 }
 
@@ -104,13 +105,11 @@ function initZohoSDK() {
 // EVENT LISTENERS
 // =====================================================
 function initEventListeners() {
-    // Manufacturer search with debounce
     const mfrSearch = document.getElementById('manufacturerSearch');
     if (mfrSearch) {
         mfrSearch.addEventListener('input', debounceManufacturerSearch);
     }
 
-    // SKU search - capture value for use with Load Products button
     const skuSearch = document.getElementById('skuSearch');
     if (skuSearch) {
         skuSearch.addEventListener('input', () => {
@@ -118,11 +117,92 @@ function initEventListeners() {
         });
     }
 
-    // Select all checkbox
     const selectAll = document.getElementById('selectAll');
     if (selectAll) {
         selectAll.addEventListener('change', toggleSelectAll);
     }
+}
+
+// =====================================================
+// DRAG AND DROP FOR QUEUE
+// =====================================================
+function initDragAndDrop() {
+    const queueItems = document.getElementById('queueItems');
+    if (!queueItems) return;
+
+    queueItems.addEventListener('dragstart', handleDragStart);
+    queueItems.addEventListener('dragend', handleDragEnd);
+    queueItems.addEventListener('dragover', handleDragOver);
+    queueItems.addEventListener('drop', handleDrop);
+}
+
+function handleDragStart(e) {
+    if (!e.target.classList.contains('queue-item')) return;
+
+    draggedItem = e.target;
+    e.target.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', e.target.dataset.partNumber);
+}
+
+function handleDragEnd(e) {
+    if (draggedItem) {
+        draggedItem.classList.remove('dragging');
+        draggedItem = null;
+    }
+    document.querySelectorAll('.queue-item').forEach(item => {
+        item.classList.remove('drag-over');
+    });
+}
+
+function handleDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    const afterElement = getDragAfterElement(e.clientY);
+    const queueItems = document.getElementById('queueItems');
+
+    if (draggedItem) {
+        if (afterElement == null) {
+            queueItems.appendChild(draggedItem);
+        } else {
+            queueItems.insertBefore(draggedItem, afterElement);
+        }
+    }
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+
+    // Reorder state.queuedProducts based on new DOM order
+    const newOrder = [];
+    document.querySelectorAll('.queue-item').forEach(item => {
+        const partNumber = item.dataset.partNumber;
+        const product = state.queuedProducts.find(p =>
+            (p.ingramPartNumber || p.vendorPartNumber) === partNumber
+        );
+        if (product) {
+            newOrder.push(product);
+        }
+    });
+
+    state.queuedProducts = newOrder;
+    console.log('[Queue] Reordered:', state.queuedProducts.map(p => p.vendorPartNumber));
+}
+
+function getDragAfterElement(y) {
+    const draggableElements = [...document.querySelectorAll('.queue-item:not(.dragging)')];
+
+    return draggableElements.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+
+        if (offset < 0 && offset > closest.offset) {
+            return { offset: offset, element: child };
+        } else {
+            return closest;
+        }
+    }, { offset: Number.NEGATIVE_INFINITY }).element;
 }
 
 // =====================================================
@@ -136,12 +216,10 @@ function selectDistributor(distributor) {
 
     state.currentDistributor = distributor;
 
-    // Update button states
-    document.querySelectorAll('.distributor-btn').forEach(btn => {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.distributor === distributor);
     });
 
-    // Reset filters
     resetFilters();
     showStatus(`Switched to ${DISTRIBUTORS[distributor].name}. Search for a manufacturer.`, 'info');
 }
@@ -166,12 +244,12 @@ async function checkProxyStatus() {
             await authenticate();
         } else {
             statusText.textContent = 'Not configured';
-            showStatus('Proxy server not configured. Check .env.local credentials.', 'error');
+            showStatus('Proxy server not configured. Check credentials.', 'error');
         }
     } catch (error) {
         indicator.classList.remove('connected');
-        statusText.textContent = 'Proxy offline';
-        showStatus('Start proxy server: node ingram-proxy-server.js', 'error');
+        statusText.textContent = 'Offline';
+        showStatus('Cannot connect to proxy server.', 'error');
     }
 }
 
@@ -192,7 +270,7 @@ async function authenticate() {
 }
 
 // =====================================================
-// MANUFACTURER SEARCH (Type-ahead)
+// MANUFACTURER SEARCH
 // =====================================================
 function debounceManufacturerSearch() {
     clearTimeout(searchTimeout);
@@ -245,37 +323,31 @@ async function onManufacturerSelect() {
     const select = document.getElementById('manufacturerSelect');
     state.manufacturer = select.value;
 
-    // Reset all optional filters
     resetOptionalFilters();
     resetProducts();
 
     if (!state.manufacturer) {
-        // Hide optional filter rows
         document.getElementById('optionalFiltersRow').style.display = 'none';
         document.getElementById('skuActionsRow').style.display = 'none';
         return;
     }
 
-    // Show optional filter rows
     document.getElementById('optionalFiltersRow').style.display = 'flex';
     document.getElementById('skuActionsRow').style.display = 'flex';
 
     showStatus(`Manufacturer: ${state.manufacturer}. Loading categories...`, 'loading');
 
-    // Pre-populate Category dropdown for this manufacturer
     await loadFilterOptions('category');
 
     showStatus(`Manufacturer: ${state.manufacturer}. Use filters below or click Load Products.`, 'success');
 }
 
 // =====================================================
-// FLEXIBLE FILTER LOADING (on-demand)
+// FILTER LOADING
 // =====================================================
 async function loadFilterOptions(filterType) {
-    // Build current filter params string for cache check
     const currentParams = `${state.manufacturer}|${state.category}|${state.subcategory}|${state.skuType}`;
 
-    // Skip if already loading or already loaded with same params
     if (state.loadingFilters[filterType]) return;
     if (state.filterParams[filterType] === currentParams) return;
 
@@ -304,12 +376,10 @@ async function loadFilterOptions(filterType) {
             break;
 
         default:
-            // SKU Type has fixed options (no API call needed)
             state.loadingFilters[filterType] = false;
             return;
     }
 
-    // Show loading state
     const currentValue = selectEl.value;
     selectEl.innerHTML = '<option value="">Loading...</option>';
 
@@ -329,7 +399,6 @@ async function loadFilterOptions(filterType) {
             });
             countEl.textContent = `(${items.length})`;
 
-            // Restore previous selection if still valid
             if (currentValue && items.includes(currentValue)) {
                 selectEl.value = currentValue;
             }
@@ -337,7 +406,6 @@ async function loadFilterOptions(filterType) {
             countEl.textContent = '(0)';
         }
 
-        // Cache the params used
         state.filterParams[filterType] = currentParams;
 
     } catch (error) {
@@ -348,7 +416,6 @@ async function loadFilterOptions(filterType) {
     state.loadingFilters[filterType] = false;
 }
 
-// Format SKU type for display (type field from Ingram - IM::Physical, etc.)
 function formatSKUType(type) {
     switch (type) {
         case 'IM::physical':
@@ -363,16 +430,11 @@ function formatSKUType(type) {
         case 'IM::Subscription':
         case 'Subscription':
             return 'Subscription';
-        case 'IM::any':
-        case 'IM::Any':
-        case 'Any':
-            return 'Any';
         default:
             return type || '-';
     }
 }
 
-// Handle filter selection change
 async function onFilterChange(filterType) {
     const selectEl = document.getElementById(
         filterType === 'category' ? 'categorySelect' :
@@ -380,25 +442,20 @@ async function onFilterChange(filterType) {
         'skuTypeSelect'
     );
 
-    // Update state
     state[filterType] = selectEl.value;
 
-    // Invalidate other filter caches (they may need to reload with new params)
     if (filterType !== 'category') state.filterParams.category = '';
     if (filterType !== 'subcategory') state.filterParams.subcategory = '';
 
-    // Reset products when filters change
     resetProducts();
 
-    // Pre-populate dependent dropdowns
     if (filterType === 'category' && state.category) {
-        // When category is selected, pre-load subcategories
         await loadFilterOptions('subcategory');
     }
 }
 
 // =====================================================
-// PRODUCTS LOADING (with all flexible filters + pricing in one call)
+// PRODUCTS LOADING
 // =====================================================
 async function loadProducts(page = 1) {
     if (!state.manufacturer) {
@@ -412,7 +469,6 @@ async function loadProducts(page = 1) {
     showStatus('Loading products with pricing...', 'loading');
 
     try {
-        // Use productsWithPricing for faster MSRP display (single call instead of two)
         let url = `${PROXY_BASE}?action=productsWithPricing&vendor=${encodeURIComponent(state.manufacturer)}&page=${page}`;
         if (state.category) url += `&category=${encodeURIComponent(state.category)}`;
         if (state.subcategory) url += `&subCategory=${encodeURIComponent(state.subcategory)}`;
@@ -425,9 +481,8 @@ async function loadProducts(page = 1) {
         const data = await response.json();
 
         if (data.products && data.products.length > 0) {
-            // Products already include pricingData from the combined endpoint
             displayProductsWithPricing(data.products, data.pagination);
-            showStatus('', ''); // Clear status
+            showStatus('', '');
         } else {
             document.getElementById('productsBody').innerHTML =
                 '<tr><td colspan="7" class="no-results">No products found</td></tr>';
@@ -440,123 +495,66 @@ async function loadProducts(page = 1) {
     }
 }
 
-// Display products with pre-fetched pricing (faster than separate call)
 function displayProductsWithPricing(products, pagination) {
     const tbody = document.getElementById('productsBody');
     tbody.innerHTML = '';
 
-    // Sort products by Part Number (vendorPartNumber) ascending
     const sortedProducts = [...products].sort((a, b) => {
         const partA = (a.vendorPartNumber || '').toLowerCase();
         const partB = (b.vendorPartNumber || '').toLowerCase();
         return partA.localeCompare(partB, undefined, { numeric: true, sensitivity: 'base' });
     });
 
-    // Store sorted products for later use
     state.currentProducts = sortedProducts;
     state.pricingData = {};
 
     sortedProducts.forEach((product, index) => {
         const partNumber = product.ingramPartNumber || product.vendorPartNumber;
         const isSelected = state.selectedProducts.has(partNumber);
+        const isQueued = state.queuedProducts.some(p =>
+            (p.ingramPartNumber || p.vendorPartNumber) === partNumber
+        );
 
-        // Extract pricing from pre-fetched data
         const pricingData = product.pricingData;
         const msrp = pricingData?.pricing?.retailPrice;
-        const msrpDisplay = msrp ? `<span class="price-available">$${msrp.toFixed(2)}</span>` : '<span class="price-unavailable">-</span>';
+        const msrpDisplay = msrp
+            ? `<span class="price-available">$${msrp.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`
+            : '<span class="price-unavailable">-</span>';
 
-        // Cache pricing data
         if (pricingData && product.ingramPartNumber) {
             state.pricingData[product.ingramPartNumber] = pricingData;
         }
 
         const tr = document.createElement('tr');
         tr.className = isSelected ? 'selected' : '';
+        if (isQueued) tr.classList.add('queued');
         tr.id = `product-row-${index}`;
         tr.innerHTML = `
-            <td>
+            <td class="col-checkbox">
                 <input type="checkbox"
                        onchange="toggleProduct('${partNumber}', this.checked)"
-                       ${isSelected ? 'checked' : ''}>
+                       ${isSelected ? 'checked' : ''}
+                       ${isQueued ? 'disabled title="Already in queue"' : ''}>
             </td>
-            <td><strong>${product.vendorPartNumber || '-'}</strong></td>
-            <td>${(product.description || '-').substring(0, 40)}${(product.description || '').length > 40 ? '...' : ''}</td>
-            <td>${product.vendorName || state.manufacturer}</td>
-            <td>${product.ingramPartNumber || '-'}</td>
-            <td class="price">${msrpDisplay}</td>
-            <td>
-                <span class="info-icon" onclick="showProductDetails(${index})" title="Show product details">i</span>
+            <td class="col-part"><strong>${product.vendorPartNumber || '-'}</strong></td>
+            <td class="col-desc">${(product.description || '-').substring(0, 40)}${(product.description || '').length > 40 ? '...' : ''}</td>
+            <td class="col-mfr">${product.vendorName || state.manufacturer}</td>
+            <td class="col-sku">${product.ingramPartNumber || '-'}</td>
+            <td class="col-price">${msrpDisplay}</td>
+            <td class="col-action">
+                <button class="info-btn" onclick="showProductDetails(${index})" title="View details">i</button>
             </td>
         `;
         tbody.appendChild(tr);
 
-        // Store product data for later use
         tr.dataset.product = JSON.stringify(product);
     });
 
-    // Update product count
     document.getElementById('productCount').textContent =
         `${pagination.totalRecords.toLocaleString()} products`;
 
-    // Update pagination
     renderPagination(pagination);
     updateSelectedCount();
-
-    // No need to call fetchBatchPricing - pricing already included!
-}
-
-function displayProducts(products, pagination) {
-    const tbody = document.getElementById('productsBody');
-    tbody.innerHTML = '';
-
-    // Sort products by Part Number (vendorPartNumber) ascending
-    const sortedProducts = [...products].sort((a, b) => {
-        const partA = (a.vendorPartNumber || '').toLowerCase();
-        const partB = (b.vendorPartNumber || '').toLowerCase();
-        return partA.localeCompare(partB, undefined, { numeric: true, sensitivity: 'base' });
-    });
-
-    // Store sorted products for batch pricing lookup
-    state.currentProducts = sortedProducts;
-
-    sortedProducts.forEach((product, index) => {
-        const partNumber = product.ingramPartNumber || product.vendorPartNumber;
-        const isSelected = state.selectedProducts.has(partNumber);
-
-        const tr = document.createElement('tr');
-        tr.className = isSelected ? 'selected' : '';
-        tr.id = `product-row-${index}`;
-        tr.innerHTML = `
-            <td>
-                <input type="checkbox"
-                       onchange="toggleProduct('${partNumber}', this.checked)"
-                       ${isSelected ? 'checked' : ''}>
-            </td>
-            <td><strong>${product.vendorPartNumber || '-'}</strong></td>
-            <td>${(product.description || '-').substring(0, 40)}${(product.description || '').length > 40 ? '...' : ''}</td>
-            <td>${product.vendorName || state.manufacturer}</td>
-            <td>${product.ingramPartNumber || '-'}</td>
-            <td class="price" id="msrp-${index}"><span class="price-loading">...</span></td>
-            <td>
-                <span class="info-icon" onclick="showProductDetails(${index})" title="Show product details">i</span>
-            </td>
-        `;
-        tbody.appendChild(tr);
-
-        // Store product data for later use
-        tr.dataset.product = JSON.stringify(product);
-    });
-
-    // Update product count
-    document.getElementById('productCount').textContent =
-        `${pagination.totalRecords.toLocaleString()} products`;
-
-    // Update pagination
-    renderPagination(pagination);
-    updateSelectedCount();
-
-    // Fetch batch pricing after displaying products
-    fetchBatchPricing(sortedProducts);
 }
 
 function renderPagination(pagination) {
@@ -569,12 +567,12 @@ function renderPagination(pagination) {
 
     paginationDiv.innerHTML = `
         <button onclick="loadProducts(${pagination.page - 1})"
-                ${pagination.page === 1 ? 'disabled' : ''} class="small">
+                ${pagination.page === 1 ? 'disabled' : ''} class="btn-secondary btn-small">
             Previous
         </button>
         <span>Page ${pagination.page} of ${pagination.totalPages}</span>
         <button onclick="loadProducts(${pagination.page + 1})"
-                ${pagination.page >= pagination.totalPages ? 'disabled' : ''} class="small">
+                ${pagination.page >= pagination.totalPages ? 'disabled' : ''} class="btn-secondary btn-small">
             Next
         </button>
     `;
@@ -609,7 +607,7 @@ function toggleProduct(partNumber, isChecked) {
 
 function toggleSelectAll() {
     const selectAllChecked = document.getElementById('selectAll').checked;
-    const checkboxes = document.querySelectorAll('#productsBody input[type="checkbox"]');
+    const checkboxes = document.querySelectorAll('#productsBody input[type="checkbox"]:not(:disabled)');
 
     checkboxes.forEach(cb => {
         cb.checked = selectAllChecked;
@@ -636,79 +634,237 @@ function toggleSelectAll() {
 function updateSelectedCount() {
     const count = state.selectedProducts.size;
     document.getElementById('selectedCount').textContent = count;
-    document.getElementById('addSelectedBtn').disabled = count === 0;
+
+    const addToQueueBtn = document.getElementById('addToQueueBtn');
+    if (addToQueueBtn) {
+        addToQueueBtn.disabled = count === 0;
+    }
 }
 
 // =====================================================
-// BATCH PRICING (Option A)
+// QUEUE MANAGEMENT
 // =====================================================
-async function fetchBatchPricing(products) {
-    // Get Ingram part numbers for batch lookup
-    const partNumbers = products
-        .map(p => p.ingramPartNumber)
-        .filter(pn => pn); // Filter out empty/null values
+function addSelectedToQueue() {
+    const selectedArray = Array.from(state.selectedProducts.values());
 
-    if (partNumbers.length === 0) {
-        console.log('[Pricing] No Ingram part numbers to look up');
+    if (selectedArray.length === 0) {
+        showStatus('No products selected', 'error');
         return;
     }
 
-    console.log(`[Pricing] Fetching prices for ${partNumbers.length} products...`);
+    let addedCount = 0;
+    selectedArray.forEach(product => {
+        const partNumber = product.ingramPartNumber || product.vendorPartNumber;
+        const alreadyQueued = state.queuedProducts.some(p =>
+            (p.ingramPartNumber || p.vendorPartNumber) === partNumber
+        );
+
+        if (!alreadyQueued) {
+            // Enrich product with pricing data if available
+            const pricingData = product.pricingData || state.pricingData?.[product.ingramPartNumber];
+            const enrichedProduct = { ...product, pricingData };
+            state.queuedProducts.push(enrichedProduct);
+            addedCount++;
+        }
+    });
+
+    // Clear current selection
+    state.selectedProducts.clear();
+    updateSelectedCount();
+
+    // Uncheck all checkboxes
+    document.querySelectorAll('#productsBody input[type="checkbox"]').forEach(cb => {
+        cb.checked = false;
+        cb.closest('tr').classList.remove('selected');
+    });
+    document.getElementById('selectAll').checked = false;
+
+    // Refresh product display to show queued items as disabled
+    if (state.currentProducts.length > 0) {
+        displayProductsWithPricing(state.currentProducts, {
+            totalRecords: state.currentProducts.length,
+            page: state.currentPage,
+            totalPages: 1
+        });
+    }
+
+    updateQueueUI();
+
+    if (addedCount > 0) {
+        showStatus(`Added ${addedCount} product(s) to queue`, 'success');
+    } else {
+        showStatus('Products already in queue', 'info');
+    }
+}
+
+function removeFromQueue(partNumber) {
+    state.queuedProducts = state.queuedProducts.filter(p =>
+        (p.ingramPartNumber || p.vendorPartNumber) !== partNumber
+    );
+    updateQueueUI();
+
+    // Re-enable checkbox in products table if visible
+    document.querySelectorAll('#productsBody input[type="checkbox"][disabled]').forEach(cb => {
+        const row = cb.closest('tr');
+        const productData = row.dataset.product;
+        if (productData) {
+            const product = JSON.parse(productData);
+            const pn = product.ingramPartNumber || product.vendorPartNumber;
+            if (pn === partNumber) {
+                cb.disabled = false;
+                cb.title = '';
+                row.classList.remove('queued');
+            }
+        }
+    });
+}
+
+function clearQueue() {
+    state.queuedProducts = [];
+    updateQueueUI();
+
+    // Re-enable all disabled checkboxes
+    document.querySelectorAll('#productsBody input[type="checkbox"][disabled]').forEach(cb => {
+        cb.disabled = false;
+        cb.title = '';
+        cb.closest('tr').classList.remove('queued');
+    });
+
+    showStatus('Queue cleared', 'info');
+}
+
+function updateQueueUI() {
+    const queueCount = state.queuedProducts.length;
+
+    document.getElementById('queueCount').textContent = queueCount;
+    document.getElementById('queueTotalCount').textContent = queueCount;
+
+    const queueEmpty = document.getElementById('queueEmpty');
+    const queueList = document.getElementById('queueList');
+    const queueFooter = document.getElementById('queueFooter');
+    const clearQueueBtn = document.getElementById('clearQueueBtn');
+
+    if (queueCount === 0) {
+        queueEmpty.style.display = 'flex';
+        queueList.style.display = 'none';
+        queueFooter.style.display = 'none';
+        clearQueueBtn.style.display = 'none';
+    } else {
+        queueEmpty.style.display = 'none';
+        queueList.style.display = 'block';
+        queueFooter.style.display = 'block';
+        clearQueueBtn.style.display = 'block';
+
+        renderQueueItems();
+    }
+}
+
+function renderQueueItems() {
+    const queueItems = document.getElementById('queueItems');
+    queueItems.innerHTML = '';
+
+    state.queuedProducts.forEach((product, index) => {
+        const partNumber = product.ingramPartNumber || product.vendorPartNumber;
+        const msrp = product.pricingData?.pricing?.retailPrice || product.retailPrice;
+        const msrpDisplay = msrp
+            ? `$${msrp.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+            : '-';
+
+        const li = document.createElement('li');
+        li.className = 'queue-item';
+        li.draggable = true;
+        li.dataset.partNumber = partNumber;
+        li.dataset.index = index;
+
+        li.innerHTML = `
+            <div class="queue-item-drag">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/>
+                    <circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>
+                </svg>
+            </div>
+            <div class="queue-item-info">
+                <div class="queue-item-part">${product.vendorPartNumber || '-'}</div>
+                <div class="queue-item-desc">${(product.description || '-').substring(0, 35)}${(product.description || '').length > 35 ? '...' : ''}</div>
+                <div class="queue-item-mfr">${product.vendorName || state.manufacturer}</div>
+            </div>
+            <div class="queue-item-price">${msrpDisplay}</div>
+            <button class="queue-item-remove" onclick="removeFromQueue('${partNumber}')" title="Remove from queue">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6 6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        `;
+
+        queueItems.appendChild(li);
+    });
+}
+
+function submitQueue() {
+    if (state.queuedProducts.length === 0) {
+        showStatus('No products in queue', 'error');
+        return;
+    }
+
+    const formattedProducts = state.queuedProducts.map(product => {
+        const pricingData = product.pricingData || state.pricingData?.[product.ingramPartNumber] || {};
+        const msrp = pricingData?.pricing?.retailPrice || product.retailPrice || null;
+
+        return {
+            Product_Code: product.vendorPartNumber || '',
+            Product_Name: product.description || '',
+            Manufacturer: product.vendorName || state.manufacturer,
+            Ingram_Micro_SKU: product.ingramPartNumber || '',
+            MSRP: msrp,
+            Category: product.category || state.category || '',
+            Subcategory: product.subCategory || state.subcategory || '',
+            UPC: pricingData?.upc || product.upcCode || '',
+            Description: product.extraDescription || pricingData?.description || '',
+            Last_Sync_Source: DISTRIBUTORS[state.currentDistributor]?.name || 'Ingram Micro',
+            Quantity: 1
+        };
+    });
+
+    console.log('Sending queued products to parent:', formattedProducts);
+
+    if (typeof $Client !== 'undefined') {
+        $Client.close({
+            products: formattedProducts,
+            distributor: state.currentDistributor
+        });
+    } else {
+        console.log('Standalone mode - would send:', formattedProducts);
+        showStatus(`Queued ${formattedProducts.length} products (standalone mode)`, 'info');
+    }
+}
+
+// =====================================================
+// BATCH PRICING (fallback)
+// =====================================================
+async function fetchBatchPricing(products) {
+    const partNumbers = products
+        .map(p => p.ingramPartNumber)
+        .filter(pn => pn);
+
+    if (partNumbers.length === 0) return;
 
     try {
         const response = await fetch(`${PROXY_BASE}?action=pricing`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                partNumbers: partNumbers,
-                sandbox: false // Use production pricing
-            })
+            body: JSON.stringify({ partNumbers, sandbox: false })
         });
 
         const data = await response.json();
-        console.log('[Pricing] Response:', data);
-
-        // Store pricing data in state for later use
         state.pricingData = {};
 
-        // Map pricing data back to products
         if (Array.isArray(data)) {
             data.forEach(item => {
-                const ingramPn = item.ingramPartNumber;
-                state.pricingData[ingramPn] = item;
-
-                // Find product index and update display
-                const productIndex = products.findIndex(p => p.ingramPartNumber === ingramPn);
-                if (productIndex !== -1) {
-                    const msrpEl = document.getElementById(`msrp-${productIndex}`);
-
-                    if (msrpEl && item.pricing?.retailPrice) {
-                        msrpEl.innerHTML = `<span class="price-available">$${item.pricing.retailPrice.toFixed(2)}</span>`;
-                        // Update the stored product data with pricing
-                        products[productIndex].retailPrice = item.pricing.retailPrice;
-                    } else if (msrpEl) {
-                        msrpEl.innerHTML = '<span class="price-unavailable">-</span>';
-                    }
-
-                    // Update the row's dataset with enriched product
-                    const row = document.getElementById(`product-row-${productIndex}`);
-                    if (row) {
-                        const enrichedProduct = { ...products[productIndex], pricingData: item };
-                        row.dataset.product = JSON.stringify(enrichedProduct);
-                    }
-                }
+                state.pricingData[item.ingramPartNumber] = item;
             });
         }
-
-        console.log(`[Pricing] Updated ${Object.keys(state.pricingData).length} product prices`);
-
     } catch (error) {
         console.error('[Pricing] Error:', error);
-        // Show "-" for all prices on error
-        products.forEach((_, index) => {
-            const msrpEl = document.getElementById(`msrp-${index}`);
-            if (msrpEl) msrpEl.innerHTML = '<span class="price-unavailable">-</span>';
-        });
     }
 }
 
@@ -725,32 +881,22 @@ async function showProductDetails(productIndex) {
     const ingramPn = product.ingramPartNumber;
     console.log(`[Details] Loading details for ${ingramPn}...`);
 
-    // Show the details section
     const detailsSection = document.getElementById('productDetailsSection');
     detailsSection.style.display = 'block';
-
-    // Scroll to details section
     detailsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-    // Get pricing data (from state or fetch fresh)
     let pricingData = state.pricingData?.[ingramPn];
     let productDetails = null;
-    let fullProductData = product;
 
-    // Fetch pricing and product details in parallel
     if (ingramPn) {
         const fetchPromises = [];
 
-        // Fetch pricing if not cached
         if (!pricingData) {
             fetchPromises.push(
                 fetch(`${PROXY_BASE}?action=pricing`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        partNumbers: [ingramPn],
-                        sandbox: false
-                    })
+                    body: JSON.stringify({ partNumbers: [ingramPn], sandbox: false })
                 })
                 .then(res => res.json())
                 .then(data => {
@@ -763,34 +909,28 @@ async function showProductDetails(productIndex) {
             );
         }
 
-        // Always fetch product details to get indicators
         fetchPromises.push(
             fetch(`${PROXY_BASE}?action=productDetails&ingramPartNumber=${encodeURIComponent(ingramPn)}`)
                 .then(res => res.json())
                 .then(data => {
                     if (data && !data.error) {
                         productDetails = data;
-                        console.log('[Details] Got product details with indicators:', data.indicators ? 'yes' : 'no');
                     }
                 })
                 .catch(err => console.error('[Details] Error fetching product details:', err))
         );
 
-        // Wait for all fetches to complete
         await Promise.all(fetchPromises);
     }
 
-    // Merge all data
-    fullProductData = { ...product, pricingData, productDetails };
+    const fullProductData = { ...product, pricingData, productDetails };
 
-    // Determine authorization status (from catalog search or pricing data)
     const isAuthorized = product.authorizedToPurchase === 'true' ||
                          product.authorizedToPurchase === true ||
                          pricingData?.productAuthorized === true;
     const authorizedText = isAuthorized ? 'Yes' : 'No';
     const authorizedClass = isAuthorized ? 'authorized-yes' : 'authorized-no';
 
-    // Set title and subtitle (HEADER - UNCHANGED)
     document.getElementById('detailsTitle').textContent = product.description || 'No Description';
     document.getElementById('detailsSubtitle').innerHTML = `
         <strong>Ingram SKU:</strong> ${ingramPn || 'N/A'} |
@@ -799,7 +939,6 @@ async function showProductDetails(productIndex) {
         <strong>Authorized:</strong> <span class="${authorizedClass}">${authorizedText}</span>
     `;
 
-    // Set long description (extraDescription from catalog or description from pricing)
     const longDesc = product.extraDescription || pricingData?.description || '';
     const longDescEl = document.getElementById('detailsLongDesc');
     if (longDesc) {
@@ -809,11 +948,6 @@ async function showProductDetails(productIndex) {
         longDescEl.style.display = 'none';
     }
 
-    // =========================================================================
-    // EXTENDED DETAILS - Grouped Layout
-    // =========================================================================
-
-    // Helper to render a grid
     const renderGrid = (elementId, fields) => {
         const grid = document.getElementById(elementId);
         if (grid) {
@@ -826,7 +960,6 @@ async function showProductDetails(productIndex) {
         }
     };
 
-    // Helper for Yes/No/- display (handles boolean, string "True"/"False", "true"/"false")
     const yesNo = (val) => {
         if (val === true) return 'Yes';
         if (val === false) return 'No';
@@ -838,13 +971,11 @@ async function showProductDetails(productIndex) {
         return '-';
     };
 
-    // Format currency
     const formatCurrency = (val) => {
         if (val === null || val === undefined) return '-';
-        return `$${Number(val).toFixed(2)}`;
+        return `$${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     };
 
-    // ----- GROUP 1: Product Information -----
     const productInfoFields = [
         { label: 'Product Name', value: product.description || '-' },
         { label: 'Category', value: product.category || state.category || '-' },
@@ -856,11 +987,9 @@ async function showProductDetails(productIndex) {
     ];
     renderGrid('productInfoGrid', productInfoFields);
 
-    // ----- GROUP 2: Pricing -----
     const msrpValue = formatCurrency(pricingData?.pricing?.retailPrice);
     const customerPriceValue = formatCurrency(pricingData?.pricing?.customerPrice);
 
-    // Check for subscription pricing (for cloud/subscription products)
     let subscriptionPriceValue = '-';
     if (pricingData?.subscriptionPrice && Array.isArray(pricingData.subscriptionPrice) && pricingData.subscriptionPrice.length > 0) {
         const subPrice = pricingData.subscriptionPrice[0];
@@ -876,11 +1005,9 @@ async function showProductDetails(productIndex) {
     ];
     renderGrid('pricingGrid', pricingFields);
 
-    // ----- GROUP 3: Discounts (Table - Option B: Show ALL) -----
     const discountsGroup = document.getElementById('discountsGroup');
     const discountsBody = document.getElementById('discountsBody');
 
-    // Extract all discounts from the pricing response
     let allDiscounts = [];
     if (pricingData?.discounts && Array.isArray(pricingData.discounts)) {
         pricingData.discounts.forEach(discountGroup => {
@@ -896,8 +1023,8 @@ async function showProductDetails(productIndex) {
             <tr>
                 <td>${d.discountType || '-'}</td>
                 <td>${d.specialBidNumber || '-'}</td>
-                <td style="text-align: right;">${formatCurrency(d.specialPricingDiscount)}</td>
-                <td style="text-align: right;">${d.specialPricingAvailableQuantity ?? '-'}</td>
+                <td class="text-right">${formatCurrency(d.specialPricingDiscount)}</td>
+                <td class="text-right">${d.specialPricingAvailableQuantity ?? '-'}</td>
                 <td>${d.specialPricingEffectiveDate || '-'}</td>
                 <td>${d.specialPricingExpirationDate || '-'}</td>
             </tr>
@@ -906,19 +1033,16 @@ async function showProductDetails(productIndex) {
         discountsGroup.style.display = 'none';
     }
 
-    // ----- GROUP 4: Availability -----
     const availabilityFields = [
         { label: 'Available Qty', value: pricingData?.availability?.totalAvailability ?? '-' },
         { label: 'In Stock', value: yesNo(pricingData?.availability?.available) }
     ];
     renderGrid('availabilityGrid', availabilityFields);
 
-    // ----- GROUP 5: Product Flags -----
-    // Indicators come from Product Details endpoint (fetched above)
     const indicators = productDetails?.indicators || {};
 
     const flagsFields = [
-        { label: 'Digital Product', value: yesNo(indicators.isDigitalType || product.type === 'IM::Digital' || product.type === 'IM::digital' || product.type === 'Digital') },
+        { label: 'Digital Product', value: yesNo(indicators.isDigitalType || product.type === 'IM::Digital' || product.type === 'IM::digital') },
         { label: 'License Product', value: yesNo(indicators.isLicenseProduct) },
         { label: 'Service SKU', value: yesNo(indicators.isServiceSku) },
         { label: 'Has Bundle', value: yesNo(indicators.hasBundle || pricingData?.bundlePartIndicator) },
@@ -928,9 +1052,6 @@ async function showProductDetails(productIndex) {
     ];
     renderGrid('flagsGrid', flagsFields);
 
-    // =========================================================================
-    // WAREHOUSE AVAILABILITY (Unchanged)
-    // =========================================================================
     const warehouseSection = document.getElementById('warehouseSection');
     const warehouseBody = document.getElementById('warehouseBody');
 
@@ -940,15 +1061,14 @@ async function showProductDetails(productIndex) {
             <tr>
                 <td>${wh.warehouseId}</td>
                 <td>${wh.location || '-'}</td>
-                <td style="text-align: right;">${wh.quantityAvailable ?? 0}</td>
-                <td style="text-align: right;">${wh.quantityBackordered ?? 0}</td>
+                <td class="text-right">${wh.quantityAvailable ?? 0}</td>
+                <td class="text-right">${wh.quantityBackordered ?? 0}</td>
             </tr>
         `).join('');
     } else {
         warehouseSection.style.display = 'none';
     }
 
-    // Show raw API response
     document.getElementById('rawApiResponse').textContent = JSON.stringify(fullProductData, null, 2);
 }
 
@@ -957,77 +1077,24 @@ function hideProductDetails() {
 }
 
 // =====================================================
-// ACTION HANDLERS
+// ACTION HANDLERS (Legacy support)
 // =====================================================
 function addSelectedProducts() {
-    const selectedArray = Array.from(state.selectedProducts.values());
-
-    if (selectedArray.length === 0) {
-        showStatus('No products selected', 'error');
-        return;
-    }
-
-    // Format products for Zoho CRM - matches Deluge function params
-    const formattedProducts = selectedArray.map(product => {
-        // Get pricing data if available
-        const pricingData = product.pricingData || state.pricingData?.[product.ingramPartNumber] || {};
-        const msrp = pricingData?.pricing?.retailPrice || product.retailPrice || null;
-
-        return {
-            // Core fields (used by Deluge function)
-            Product_Code: product.vendorPartNumber || '',
-            Product_Name: product.description || '',
-            Manufacturer: product.vendorName || state.manufacturer,
-
-            // Ingram-specific fields
-            Ingram_Micro_SKU: product.ingramPartNumber || '',
-
-            // Pricing - Use retailPrice (MSRP)
-            MSRP: msrp,
-
-            // Ingram category fields (separate from TD Synnex Category_Level fields)
-            Category: product.category || state.category || '',
-            Subcategory: product.subCategory || state.subcategory || '',
-
-            // Additional fields
-            UPC: pricingData?.upc || product.upcCode || '',
-            Description: product.extraDescription || pricingData?.description || '',
-
-            // Sync tracking - identifies which distributor created/updated this product
-            Last_Sync_Source: DISTRIBUTORS[state.currentDistributor]?.name || 'Ingram Micro',
-
-            // Quantity (default)
-            Quantity: 1
-        };
-    });
-
-    console.log('Sending products to parent:', formattedProducts);
-
-    // Close widget and return data to client script via $Client.close()
-    // This is the correct pattern for ZDK.Client.openPopup()
-    if (typeof $Client !== 'undefined') {
-        $Client.close({
-            products: formattedProducts,
-            distributor: state.currentDistributor
-        });
-    } else {
-        // Standalone mode - just log
-        console.log('Standalone mode - would send:', formattedProducts);
-        showStatus(`Selected ${formattedProducts.length} products (standalone mode)`, 'info');
-    }
+    // Legacy function - now redirects to queue workflow
+    addSelectedToQueue();
 }
 
 function cancelSelection() {
     console.log('Cancel clicked');
 
-    // Close widget and return cancelled status via $Client.close()
     if (typeof $Client !== 'undefined') {
         $Client.close({ cancelled: true, products: [] });
     }
 
-    // Clear selections (for standalone mode)
     state.selectedProducts.clear();
+    state.queuedProducts = [];
     updateSelectedCount();
+    updateQueueUI();
 }
 
 // =====================================================
@@ -1042,7 +1109,6 @@ function resetFilters() {
         '<option value="">Type to search manufacturers...</option>';
     document.getElementById('mfrCount').textContent = '';
 
-    // Hide optional filter rows
     document.getElementById('optionalFiltersRow').style.display = 'none';
     document.getElementById('skuActionsRow').style.display = 'none';
 
@@ -1054,46 +1120,34 @@ function resetFilters() {
 }
 
 function resetOptionalFilters() {
-    // Reset state
     state.category = '';
     state.subcategory = '';
     state.skuType = '';
     state.skuKeyword = '';
 
-    // Reset filter param cache
     state.filterParams.category = '';
     state.filterParams.subcategory = '';
 
-    // Reset Category dropdown
     const catSelect = document.getElementById('categorySelect');
     if (catSelect) {
         catSelect.innerHTML = '<option value="">-- Any --</option>';
         document.getElementById('catCount').textContent = '';
     }
 
-    // Reset Subcategory dropdown
     const subSelect = document.getElementById('subcategorySelect');
     if (subSelect) {
         subSelect.innerHTML = '<option value="">-- Any --</option>';
         document.getElementById('subCatCount').textContent = '';
     }
 
-    // Reset SKU Type dropdown (fixed options, just reset selection)
     const skuTypeSelect = document.getElementById('skuTypeSelect');
     if (skuTypeSelect) {
         skuTypeSelect.value = '';
     }
 
-    // Reset SKU search
     const skuSearch = document.getElementById('skuSearch');
     if (skuSearch) {
         skuSearch.value = '';
-    }
-    const skuSelect = document.getElementById('skuSelect');
-    if (skuSelect) {
-        skuSelect.innerHTML = '<option value="">Type to search SKUs...</option>';
-        skuSelect.style.display = 'none';
-        document.getElementById('skuCount').textContent = '';
     }
 }
 
@@ -1102,21 +1156,29 @@ function resetProducts() {
     document.getElementById('pagination').innerHTML = '';
     document.getElementById('productCount').textContent = '0 products';
     document.getElementById('productDetailsSection').style.display = 'none';
+
+    // Only clear current page selection, NOT the queue
     state.selectedProducts.clear();
     state.currentProducts = [];
     state.pricingData = {};
+
     updateSelectedCount();
+
+    // Reset select all checkbox
+    const selectAll = document.getElementById('selectAll');
+    if (selectAll) selectAll.checked = false;
 }
 
 function showStatus(message, type) {
     const el = document.getElementById('filterStatus');
     if (!el) return;
 
-    el.className = `status ${type} show`;
-    if (type === 'loading') {
-        el.innerHTML = message + ' <span class="loading-spinner"></span>';
+    el.className = `status-bar ${type}`;
+    el.innerHTML = `<span class="status-message">${message}</span>`;
+
+    if (!message) {
+        el.style.display = 'none';
     } else {
-        el.textContent = message;
+        el.style.display = 'flex';
     }
-    if (!message) el.classList.remove('show');
 }

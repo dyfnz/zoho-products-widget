@@ -4,226 +4,338 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Distributor Product Lookup</title>
+    <!-- Google Fonts - Plus Jakarta Sans -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- Zoho CRM Widget SDK -->
     <script src="https://live.zwidgets.com/js-sdk/1.2/ZohoEmbededAppSDK.min.js"></script>
     <!-- Widget Styles -->
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <!-- Distributor Selection -->
-    <div class="distributor-selector">
-        <button class="distributor-btn active" data-distributor="ingram" onclick="selectDistributor('ingram')">
-            Ingram Micro
-        </button>
-        <button class="distributor-btn" data-distributor="tdsynnex" onclick="selectDistributor('tdsynnex')" disabled>
-            TD SYNNEX (Coming Soon)
-        </button>
-    </div>
-
-    <!-- Filter Section -->
-    <div class="filter-section">
-        <div id="filterStatus" class="status info show">Select a manufacturer to begin</div>
-
-        <!-- Row 1: Manufacturer (Required) -->
-        <div class="filter-row">
-            <div class="filter-group filter-group-wide">
-                <label>
-                    <span class="step">1</span>Manufacturer (Required)
-                    <span class="count" id="mfrCount"></span>
-                </label>
-                <input type="text" id="manufacturerSearch"
-                       placeholder="Type 2+ characters to search..."
-                       autocomplete="off">
-                <select id="manufacturerSelect" onchange="onManufacturerSelect()" style="margin-top: 6px;">
-                    <option value="">Type to search manufacturers...</option>
-                </select>
+    <!-- Main Container -->
+    <div class="widget-container">
+        <!-- Header -->
+        <header class="widget-header">
+            <div class="header-left">
+                <img src="img/dyfnz-logo.png" alt="DYFNZ" class="logo">
+                <div class="header-title">
+                    <h1>Distributor Product Search</h1>
+                    <div class="connection-status">
+                        <div class="status-dot" id="statusIndicator"></div>
+                        <span id="statusText">Checking...</span>
+                        <button onclick="authenticate()" id="authButton" class="btn-link">Reconnect</button>
+                    </div>
+                </div>
             </div>
-            <div class="connection-status">
-                <div class="status-indicator" id="statusIndicator"></div>
-                <span id="statusText">Checking...</span>
-                <button onclick="authenticate()" id="authButton" class="small">Reconnect</button>
+            <div class="header-right">
+                <!-- Distributor Tabs -->
+                <div class="distributor-tabs">
+                    <button class="tab-btn active" data-distributor="ingram" onclick="selectDistributor('ingram')">
+                        <span class="tab-icon">IM</span>
+                        Ingram Micro
+                    </button>
+                    <button class="tab-btn" data-distributor="tdsynnex" onclick="selectDistributor('tdsynnex')" disabled>
+                        <span class="tab-icon">TS</span>
+                        TD SYNNEX
+                        <span class="coming-soon">Soon</span>
+                    </button>
+                    <button class="tab-btn" data-distributor="arrow" onclick="selectDistributor('arrow')" disabled>
+                        <span class="tab-icon">AR</span>
+                        Arrow
+                        <span class="coming-soon">Soon</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <div class="main-content">
+            <!-- Left Panel: Search & Products -->
+            <div class="left-panel">
+                <!-- Status Message -->
+                <div id="filterStatus" class="status-bar info">
+                    <span class="status-icon"></span>
+                    <span class="status-message">Select a manufacturer to begin</span>
+                </div>
+
+                <!-- Search Filters -->
+                <div class="search-panel">
+                    <!-- Row 1: Manufacturer -->
+                    <div class="filter-row">
+                        <div class="filter-field manufacturer-field">
+                            <label>
+                                <span class="field-number">1</span>
+                                Manufacturer
+                                <span class="field-hint">(Required)</span>
+                                <span class="count-badge" id="mfrCount"></span>
+                            </label>
+                            <div class="input-group">
+                                <input type="text" id="manufacturerSearch"
+                                       placeholder="Type 2+ characters to search..."
+                                       autocomplete="off">
+                                <select id="manufacturerSelect" onchange="onManufacturerSelect()">
+                                    <option value="">Type to search manufacturers...</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Row 2: Optional Filters -->
+                    <div class="filter-row filters-optional" id="optionalFiltersRow" style="display: none;">
+                        <div class="filter-field">
+                            <label>
+                                Category
+                                <span class="count-badge" id="catCount"></span>
+                            </label>
+                            <select id="categorySelect" onchange="onFilterChange('category')" onfocus="loadFilterOptions('category')">
+                                <option value="">-- Any --</option>
+                            </select>
+                        </div>
+                        <div class="filter-field">
+                            <label>
+                                Subcategory
+                                <span class="count-badge" id="subCatCount"></span>
+                            </label>
+                            <select id="subcategorySelect" onchange="onFilterChange('subcategory')" onfocus="loadFilterOptions('subcategory')">
+                                <option value="">-- Any --</option>
+                            </select>
+                        </div>
+                        <div class="filter-field filter-narrow">
+                            <label>SKU Type</label>
+                            <select id="skuTypeSelect" onchange="onFilterChange('skuType')">
+                                <option value="">-- Any --</option>
+                                <option value="IM::physical">Physical</option>
+                                <option value="IM::digital">Digital</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Row 3: SKU Search + Actions -->
+                    <div class="filter-row filter-actions" id="skuActionsRow" style="display: none;">
+                        <div class="filter-field sku-field">
+                            <label>SKU / Part Number</label>
+                            <input type="text" id="skuSearch"
+                                   placeholder="Enter partial SKU to filter..."
+                                   autocomplete="off">
+                        </div>
+                        <div class="action-buttons-inline">
+                            <button onclick="loadProducts(1)" id="loadProductsBtn" class="btn-primary">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                                </svg>
+                                Load Products
+                            </button>
+                            <button onclick="resetFilters()" class="btn-secondary">Reset</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Products Table -->
+                <div class="products-panel" id="productsSection" style="display: none;">
+                    <div class="panel-header">
+                        <h2>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                            </svg>
+                            Products
+                            <span class="product-count" id="productCount">0 products</span>
+                        </h2>
+                        <button onclick="addSelectedToQueue()" class="btn-accent btn-small" id="addToQueueBtn" disabled>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 5v14M5 12h14"/>
+                            </svg>
+                            Add to Queue
+                        </button>
+                    </div>
+
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th class="col-checkbox">
+                                        <input type="checkbox" id="selectAll" title="Select all">
+                                    </th>
+                                    <th class="col-part">Part Number</th>
+                                    <th class="col-desc">Description</th>
+                                    <th class="col-mfr">Manufacturer</th>
+                                    <th class="col-sku">Ingram SKU</th>
+                                    <th class="col-price">MSRP</th>
+                                    <th class="col-action"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="productsBody"></tbody>
+                        </table>
+                    </div>
+
+                    <div class="pagination" id="pagination"></div>
+                </div>
+
+                <!-- Product Details Panel -->
+                <div class="details-panel" id="productDetailsSection" style="display: none;">
+                    <div class="panel-header">
+                        <h2>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>
+                            </svg>
+                            Product Details
+                        </h2>
+                        <button onclick="hideProductDetails()" class="btn-ghost btn-small">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M18 6 6 18M6 6l12 12"/>
+                            </svg>
+                            Close
+                        </button>
+                    </div>
+
+                    <div class="details-content">
+                        <div class="product-hero">
+                            <h3 id="detailsTitle">Product Name</h3>
+                            <div class="product-meta" id="detailsSubtitle"></div>
+                        </div>
+                        <div class="product-description" id="detailsLongDesc"></div>
+
+                        <!-- Extended Details -->
+                        <div class="details-section">
+                            <h4>Extended Details</h4>
+
+                            <div class="details-grid">
+                                <!-- Product Information -->
+                                <div class="details-card">
+                                    <h5>Product Information</h5>
+                                    <div class="field-grid" id="productInfoGrid"></div>
+                                </div>
+
+                                <!-- Pricing -->
+                                <div class="details-card">
+                                    <h5>Pricing</h5>
+                                    <div class="field-grid" id="pricingGrid"></div>
+                                </div>
+
+                                <!-- Availability -->
+                                <div class="details-card">
+                                    <h5>Availability</h5>
+                                    <div class="field-grid" id="availabilityGrid"></div>
+                                </div>
+
+                                <!-- Product Flags -->
+                                <div class="details-card">
+                                    <h5>Product Flags</h5>
+                                    <div class="field-grid" id="flagsGrid"></div>
+                                </div>
+                            </div>
+
+                            <!-- Discounts Table -->
+                            <div class="details-card full-width" id="discountsGroup" style="display: none;">
+                                <h5>Available Discounts</h5>
+                                <table class="mini-table" id="discountsTable">
+                                    <thead>
+                                        <tr>
+                                            <th>Type</th>
+                                            <th>Bid Number</th>
+                                            <th class="text-right">Discount</th>
+                                            <th class="text-right">Qty Available</th>
+                                            <th>Effective</th>
+                                            <th>Expires</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="discountsBody"></tbody>
+                                </table>
+                            </div>
+
+                            <!-- Warehouse Availability -->
+                            <div class="details-card full-width" id="warehouseSection" style="display: none;">
+                                <h5>Warehouse Availability</h5>
+                                <table class="mini-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Warehouse</th>
+                                            <th>Location</th>
+                                            <th class="text-right">Available</th>
+                                            <th class="text-right">Backordered</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="warehouseBody"></tbody>
+                                </table>
+                            </div>
+
+                            <!-- Raw API Response (Collapsible) -->
+                            <details class="raw-response">
+                                <summary>Raw API Response</summary>
+                                <pre id="rawApiResponse"></pre>
+                            </details>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Products to Quote Queue -->
+            <div class="right-panel" id="quoteQueuePanel">
+                <div class="queue-panel">
+                    <div class="panel-header queue-header">
+                        <h2>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+                                <rect x="9" y="3" width="6" height="4" rx="1"/>
+                            </svg>
+                            Products to Quote
+                            <span class="queue-count" id="queueCount">0</span>
+                        </h2>
+                        <button onclick="clearQueue()" class="btn-ghost btn-small" id="clearQueueBtn" style="display: none;">
+                            Clear All
+                        </button>
+                    </div>
+
+                    <div class="queue-empty" id="queueEmpty">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+                            <rect x="9" y="3" width="6" height="4" rx="1"/>
+                            <path d="M12 11v6M9 14h6"/>
+                        </svg>
+                        <p>No products queued</p>
+                        <span>Select products from search results and click "Add to Queue"</span>
+                    </div>
+
+                    <div class="queue-list" id="queueList" style="display: none;">
+                        <div class="queue-hint">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/>
+                            </svg>
+                            Drag to reorder
+                        </div>
+                        <ul id="queueItems"></ul>
+                    </div>
+
+                    <div class="queue-footer" id="queueFooter" style="display: none;">
+                        <div class="queue-total">
+                            <span>Total Items:</span>
+                            <strong id="queueTotalCount">0</strong>
+                        </div>
+                        <button onclick="submitQueue()" class="btn-success btn-large" id="submitQueueBtn">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M5 12h14M12 5l7 7-7 7"/>
+                            </svg>
+                            Add to Quote
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- Row 2: Optional Filters (any combination) -->
-        <div class="filter-row" id="optionalFiltersRow" style="display: none;">
-            <!-- Category -->
-            <div class="filter-group">
-                <label>
-                    Category
-                    <span class="count" id="catCount"></span>
-                </label>
-                <select id="categorySelect" onchange="onFilterChange('category')" onfocus="loadFilterOptions('category')">
-                    <option value="">-- Any --</option>
-                </select>
+        <!-- Footer Action Bar -->
+        <footer class="action-footer">
+            <div class="footer-left">
+                <span class="selection-info">
+                    <strong id="selectedCount">0</strong> product(s) selected from search
+                </span>
             </div>
-
-            <!-- Subcategory -->
-            <div class="filter-group">
-                <label>
-                    Subcategory
-                    <span class="count" id="subCatCount"></span>
-                </label>
-                <select id="subcategorySelect" onchange="onFilterChange('subcategory')" onfocus="loadFilterOptions('subcategory')">
-                    <option value="">-- Any --</option>
-                </select>
-            </div>
-
-            <!-- SKU Type (Physical, Digital) -->
-            <div class="filter-group">
-                <label>SKU Type</label>
-                <select id="skuTypeSelect" onchange="onFilterChange('skuType')">
-                    <option value="">-- Any --</option>
-                    <option value="IM::physical">Physical</option>
-                    <option value="IM::digital">Digital</option>
-                </select>
-            </div>
-        </div>
-
-        <!-- Row 3: SKU Search + Actions -->
-        <div class="filter-row filter-row-actions" id="skuActionsRow" style="display: none;">
-            <!-- SKU Search (partial match - used with Load Products) -->
-            <div class="filter-group filter-group-sku">
-                <label>SKU / Part Number Search</label>
-                <input type="text" id="skuSearch"
-                       placeholder="Enter partial SKU to filter results..."
-                       autocomplete="off">
-            </div>
-
-            <!-- Action Buttons -->
-            <div class="action-left">
-                <button onclick="loadProducts(1)" id="loadProductsBtn">
-                    Load Products
+            <div class="footer-right">
+                <button onclick="cancelSelection()" class="btn-secondary">
+                    Cancel
                 </button>
-                <button onclick="resetFilters()" class="secondary">
-                    Reset
-                </button>
             </div>
-        </div>
-    </div>
-
-    <!-- Products Section -->
-    <div class="products-section" id="productsSection" style="display: none;">
-        <div class="products-header">
-            <h2>Products <span id="productCount" style="font-weight: normal; color: #666;">0 products</span></h2>
-        </div>
-
-        <div class="products-container">
-            <table class="products-table">
-                <thead>
-                    <tr>
-                        <th style="width: 40px;">
-                            <input type="checkbox" id="selectAll" title="Select all">
-                        </th>
-                        <th>Part Number</th>
-                        <th>Description</th>
-                        <th>Manufacturer</th>
-                        <th>Ingram SKU</th>
-                        <th style="text-align: right;">MSRP</th>
-                        <th style="width: 30px;"></th>
-                    </tr>
-                </thead>
-                <tbody id="productsBody"></tbody>
-            </table>
-        </div>
-
-        <div class="pagination" id="pagination"></div>
-    </div>
-
-    <!-- Product Details Section -->
-    <div class="product-details-section" id="productDetailsSection" style="display: none;">
-        <div class="details-header">
-            <h3>Product Details</h3>
-            <button onclick="hideProductDetails()" class="small secondary">Close</button>
-        </div>
-
-        <div class="details-title" id="detailsTitle"></div>
-        <div class="details-subtitle" id="detailsSubtitle"></div>
-        <div class="details-long-desc" id="detailsLongDesc"></div>
-
-        <!-- Extended Details -->
-        <div class="details-subsection">
-            <h4>Extended Details</h4>
-
-            <!-- Product Information Group -->
-            <div class="details-group">
-                <h5>Product Information</h5>
-                <div class="field-mapping-grid" id="productInfoGrid"></div>
-            </div>
-
-            <!-- Pricing Group -->
-            <div class="details-group">
-                <h5>Pricing</h5>
-                <div class="field-mapping-grid" id="pricingGrid"></div>
-            </div>
-
-            <!-- Discounts Group (may have multiple) -->
-            <div class="details-group" id="discountsGroup" style="display: none;">
-                <h5>Available Discounts</h5>
-                <table class="discounts-table" id="discountsTable">
-                    <thead>
-                        <tr>
-                            <th>Type</th>
-                            <th>Bid Number</th>
-                            <th style="text-align: right;">Discount</th>
-                            <th style="text-align: right;">Qty Available</th>
-                            <th>Effective</th>
-                            <th>Expires</th>
-                        </tr>
-                    </thead>
-                    <tbody id="discountsBody"></tbody>
-                </table>
-            </div>
-
-            <!-- Availability Group -->
-            <div class="details-group">
-                <h5>Availability</h5>
-                <div class="field-mapping-grid" id="availabilityGrid"></div>
-            </div>
-
-            <!-- Product Flags Group -->
-            <div class="details-group">
-                <h5>Product Flags</h5>
-                <div class="field-mapping-grid" id="flagsGrid"></div>
-            </div>
-        </div>
-
-        <!-- Warehouse Availability -->
-        <div class="details-subsection" id="warehouseSection" style="display: none;">
-            <h4>Warehouse Availability</h4>
-            <table class="warehouse-table">
-                <thead>
-                    <tr>
-                        <th>Warehouse</th>
-                        <th>Location</th>
-                        <th style="text-align: right;">Available</th>
-                        <th style="text-align: right;">Backordered</th>
-                    </tr>
-                </thead>
-                <tbody id="warehouseBody"></tbody>
-            </table>
-        </div>
-
-        <!-- Raw API Response -->
-        <div class="details-subsection">
-            <h4>Raw API Response</h4>
-            <pre class="raw-json" id="rawApiResponse"></pre>
-        </div>
-    </div>
-
-    <!-- Action Bar -->
-    <div class="action-bar">
-        <div class="selected-count">
-            <strong id="selectedCount">0</strong> product(s) selected
-        </div>
-        <div class="action-buttons">
-            <button onclick="cancelSelection()" class="secondary">
-                Cancel
-            </button>
-            <button onclick="addSelectedProducts()" id="addSelectedBtn" disabled>
-                Add Selected to Quote
-            </button>
-        </div>
+        </footer>
     </div>
 
     <!-- Widget JavaScript -->
