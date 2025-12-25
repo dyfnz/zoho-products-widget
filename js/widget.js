@@ -1,7 +1,7 @@
 /**
  * Distributor Product Lookup Widget
  * For Zoho CRM Quotes module integration
- * Updated: December 2025 - UI Redesign with Products to Quote Queue
+ * Updated: December 2025 - UI Redesign v2
  */
 
 // =====================================================
@@ -53,17 +53,24 @@ const state = {
     },
     // Pagination and products
     currentPage: 1,
-    selectedProducts: new Map(), // Current page selections
-    queuedProducts: [], // Persistent queue across searches (array for ordering)
+    totalRecords: 0,
+    totalPages: 1,
+    selectedProducts: new Map(),
+    queuedProducts: [],
+    groupByManufacturer: false,
     isAuthenticated: false,
     pendingResponseId: null,
     parentContext: null,
     currentProducts: [],
-    pricingData: {}
+    pricingData: {},
+    rawApiVisible: false
 };
 
 let searchTimeout = null;
 let draggedItem = null;
+let resizeStartY = 0;
+let resizeStartHeight = 0;
+let isResizing = false;
 
 // =====================================================
 // ZOHO SDK INITIALIZATION
@@ -73,6 +80,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initZohoSDK();
     initEventListeners();
     initDragAndDrop();
+    initResize();
     checkProxyStatus();
     updateQueueUI();
 });
@@ -121,6 +129,41 @@ function initEventListeners() {
     if (selectAll) {
         selectAll.addEventListener('change', toggleSelectAll);
     }
+}
+
+// =====================================================
+// RESIZE FUNCTIONALITY
+// =====================================================
+function initResize() {
+    const resizeHandle = document.getElementById('resizeHandle');
+    const tableContainer = document.querySelector('.table-container');
+
+    if (!resizeHandle || !tableContainer) return;
+
+    resizeHandle.addEventListener('mousedown', (e) => {
+        isResizing = true;
+        resizeStartY = e.clientY;
+        resizeStartHeight = tableContainer.offsetHeight;
+        document.body.style.cursor = 'ns-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+
+        const deltaY = e.clientY - resizeStartY;
+        const newHeight = Math.max(100, Math.min(500, resizeStartHeight + deltaY));
+        tableContainer.style.maxHeight = newHeight + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isResizing) {
+            isResizing = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
+    });
 }
 
 // =====================================================
@@ -203,6 +246,29 @@ function getDragAfterElement(y) {
             return closest;
         }
     }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+// =====================================================
+// RAW API TOGGLE
+// =====================================================
+function toggleRawApi() {
+    state.rawApiVisible = !state.rawApiVisible;
+    const container = document.getElementById('rawApiContainer');
+    const toggle = document.getElementById('rawApiToggle');
+
+    if (container && toggle) {
+        container.style.display = state.rawApiVisible ? 'block' : 'none';
+        toggle.classList.toggle('active', state.rawApiVisible);
+    }
+}
+
+// =====================================================
+// GROUP BY MANUFACTURER TOGGLE
+// =====================================================
+function toggleGroupByManufacturer() {
+    const checkbox = document.getElementById('groupByMfr');
+    state.groupByManufacturer = checkbox ? checkbox.checked : false;
+    renderQueueItems();
 }
 
 // =====================================================
@@ -329,11 +395,18 @@ async function onManufacturerSelect() {
     if (!state.manufacturer) {
         document.getElementById('optionalFiltersRow').style.display = 'none';
         document.getElementById('skuActionsRow').style.display = 'none';
+        document.getElementById('selectedMfrBadge').textContent = '';
         return;
     }
 
     document.getElementById('optionalFiltersRow').style.display = 'flex';
     document.getElementById('skuActionsRow').style.display = 'flex';
+
+    // Update manufacturer badge
+    const mfrBadge = document.getElementById('selectedMfrBadge');
+    if (mfrBadge) {
+        mfrBadge.textContent = state.manufacturer;
+    }
 
     showStatus(`Manufacturer: ${state.manufacturer}. Loading categories...`, 'loading');
 
@@ -481,11 +554,15 @@ async function loadProducts(page = 1) {
         const data = await response.json();
 
         if (data.products && data.products.length > 0) {
+            // Store total records for pagination display
+            state.totalRecords = data.pagination?.totalRecords || data.products.length;
+            state.totalPages = data.pagination?.totalPages || 1;
+
             displayProductsWithPricing(data.products, data.pagination);
             showStatus('', '');
         } else {
             document.getElementById('productsBody').innerHTML =
-                '<tr><td colspan="7" class="no-results">No products found</td></tr>';
+                '<tr><td colspan="5" class="no-results">No products found</td></tr>';
             document.getElementById('pagination').innerHTML = '';
             document.getElementById('productCount').textContent = '0 products';
             showStatus('No products found with current filters', 'info');
@@ -529,6 +606,8 @@ function displayProductsWithPricing(products, pagination) {
         tr.className = isSelected ? 'selected' : '';
         if (isQueued) tr.classList.add('queued');
         tr.id = `product-row-${index}`;
+
+        // Simplified table: Checkbox, Part Number, Description, MSRP, Info
         tr.innerHTML = `
             <td class="col-checkbox">
                 <input type="checkbox"
@@ -537,9 +616,7 @@ function displayProductsWithPricing(products, pagination) {
                        ${isQueued ? 'disabled title="Already in queue"' : ''}>
             </td>
             <td class="col-part"><strong>${product.vendorPartNumber || '-'}</strong></td>
-            <td class="col-desc">${(product.description || '-').substring(0, 40)}${(product.description || '').length > 40 ? '...' : ''}</td>
-            <td class="col-mfr">${product.vendorName || state.manufacturer}</td>
-            <td class="col-sku">${product.ingramPartNumber || '-'}</td>
+            <td class="col-desc">${(product.description || '-').substring(0, 50)}${(product.description || '').length > 50 ? '...' : ''}</td>
             <td class="col-price">${msrpDisplay}</td>
             <td class="col-action">
                 <button class="info-btn" onclick="showProductDetails(${index})" title="View details">i</button>
@@ -550,8 +627,9 @@ function displayProductsWithPricing(products, pagination) {
         tr.dataset.product = JSON.stringify(product);
     });
 
+    // Use stored total records for accurate count across all pages
     document.getElementById('productCount').textContent =
-        `${pagination.totalRecords.toLocaleString()} products`;
+        `${state.totalRecords.toLocaleString()} products`;
 
     renderPagination(pagination);
     updateSelectedCount();
@@ -560,7 +638,7 @@ function displayProductsWithPricing(products, pagination) {
 function renderPagination(pagination) {
     const paginationDiv = document.getElementById('pagination');
 
-    if (pagination.totalPages <= 1) {
+    if (!pagination || pagination.totalPages <= 1) {
         paginationDiv.innerHTML = '';
         return;
     }
@@ -568,9 +646,9 @@ function renderPagination(pagination) {
     paginationDiv.innerHTML = `
         <button onclick="loadProducts(${pagination.page - 1})"
                 ${pagination.page === 1 ? 'disabled' : ''} class="btn-secondary btn-small">
-            Previous
+            Prev
         </button>
-        <span>Page ${pagination.page} of ${pagination.totalPages}</span>
+        <span>Page ${pagination.page} of ${pagination.totalPages} (${state.totalRecords.toLocaleString()} total)</span>
         <button onclick="loadProducts(${pagination.page + 1})"
                 ${pagination.page >= pagination.totalPages ? 'disabled' : ''} class="btn-secondary btn-small">
             Next
@@ -682,9 +760,9 @@ function addSelectedToQueue() {
     // Refresh product display to show queued items as disabled
     if (state.currentProducts.length > 0) {
         displayProductsWithPricing(state.currentProducts, {
-            totalRecords: state.currentProducts.length,
+            totalRecords: state.totalRecords,
             page: state.currentPage,
-            totalPages: 1
+            totalPages: state.totalPages
         });
     }
 
@@ -743,17 +821,20 @@ function updateQueueUI() {
     const queueList = document.getElementById('queueList');
     const queueFooter = document.getElementById('queueFooter');
     const clearQueueBtn = document.getElementById('clearQueueBtn');
+    const queueOptions = document.getElementById('queueOptions');
 
     if (queueCount === 0) {
         queueEmpty.style.display = 'flex';
         queueList.style.display = 'none';
         queueFooter.style.display = 'none';
         clearQueueBtn.style.display = 'none';
+        if (queueOptions) queueOptions.style.display = 'none';
     } else {
         queueEmpty.style.display = 'none';
         queueList.style.display = 'block';
         queueFooter.style.display = 'block';
         clearQueueBtn.style.display = 'block';
+        if (queueOptions) queueOptions.style.display = 'block';
 
         renderQueueItems();
     }
@@ -763,41 +844,71 @@ function renderQueueItems() {
     const queueItems = document.getElementById('queueItems');
     queueItems.innerHTML = '';
 
-    state.queuedProducts.forEach((product, index) => {
-        const partNumber = product.ingramPartNumber || product.vendorPartNumber;
-        const msrp = product.pricingData?.pricing?.retailPrice || product.retailPrice;
-        const msrpDisplay = msrp
-            ? `$${msrp.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-            : '-';
+    if (state.groupByManufacturer) {
+        // Group products by manufacturer
+        const groups = {};
+        state.queuedProducts.forEach(product => {
+            const mfr = product.vendorName || state.manufacturer || 'Unknown';
+            if (!groups[mfr]) {
+                groups[mfr] = [];
+            }
+            groups[mfr].push(product);
+        });
 
-        const li = document.createElement('li');
-        li.className = 'queue-item';
-        li.draggable = true;
-        li.dataset.partNumber = partNumber;
-        li.dataset.index = index;
+        // Render grouped
+        Object.keys(groups).sort().forEach(mfr => {
+            // Add manufacturer header
+            const header = document.createElement('div');
+            header.className = 'queue-mfr-group';
+            header.textContent = mfr;
+            queueItems.appendChild(header);
 
-        li.innerHTML = `
-            <div class="queue-item-drag">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/>
-                    <circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>
-                </svg>
-            </div>
-            <div class="queue-item-info">
-                <div class="queue-item-part">${product.vendorPartNumber || '-'}</div>
-                <div class="queue-item-desc">${(product.description || '-').substring(0, 35)}${(product.description || '').length > 35 ? '...' : ''}</div>
-                <div class="queue-item-mfr">${product.vendorName || state.manufacturer}</div>
-            </div>
-            <div class="queue-item-price">${msrpDisplay}</div>
-            <button class="queue-item-remove" onclick="removeFromQueue('${partNumber}')" title="Remove from queue">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M18 6 6 18M6 6l12 12"/>
-                </svg>
-            </button>
-        `;
+            // Add items for this manufacturer
+            groups[mfr].forEach((product, index) => {
+                queueItems.appendChild(createQueueItemElement(product, index));
+            });
+        });
+    } else {
+        // Render flat list
+        state.queuedProducts.forEach((product, index) => {
+            queueItems.appendChild(createQueueItemElement(product, index));
+        });
+    }
+}
 
-        queueItems.appendChild(li);
-    });
+function createQueueItemElement(product, index) {
+    const partNumber = product.ingramPartNumber || product.vendorPartNumber;
+    const msrp = product.pricingData?.pricing?.retailPrice || product.retailPrice;
+    const msrpDisplay = msrp
+        ? `$${msrp.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : '-';
+
+    const li = document.createElement('li');
+    li.className = 'queue-item';
+    li.draggable = true;
+    li.dataset.partNumber = partNumber;
+    li.dataset.index = index;
+
+    // Minimal: drag handle, part number, price, remove button
+    li.innerHTML = `
+        <div class="queue-item-drag">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/>
+                <circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>
+            </svg>
+        </div>
+        <div class="queue-item-info">
+            <div class="queue-item-part">${product.vendorPartNumber || '-'}</div>
+        </div>
+        <div class="queue-item-price">${msrpDisplay}</div>
+        <button class="queue-item-remove" onclick="removeFromQueue('${partNumber}')" title="Remove">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 6 6 18M6 6l12 12"/>
+            </svg>
+        </button>
+    `;
+
+    return li;
 }
 
 function submitQueue() {
@@ -884,6 +995,13 @@ async function showProductDetails(productIndex) {
     const detailsSection = document.getElementById('productDetailsSection');
     detailsSection.style.display = 'block';
     detailsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Reset raw API visibility
+    state.rawApiVisible = false;
+    const rawContainer = document.getElementById('rawApiContainer');
+    const rawToggle = document.getElementById('rawApiToggle');
+    if (rawContainer) rawContainer.style.display = 'none';
+    if (rawToggle) rawToggle.classList.remove('active');
 
     let pricingData = state.pricingData?.[ingramPn];
     let productDetails = null;
@@ -1103,11 +1221,14 @@ function cancelSelection() {
 function resetFilters() {
     state.manufacturer = '';
     state.currentPage = 1;
+    state.totalRecords = 0;
+    state.totalPages = 1;
 
     document.getElementById('manufacturerSearch').value = '';
     document.getElementById('manufacturerSelect').innerHTML =
         '<option value="">Type to search manufacturers...</option>';
     document.getElementById('mfrCount').textContent = '';
+    document.getElementById('selectedMfrBadge').textContent = '';
 
     document.getElementById('optionalFiltersRow').style.display = 'none';
     document.getElementById('skuActionsRow').style.display = 'none';
