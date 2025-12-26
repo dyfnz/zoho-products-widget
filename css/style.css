@@ -634,10 +634,10 @@ button svg {
 }
 
 .data-table th {
-    background: var(--color-surface);
+    background: var(--color-primary);
     font-size: 8px;
     font-weight: 700;
-    color: var(--color-text-secondary);
+    color: var(--color-text-inverse);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     position: sticky;
