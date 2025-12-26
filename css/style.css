@@ -796,7 +796,6 @@ button svg {
 .col-price {
     text-align: right;
     padding-right: 6px;  /* ~1 character space before info icon */
-    justify-self: end;   /* Right-align within grid cell */
 }
 
 .price-available {
