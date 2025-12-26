@@ -736,7 +736,8 @@ function displayProductsWithPricing(products, pagination) {
         if (isQueued) tr.classList.add('queued');
         tr.id = `product-row-${index}`;
 
-        // Simplified table: Checkbox, Part Number, Description, MSRP, Info
+        const fullDescription = product.description || '-';
+        // Simplified table: Checkbox, Part Number, Description (with hover tooltip), MSRP, Info
         tr.innerHTML = `
             <td class="col-checkbox">
                 <input type="checkbox"
@@ -745,7 +746,7 @@ function displayProductsWithPricing(products, pagination) {
                        ${isQueued ? 'disabled title="Already in queue"' : ''}>
             </td>
             <td class="col-part"><strong>${product.vendorPartNumber || '-'}</strong></td>
-            <td class="col-desc">${(product.description || '-').substring(0, 50)}${(product.description || '').length > 50 ? '...' : ''}</td>
+            <td class="col-desc desc-cell" title="${fullDescription.replace(/"/g, '&quot;')}">${fullDescription}</td>
             <td class="col-price">${msrpDisplay}</td>
             <td class="col-action">
                 <button class="info-btn" onclick="showProductDetails(${index})" title="View details">i</button>
@@ -944,7 +945,6 @@ function updateQueueUI() {
     const queueCount = state.queuedProducts.length;
 
     document.getElementById('queueCount').textContent = queueCount;
-    document.getElementById('queueTotalCount').textContent = queueCount;
 
     const queueEmpty = document.getElementById('queueEmpty');
     const queueList = document.getElementById('queueList');
@@ -1180,9 +1180,12 @@ async function showProductDetails(productIndex) {
     const authorizedText = isAuthorized ? 'Yes' : 'No';
     const authorizedClass = isAuthorized ? 'authorized-yes' : 'authorized-no';
 
-    document.getElementById('detailsTitle').textContent = product.description || 'No Description';
+    // Row 1: Product Name
+    document.getElementById('detailsProductName').innerHTML = `
+        <strong>Product Name:</strong> ${product.description || 'N/A'}
+    `;
+    // Row 2: Ingram SKU, Vendor Part, Manufacturer, Authorized (no duplicate Product Name)
     document.getElementById('detailsSubtitle').innerHTML = `
-        <strong>Product Name:</strong> ${product.description || 'N/A'} |
         <strong>Ingram SKU:</strong> ${ingramPn || 'N/A'} |
         <strong>Vendor Part:</strong> ${product.vendorPartNumber || 'N/A'} |
         <strong>Manufacturer:</strong> ${product.vendorName || state.manufacturer} |
@@ -1217,6 +1220,18 @@ async function showProductDetails(productIndex) {
                 <div class="field-mapping-item${f.fullWidth ? ' full-width' : ''}">
                     <span class="field-label">${f.label}</span>
                     <span class="field-value">${f.value}</span>
+                </div>
+            `).join('');
+        }
+    };
+
+    const renderFlagsGrid = (elementId, fields) => {
+        const grid = document.getElementById(elementId);
+        if (grid) {
+            grid.innerHTML = fields.map(f => `
+                <div class="field-mapping-item">
+                    <span class="field-label">${f.label}</span>
+                    <span class="field-value">${f.isHtml ? f.value : f.value}</span>
                 </div>
             `).join('');
         }
@@ -1295,23 +1310,30 @@ async function showProductDetails(productIndex) {
     }
 
     const availabilityFields = [
-        { label: 'Available Qty', value: pricingData?.availability?.totalAvailability ?? '-' },
-        { label: 'In Stock', value: yesNo(pricingData?.availability?.available) }
+        { label: 'In Stock', value: yesNo(pricingData?.availability?.available) },
+        { label: 'Available Qty', value: pricingData?.availability?.totalAvailability ?? '-' }
     ];
     renderGrid('availabilityGrid', availabilityFields);
 
     const indicators = productDetails?.indicators || {};
 
+    // Discontinued badge with color
+    const isDiscontinued = product.discontinued || indicators.isDiscontinuedProduct;
+    const discontinuedValue = isDiscontinued === true || isDiscontinued === 'true'
+        ? '<span class="discontinued-yes">Yes</span>'
+        : '<span class="discontinued-no">No</span>';
+
+    // Order: Digital/Bundle, Licensed/Service SKU, Direct Ship/New, Discontinued
     const flagsFields = [
-        { label: 'Digital Product', value: yesNo(indicators.isDigitalType || product.type === 'IM::Digital' || product.type === 'IM::digital') },
-        { label: 'License Product', value: yesNo(indicators.isLicenseProduct) },
+        { label: 'Digital', value: yesNo(indicators.isDigitalType || product.type === 'IM::Digital' || product.type === 'IM::digital') },
+        { label: 'Bundle', value: yesNo(indicators.hasBundle || pricingData?.bundlePartIndicator) },
+        { label: 'Licensed', value: yesNo(indicators.isLicenseProduct) },
         { label: 'Service SKU', value: yesNo(indicators.isServiceSku) },
-        { label: 'Has Bundle', value: yesNo(indicators.hasBundle || pricingData?.bundlePartIndicator) },
         { label: 'Direct Ship', value: yesNo(product.directShip || indicators.isDirectship) },
-        { label: 'Discontinued', value: yesNo(product.discontinued || indicators.isDiscontinuedProduct) },
-        { label: 'New Product', value: yesNo(product.newProduct || indicators.isNewProduct) }
+        { label: 'New', value: yesNo(product.newProduct || indicators.isNewProduct) },
+        { label: 'Discontinued', value: discontinuedValue, isHtml: true }
     ];
-    renderGrid('flagsGrid', flagsFields);
+    renderFlagsGrid('flagsGrid', flagsFields);
 
     const warehouseSection = document.getElementById('warehouseSection');
     const warehouseBody = document.getElementById('warehouseBody');
@@ -1444,9 +1466,17 @@ function resetProducts() {
     if (selectAll) selectAll.checked = false;
 }
 
+let statusTimeout = null;
+
 function showStatus(message, type) {
     const el = document.getElementById('filterStatus');
     if (!el) return;
+
+    // Clear any existing timeout
+    if (statusTimeout) {
+        clearTimeout(statusTimeout);
+        statusTimeout = null;
+    }
 
     el.className = `status-bar ${type}`;
     el.innerHTML = `<span class="status-message">${message}</span>`;
@@ -1455,5 +1485,12 @@ function showStatus(message, type) {
         el.style.display = 'none';
     } else {
         el.style.display = 'flex';
+
+        // Auto-dismiss success and info messages after 10 seconds
+        if (type === 'success' || type === 'info') {
+            statusTimeout = setTimeout(() => {
+                el.style.display = 'none';
+            }, 10000);
+        }
     }
 }

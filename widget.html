@@ -159,7 +159,7 @@
                                     <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
                                     <rect x="9" y="3" width="6" height="4" rx="1"/>
                                 </svg>
-                                Products to Quote
+                                Products Queue
                                 <span class="queue-count" id="queueCount">0</span>
                             </div>
                             <button onclick="clearQueue()" class="btn-ghost btn-tiny" id="clearQueueBtn" style="display: none;">Clear</button>
@@ -193,10 +193,6 @@
                         </div>
 
                         <div class="queue-footer" id="queueFooter" style="display: none;">
-                            <div class="queue-total">
-                                <span>Items:</span>
-                                <strong id="queueTotalCount">0</strong>
-                            </div>
                             <button onclick="submitQueue()" class="btn-success">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M5 12h14M12 5l7 7-7 7"/>
@@ -227,7 +223,7 @@
 
                 <div class="details-content">
                     <div class="product-hero">
-                        <h3 id="detailsTitle">Product Name</h3>
+                        <div class="product-name-row" id="detailsProductName"></div>
                         <div class="product-meta" id="detailsSubtitle"></div>
                     </div>
                     <div class="product-description" id="detailsLongDesc"></div>
