@@ -328,6 +328,7 @@ body {
 /* Manufacturer Row - Single Line Combo */
 .mfr-row {
     align-items: center;
+    flex-wrap: wrap;
 }
 
 .mfr-label {
@@ -346,16 +347,18 @@ body {
     display: flex;
     gap: var(--space-2);
     align-items: center;
+    flex-wrap: wrap;
+    min-width: 200px;
 }
 
 .mfr-combo input[type="text"] {
-    width: 160px;
-    flex-shrink: 0;
+    flex: 1;
+    min-width: 120px;
 }
 
 .mfr-combo select {
     flex: 1;
-    min-width: 180px;
+    min-width: 120px;
 }
 
 .mfr-count {
@@ -612,6 +615,7 @@ button svg {
     width: 100%;
     border-collapse: collapse;
     font-size: var(--font-size-xs);
+    table-layout: fixed;
 }
 
 .data-table th,
@@ -650,16 +654,16 @@ button svg {
 }
 
 .col-checkbox { width: 26px; text-align: center; }
-.col-part { width: 160px; white-space: nowrap; }
+.col-part { width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .col-desc {
     padding-right: var(--space-2);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 400px;
+    /* No fixed width - takes remaining space */
 }
-.col-price { width: 90px; text-align: right; padding-left: var(--space-1); }
-.col-action { width: 26px; text-align: center; }
+/* .col-price is defined below with price display styles */
+.col-action { width: 30px; text-align: center; }
 
 /* Description cell with tooltip */
 .desc-cell {
@@ -778,15 +782,27 @@ button svg {
     background: var(--color-text-inverse);
 }
 
-/* Price Display */
+/* Price Display - Right-aligned with tabular numbers for decimal alignment */
+.col-price {
+    width: 85px;
+    text-align: right;
+    padding-right: var(--space-1);
+}
+
 .price-available {
+    display: block;
     color: var(--color-success);
     font-weight: 600;
     font-size: var(--font-size-xs);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
 }
 
 .price-unavailable {
+    display: block;
     color: var(--color-text-muted);
+    text-align: right;
 }
 
 /* Pagination */
@@ -1002,23 +1018,26 @@ button svg {
 #flagsGrid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 4px 12px;
+    gap: 4px 16px;
 }
 
 #flagsGrid .field-mapping-item {
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
 }
 
 #flagsGrid .field-mapping-item .field-label {
-    min-width: 75px;
+    width: 80px;
+    flex-shrink: 0;
     margin-bottom: 0;
+    text-align: left;
 }
 
 #flagsGrid .field-mapping-item .field-value {
     font-weight: 400;
+    flex-shrink: 0;
 }
 
 /* Discontinued badge styling */
