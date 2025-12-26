@@ -1069,6 +1069,7 @@ function submitQueue() {
             UPC: pricingData?.upc || product.upcCode || '',
             Description: product.extraDescription || pricingData?.description || '',
             Last_Sync_Source: DISTRIBUTORS[state.currentDistributor]?.name || 'Ingram Micro',
+            IM_Product_Type: product.productType || '',
             Quantity: 1
         };
     });
