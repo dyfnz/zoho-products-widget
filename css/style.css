@@ -793,7 +793,7 @@ button svg {
 
 /* Price Display - Right-aligned with tabular numbers for decimal alignment */
 /* Auto-sized column via CSS Grid, consistent padding to info icon */
-.col-price {
+.data-table .col-price {
     text-align: right;
     padding-right: 6px;  /* ~1 character space before info icon */
 }
