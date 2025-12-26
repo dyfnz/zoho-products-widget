@@ -68,9 +68,13 @@ const state = {
 
 let searchTimeout = null;
 let draggedItem = null;
+let draggedGroup = null;
 let resizeStartY = 0;
 let resizeStartHeight = 0;
 let isResizing = false;
+let isResizingQueue = false;
+let queueResizeStartX = 0;
+let queueResizeStartWidth = 0;
 
 // =====================================================
 // ZOHO SDK INITIALIZATION
@@ -81,6 +85,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initEventListeners();
     initDragAndDrop();
     initResize();
+    initQueueResize();
     checkProxyStatus();
     updateQueueUI();
 });
@@ -167,6 +172,49 @@ function initResize() {
 }
 
 // =====================================================
+// QUEUE PANEL HORIZONTAL RESIZE
+// =====================================================
+function initQueueResize() {
+    const resizeHandle = document.getElementById('queueResizeHandle');
+    const rightPanel = document.getElementById('rightPanel');
+
+    if (!resizeHandle || !rightPanel) return;
+
+    resizeHandle.addEventListener('mousedown', (e) => {
+        isResizingQueue = true;
+        queueResizeStartX = e.clientX;
+        queueResizeStartWidth = rightPanel.offsetWidth;
+        document.body.style.cursor = 'ew-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isResizingQueue) return;
+
+        // Dragging left increases width, dragging right decreases
+        const deltaX = queueResizeStartX - e.clientX;
+        const newWidth = Math.max(240, Math.min(600, queueResizeStartWidth + deltaX));
+        rightPanel.style.width = newWidth + 'px';
+
+        // Toggle narrow class for responsive stacking
+        if (newWidth < 300) {
+            rightPanel.classList.add('narrow');
+        } else {
+            rightPanel.classList.remove('narrow');
+        }
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isResizingQueue) {
+            isResizingQueue = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
+    });
+}
+
+// =====================================================
 // DRAG AND DROP FOR QUEUE
 // =====================================================
 function initDragAndDrop() {
@@ -180,6 +228,15 @@ function initDragAndDrop() {
 }
 
 function handleDragStart(e) {
+    // Handle manufacturer group dragging
+    if (e.target.classList.contains('queue-mfr-group')) {
+        draggedGroup = e.target;
+        e.target.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', 'group:' + e.target.dataset.manufacturer);
+        return;
+    }
+
     if (!e.target.classList.contains('queue-item')) return;
 
     draggedItem = e.target;
@@ -193,7 +250,11 @@ function handleDragEnd(e) {
         draggedItem.classList.remove('dragging');
         draggedItem = null;
     }
-    document.querySelectorAll('.queue-item').forEach(item => {
+    if (draggedGroup) {
+        draggedGroup.classList.remove('dragging');
+        draggedGroup = null;
+    }
+    document.querySelectorAll('.queue-item, .queue-mfr-group').forEach(item => {
         item.classList.remove('drag-over');
     });
 }
@@ -202,10 +263,24 @@ function handleDragOver(e) {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
 
-    const afterElement = getDragAfterElement(e.clientY);
     const queueItems = document.getElementById('queueItems');
 
-    if (draggedItem) {
+    if (draggedGroup && state.groupByManufacturer) {
+        // Handle group reordering
+        const afterGroup = getDragAfterGroup(e.clientY);
+        const groupWithItems = getGroupElements(draggedGroup.dataset.manufacturer);
+
+        if (afterGroup == null) {
+            // Move to end
+            groupWithItems.forEach(el => queueItems.appendChild(el));
+        } else {
+            // Move before the target group
+            const beforeEl = afterGroup;
+            groupWithItems.forEach(el => queueItems.insertBefore(el, beforeEl));
+        }
+    } else if (draggedItem) {
+        const afterElement = getDragAfterElement(e.clientY);
+
         if (afterElement == null) {
             queueItems.appendChild(draggedItem);
         } else {
@@ -217,20 +292,25 @@ function handleDragOver(e) {
 function handleDrop(e) {
     e.preventDefault();
 
-    // Reorder state.queuedProducts based on new DOM order
-    const newOrder = [];
-    document.querySelectorAll('.queue-item').forEach(item => {
-        const partNumber = item.dataset.partNumber;
-        const product = state.queuedProducts.find(p =>
-            (p.ingramPartNumber || p.vendorPartNumber) === partNumber
-        );
-        if (product) {
-            newOrder.push(product);
-        }
-    });
+    if (state.groupByManufacturer && draggedGroup) {
+        // Reorder by manufacturer groups
+        reorderByGroups();
+    } else {
+        // Reorder state.queuedProducts based on new DOM order
+        const newOrder = [];
+        document.querySelectorAll('.queue-item').forEach(item => {
+            const partNumber = item.dataset.partNumber;
+            const product = state.queuedProducts.find(p =>
+                (p.ingramPartNumber || p.vendorPartNumber) === partNumber
+            );
+            if (product) {
+                newOrder.push(product);
+            }
+        });
 
-    state.queuedProducts = newOrder;
-    console.log('[Queue] Reordered:', state.queuedProducts.map(p => p.vendorPartNumber));
+        state.queuedProducts = newOrder;
+        console.log('[Queue] Reordered:', state.queuedProducts.map(p => p.vendorPartNumber));
+    }
 }
 
 function getDragAfterElement(y) {
@@ -246,6 +326,55 @@ function getDragAfterElement(y) {
             return closest;
         }
     }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+function getDragAfterGroup(y) {
+    const groupElements = [...document.querySelectorAll('.queue-mfr-group:not(.dragging)')];
+
+    return groupElements.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+
+        if (offset < 0 && offset > closest.offset) {
+            return { offset: offset, element: child };
+        } else {
+            return closest;
+        }
+    }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+function getGroupElements(manufacturer) {
+    const elements = [];
+    const groupHeader = document.querySelector(`.queue-mfr-group[data-manufacturer="${manufacturer}"]`);
+    if (groupHeader) {
+        elements.push(groupHeader);
+        // Get all items after this header until the next header
+        let sibling = groupHeader.nextElementSibling;
+        while (sibling && !sibling.classList.contains('queue-mfr-group')) {
+            elements.push(sibling);
+            sibling = sibling.nextElementSibling;
+        }
+    }
+    return elements;
+}
+
+function reorderByGroups() {
+    // Get the new order of manufacturers from the DOM
+    const mfrOrder = [];
+    document.querySelectorAll('.queue-mfr-group').forEach(group => {
+        mfrOrder.push(group.dataset.manufacturer);
+    });
+
+    // Reorder queuedProducts based on manufacturer order
+    const newOrder = [];
+    mfrOrder.forEach(mfr => {
+        state.queuedProducts
+            .filter(p => (p.vendorName || state.manufacturer || 'Unknown') === mfr)
+            .forEach(p => newOrder.push(p));
+    });
+
+    state.queuedProducts = newOrder;
+    console.log('[Queue] Reordered by groups:', mfrOrder);
 }
 
 // =====================================================
@@ -857,10 +986,12 @@ function renderQueueItems() {
 
         // Render grouped
         Object.keys(groups).sort().forEach(mfr => {
-            // Add manufacturer header
+            // Add manufacturer header (draggable)
             const header = document.createElement('div');
             header.className = 'queue-mfr-group';
             header.textContent = mfr;
+            header.draggable = true;
+            header.dataset.manufacturer = mfr;
             queueItems.appendChild(header);
 
             // Add items for this manufacturer
@@ -1051,6 +1182,7 @@ async function showProductDetails(productIndex) {
 
     document.getElementById('detailsTitle').textContent = product.description || 'No Description';
     document.getElementById('detailsSubtitle').innerHTML = `
+        <strong>Product Name:</strong> ${product.description || 'N/A'} |
         <strong>Ingram SKU:</strong> ${ingramPn || 'N/A'} |
         <strong>Vendor Part:</strong> ${product.vendorPartNumber || 'N/A'} |
         <strong>Manufacturer:</strong> ${product.vendorName || state.manufacturer} |
@@ -1078,6 +1210,18 @@ async function showProductDetails(productIndex) {
         }
     };
 
+    const renderGridWithOptions = (elementId, fields) => {
+        const grid = document.getElementById(elementId);
+        if (grid) {
+            grid.innerHTML = fields.map(f => `
+                <div class="field-mapping-item${f.fullWidth ? ' full-width' : ''}">
+                    <span class="field-label">${f.label}</span>
+                    <span class="field-value">${f.value}</span>
+                </div>
+            `).join('');
+        }
+    };
+
     const yesNo = (val) => {
         if (val === true) return 'Yes';
         if (val === false) return 'No';
@@ -1095,15 +1239,14 @@ async function showProductDetails(productIndex) {
     };
 
     const productInfoFields = [
-        { label: 'Product Name', value: product.description || '-' },
         { label: 'Category', value: product.category || state.category || '-' },
         { label: 'Subcategory', value: product.subCategory || state.subcategory || '-' },
         { label: 'Product Type', value: product.productType || '-' },
         { label: 'SKU Type', value: formatSKUType(product.type) },
         { label: 'Product Class', value: pricingData?.productClass || product.productClass || '-' },
-        { label: 'Replacement SKU', value: product.replacementSku || '-' }
+        { label: 'Replacement SKU', value: product.replacementSku || '-', fullWidth: true }
     ];
-    renderGrid('productInfoGrid', productInfoFields);
+    renderGridWithOptions('productInfoGrid', productInfoFields);
 
     const msrpValue = formatCurrency(pricingData?.pricing?.retailPrice);
     const customerPriceValue = formatCurrency(pricingData?.pricing?.customerPrice);
@@ -1173,16 +1316,27 @@ async function showProductDetails(productIndex) {
     const warehouseSection = document.getElementById('warehouseSection');
     const warehouseBody = document.getElementById('warehouseBody');
 
-    if (pricingData?.availability?.availabilityByWarehouse?.length > 0) {
-        warehouseSection.style.display = 'block';
-        warehouseBody.innerHTML = pricingData.availability.availabilityByWarehouse.map(wh => `
-            <tr>
-                <td>${wh.warehouseId}</td>
-                <td>${wh.location || '-'}</td>
-                <td class="text-right">${wh.quantityAvailable ?? 0}</td>
-                <td class="text-right">${wh.quantityBackordered ?? 0}</td>
-            </tr>
-        `).join('');
+    // Check total availability - hide entire section if 0
+    const totalAvailability = pricingData?.availability?.totalAvailability ?? 0;
+
+    if (totalAvailability > 0 && pricingData?.availability?.availabilityByWarehouse?.length > 0) {
+        // Filter to only show warehouses with availability > 0
+        const availableWarehouses = pricingData.availability.availabilityByWarehouse
+            .filter(wh => (wh.quantityAvailable ?? 0) > 0);
+
+        if (availableWarehouses.length > 0) {
+            warehouseSection.style.display = 'block';
+            warehouseBody.innerHTML = availableWarehouses.map(wh => `
+                <tr>
+                    <td>${wh.warehouseId}</td>
+                    <td>${wh.location || '-'}</td>
+                    <td class="text-right">${wh.quantityAvailable ?? 0}</td>
+                    <td class="text-right">${wh.quantityBackordered ?? 0}</td>
+                </tr>
+            `).join('');
+        } else {
+            warehouseSection.style.display = 'none';
+        }
     } else {
         warehouseSection.style.display = 'none';
     }

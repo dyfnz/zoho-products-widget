@@ -95,7 +95,7 @@ body {
 
 .content-wrapper {
     flex: 1;
-    padding: var(--space-3);
+    padding: var(--space-2) var(--space-3) var(--space-3) var(--space-3);
     overflow-y: auto;
 }
 
@@ -114,8 +114,11 @@ body {
 }
 
 .right-panel {
-    width: 240px;
+    width: 360px;
+    min-width: 240px;
+    max-width: 600px;
     flex-shrink: 0;
+    position: relative;
 }
 
 /* =====================================================
@@ -143,19 +146,12 @@ body {
     /* No filter - logo should be white on transparent */
 }
 
-.header-title h1 {
-    font-size: var(--font-size-md);
-    font-weight: 700;
-    letter-spacing: -0.03em;
-}
-
 .connection-status {
     display: flex;
     align-items: center;
     gap: var(--space-1);
     font-size: var(--font-size-2xs);
     color: rgba(255, 255, 255, 0.6);
-    margin-top: 1px;
 }
 
 .status-dot {
@@ -387,7 +383,7 @@ body {
 }
 
 .filter-field.sku-field {
-    max-width: 180px;
+    max-width: 270px;
 }
 
 .filter-field.filter-narrow {
@@ -569,6 +565,7 @@ button svg {
     display: flex;
     align-items: center;
     gap: var(--space-2);
+    flex: 1;
 }
 
 .products-title input[type="checkbox"] {
@@ -590,13 +587,15 @@ button svg {
 }
 
 .mfr-badge {
-    background: var(--color-primary);
-    color: var(--color-text-inverse);
-    padding: 2px 6px;
+    background: var(--color-warning);
+    color: var(--color-primary-dark);
+    padding: 2px 8px;
     border-radius: var(--radius-sm);
     font-size: 9px;
     font-weight: 700;
     letter-spacing: 0.02em;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 /* =====================================================
@@ -651,9 +650,9 @@ button svg {
 }
 
 .col-checkbox { width: 26px; text-align: center; }
-.col-part { width: 130px; }
-.col-desc { }
-.col-price { width: 75px; text-align: right; }
+.col-part { width: 160px; white-space: nowrap; }
+.col-desc { padding-right: var(--space-2); }
+.col-price { width: 80px; text-align: right; padding-left: var(--space-1); }
 .col-action { width: 26px; text-align: center; }
 
 .data-table input[type="checkbox"] {
@@ -727,11 +726,48 @@ button svg {
     background: var(--color-text-inverse);
 }
 
+/* Horizontal Resize Handle for Queue Panel */
+.queue-resize-handle {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 7px;
+    cursor: ew-resize;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(to right, var(--color-border), var(--color-border-light));
+    transition: background var(--transition-fast);
+    z-index: 10;
+    user-select: none;
+}
+
+.queue-resize-handle:hover {
+    background: linear-gradient(to right, var(--color-accent), var(--color-border));
+}
+
+.queue-resize-handle:active {
+    background: var(--color-accent);
+}
+
+.queue-resize-grip {
+    width: 3px;
+    height: 32px;
+    background: var(--color-text-muted);
+    border-radius: 2px;
+    opacity: 0.35;
+}
+
+.queue-resize-handle:hover .queue-resize-grip {
+    opacity: 0.6;
+    background: var(--color-text-inverse);
+}
+
 /* Price Display */
 .price-available {
     color: var(--color-success);
     font-weight: 600;
-    font-family: var(--font-mono);
     font-size: var(--font-size-xs);
 }
 
@@ -899,6 +935,11 @@ button svg {
     flex-direction: column;
 }
 
+/* Full-width field for single-column items like Replacement SKU */
+.field-mapping-item.full-width {
+    grid-column: 1 / -1;
+}
+
 .field-item .field-label,
 .field-mapping-item .field-label {
     font-size: 7px;
@@ -906,6 +947,7 @@ button svg {
     text-transform: uppercase;
     margin-bottom: 1px;
     letter-spacing: 0.3px;
+    white-space: nowrap;
 }
 
 .field-item .field-value,
@@ -913,6 +955,28 @@ button svg {
     font-size: var(--font-size-xs);
     color: var(--color-text);
     word-break: break-word;
+}
+
+/* Product Flags - consistent horizontal layout */
+#flagsGrid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 4px 8px;
+}
+
+#flagsGrid .field-mapping-item {
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+}
+
+#flagsGrid .field-mapping-item .field-label {
+    min-width: 70px;
+    margin-bottom: 0;
+}
+
+#flagsGrid .field-mapping-item .field-value {
+    font-weight: 600;
 }
 
 /* Mini Tables */
@@ -1195,8 +1259,32 @@ button svg {
     font-size: var(--font-size-xs);
     font-weight: 700;
     color: var(--color-success);
-    font-family: var(--font-mono);
     white-space: nowrap;
+}
+
+/* Responsive stacking for narrow queue panel */
+.right-panel.narrow .queue-item {
+    flex-wrap: wrap;
+}
+
+.right-panel.narrow .queue-item-info {
+    flex: 1 1 100%;
+    order: 1;
+}
+
+.right-panel.narrow .queue-item-drag {
+    order: 0;
+}
+
+.right-panel.narrow .queue-item-price {
+    order: 2;
+    margin-left: 13px;
+    margin-top: 2px;
+}
+
+.right-panel.narrow .queue-item-remove {
+    order: 3;
+    margin-top: 2px;
 }
 
 .queue-item-remove {
@@ -1231,7 +1319,7 @@ button svg {
 
 /* Manufacturer Group Divider */
 .queue-mfr-group {
-    padding: 3px 6px;
+    padding: 4px 6px;
     background: linear-gradient(135deg, var(--color-primary-light), var(--color-primary));
     color: var(--color-text-inverse);
     font-size: 8px;
@@ -1240,10 +1328,24 @@ button svg {
     letter-spacing: 0.4px;
     border-radius: var(--radius-sm);
     margin: 6px 0 4px 0;
+    text-align: center;
+    cursor: grab;
+    transition: all var(--transition-fast);
 }
 
 .queue-mfr-group:first-child {
     margin-top: 0;
+}
+
+.queue-mfr-group:hover {
+    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.queue-mfr-group.dragging {
+    opacity: 0.6;
+    transform: scale(1.02);
+    box-shadow: var(--shadow-md);
 }
 
 .queue-footer {

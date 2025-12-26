@@ -16,13 +16,10 @@
         <header class="widget-header">
             <div class="header-left">
                 <img src="img/dyfnz-logo.png" alt="DYFNZ" class="logo">
-                <div class="header-title">
-                    <h1>Distributor Product Search</h1>
-                    <div class="connection-status">
-                        <div class="status-dot" id="statusIndicator"></div>
-                        <span id="statusText">Checking...</span>
-                        <button onclick="authenticate()" class="btn-link">Reconnect</button>
-                    </div>
+                <div class="connection-status">
+                    <div class="status-dot" id="statusIndicator"></div>
+                    <span id="statusText">Checking...</span>
+                    <button onclick="authenticate()" class="btn-link">Reconnect</button>
                 </div>
             </div>
             <div class="distributor-tabs">
@@ -58,7 +55,7 @@
                                 Manufacturer
                             </label>
                             <div class="mfr-combo">
-                                <input type="text" id="manufacturerSearch" placeholder="Search..." autocomplete="off">
+                                <input type="text" id="manufacturerSearch" placeholder="Type manufacturer name (e.g. Dell, HP, Cisco)..." autocomplete="off">
                                 <select id="manufacturerSelect" onchange="onManufacturerSelect()">
                                     <option value="">Select manufacturer...</option>
                                 </select>
@@ -150,7 +147,11 @@
                 </div>
 
                 <!-- Right: Queue Panel -->
-                <div class="right-panel">
+                <div class="right-panel" id="rightPanel">
+                    <!-- Horizontal Resize Handle -->
+                    <div class="queue-resize-handle" id="queueResizeHandle">
+                        <div class="queue-resize-grip"></div>
+                    </div>
                     <div class="queue-panel">
                         <div class="panel-header queue-header">
                             <div class="queue-title">
