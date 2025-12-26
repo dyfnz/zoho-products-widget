@@ -57,7 +57,7 @@ const state = {
     totalPages: 1,
     selectedProducts: new Map(),
     queuedProducts: [],
-    groupByManufacturer: false,
+    groupByManufacturer: true,
     isAuthenticated: false,
     pendingResponseId: null,
     parentContext: null,
@@ -88,6 +88,12 @@ document.addEventListener('DOMContentLoaded', function() {
     initQueueResize();
     checkProxyStatus();
     updateQueueUI();
+
+    // Set "Group by Manufacturer" checkbox to match default state
+    const groupByMfrCheckbox = document.getElementById('groupByMfr');
+    if (groupByMfrCheckbox) {
+        groupByMfrCheckbox.checked = state.groupByManufacturer;
+    }
 });
 
 function initZohoSDK() {
@@ -158,7 +164,7 @@ function initResize() {
         if (!isResizing) return;
 
         const deltaY = e.clientY - resizeStartY;
-        const newHeight = Math.max(100, Math.min(500, resizeStartHeight + deltaY));
+        const newHeight = Math.max(100, Math.min(1250, resizeStartHeight + deltaY));
         tableContainer.style.maxHeight = newHeight + 'px';
     });
 

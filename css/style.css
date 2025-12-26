@@ -602,20 +602,28 @@ button svg {
 }
 
 /* =====================================================
-   DATA TABLE - Compact
+   DATA TABLE - CSS Grid Layout
    ===================================================== */
 .table-container {
     flex: 1;
     overflow-y: auto;
     min-height: 120px;
-    max-height: 220px;
+    max-height: 500px;
 }
 
+/* CSS Grid table - columns auto-size for consistent alignment */
 .data-table {
+    display: grid;
+    grid-template-columns: 26px auto 1fr auto 30px;
     width: 100%;
-    border-collapse: collapse;
     font-size: var(--font-size-xs);
-    table-layout: fixed;
+}
+
+/* Make thead, tbody, tr transparent to grid */
+.data-table thead,
+.data-table tbody,
+.data-table tr {
+    display: contents;
 }
 
 .data-table th,
@@ -637,33 +645,34 @@ button svg {
     z-index: 1;
 }
 
-.data-table tbody tr {
+/* Row hover/selection via cell backgrounds since tr is display:contents */
+.data-table tbody td {
     transition: background var(--transition-fast);
 }
 
-.data-table tbody tr:hover {
+.data-table tbody tr:hover td {
     background: rgba(14, 165, 233, 0.04);
 }
 
-.data-table tbody tr.selected {
+.data-table tbody tr.selected td {
     background: rgba(14, 165, 233, 0.08);
 }
 
-.data-table tbody tr.queued {
+.data-table tbody tr.queued td {
     background: rgba(16, 185, 129, 0.06);
 }
 
-.col-checkbox { width: 26px; text-align: center; }
-.col-part { width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Column-specific styles */
+.col-checkbox { text-align: center; }
+.col-part { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .col-desc {
     padding-right: var(--space-2);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    /* No fixed width - takes remaining space */
+    min-width: 0; /* Allow flex/grid shrinking */
 }
-/* .col-price is defined below with price display styles */
-.col-action { width: 30px; text-align: center; }
+.col-action { text-align: center; }
 
 /* Description cell with tooltip */
 .desc-cell {
@@ -783,11 +792,11 @@ button svg {
 }
 
 /* Price Display - Right-aligned with tabular numbers for decimal alignment */
-/* Width accommodates $9,999,999.99 (13 chars) with 1-char padding to info icon */
+/* Auto-sized column via CSS Grid, consistent padding to info icon */
 .col-price {
-    width: 105px;
     text-align: right;
     padding-right: 6px;  /* ~1 character space before info icon */
+    justify-self: end;   /* Right-align within grid cell */
 }
 
 .price-available {
