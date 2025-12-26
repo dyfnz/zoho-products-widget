@@ -783,10 +783,11 @@ button svg {
 }
 
 /* Price Display - Right-aligned with tabular numbers for decimal alignment */
+/* Width accommodates $9,999,999.99 (13 chars) with 1-char padding to info icon */
 .col-price {
-    width: 85px;
+    width: 105px;
     text-align: right;
-    padding-right: var(--space-1);
+    padding-right: 6px;  /* ~1 character space before info icon */
 }
 
 .price-available {
@@ -797,12 +798,14 @@ button svg {
     text-align: right;
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum" 1;
+    white-space: nowrap;
 }
 
 .price-unavailable {
     display: block;
     color: var(--color-text-muted);
     text-align: right;
+    white-space: nowrap;
 }
 
 /* Pagination */
@@ -1014,30 +1017,30 @@ button svg {
     flex-direction: column;
 }
 
-/* Product Flags - two column layout with consistent alignment */
+/* Product Flags - 4-column CSS Grid for proper alignment */
+/* Columns: [Label1] [Value1] [Label2] [Value2] */
+/* Labels auto-size to longest in their column, values align consistently */
 #flagsGrid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px 16px;
+    grid-template-columns: auto auto auto auto;
+    gap: 4px 8px;
+    align-items: center;
 }
 
+/* Use display:contents so label/value become direct grid children */
 #flagsGrid .field-mapping-item {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 6px;
+    display: contents;
 }
 
 #flagsGrid .field-mapping-item .field-label {
-    width: 80px;
-    flex-shrink: 0;
     margin-bottom: 0;
     text-align: left;
+    white-space: nowrap;
 }
 
 #flagsGrid .field-mapping-item .field-value {
     font-weight: 400;
-    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 /* Discontinued badge styling */
