@@ -643,6 +643,27 @@ function formatSKUType(type) {
     }
 }
 
+function formatProductClass(code) {
+    const definitions = {
+        'A': 'Stocked in all warehouses',
+        'B': 'Stocked in limited warehouses',
+        'C': 'Stocked in fewer warehouses',
+        'D': 'Discontinued by Ingram',
+        'E': 'Vendor phase-out',
+        'F': 'Contract-specific product',
+        'N': 'New SKU (pre-receipt)',
+        'O': 'Discontinued - liquidation',
+        'S': 'Special order / backorder',
+        'X': 'Direct ship from vendor',
+        'V': 'Discontinued by vendor'
+    };
+
+    if (!code) return '-';
+    const upperCode = code.toUpperCase();
+    const definition = definitions[upperCode];
+    return definition ? `${upperCode} - ${definition}` : code;
+}
+
 async function onFilterChange(filterType) {
     const selectEl = document.getElementById(
         filterType === 'category' ? 'categorySelect' :
@@ -1265,7 +1286,7 @@ async function showProductDetails(productIndex) {
         { label: 'Subcategory', value: product.subCategory || state.subcategory || '-' },
         { label: 'Product Type', value: product.productType || '-' },
         { label: 'SKU Type', value: formatSKUType(product.type) },
-        { label: 'Product Class', value: pricingData?.productClass || product.productClass || '-' },
+        { label: 'Product Class', value: formatProductClass(pricingData?.productClass || product.productClass), fullWidth: true },
         { label: 'Replacement SKU', value: product.replacementSku || '-', fullWidth: true }
     ];
     renderGridWithOptions('productInfoGrid', productInfoFields);
