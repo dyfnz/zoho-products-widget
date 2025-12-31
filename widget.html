@@ -26,8 +26,8 @@
                 <button class="tab-btn active" data-distributor="ingram" onclick="selectDistributor('ingram')">
                     <span class="tab-icon">IM</span>Ingram Micro
                 </button>
-                <button class="tab-btn" data-distributor="tdsynnex" onclick="selectDistributor('tdsynnex')" disabled>
-                    <span class="tab-icon">TS</span>TD SYNNEX<span class="coming-soon">Soon</span>
+                <button class="tab-btn" data-distributor="tdsynnex" onclick="selectDistributor('tdsynnex')">
+                    <span class="tab-icon">TS</span>TD SYNNEX
                 </button>
                 <button class="tab-btn" data-distributor="arrow" onclick="selectDistributor('arrow')" disabled>
                     <span class="tab-icon">AR</span>Arrow<span class="coming-soon">Soon</span>
@@ -77,7 +77,15 @@
                                     <option value="">-- Any --</option>
                                 </select>
                             </div>
-                            <div class="filter-field filter-narrow">
+                            <!-- TD Synnex Cat3 Filter (hidden for Ingram) -->
+                            <div class="filter-field" id="cat3FilterField" style="display: none;">
+                                <label>Sub-subcategory <span class="count-badge" id="cat3Count"></span></label>
+                                <select id="cat3Select" onchange="onFilterChange('cat3')" onfocus="loadFilterOptions('cat3')">
+                                    <option value="">-- Any --</option>
+                                </select>
+                            </div>
+                            <!-- Ingram SKU Type Filter (hidden for TD Synnex) -->
+                            <div class="filter-field filter-narrow" id="skuTypeFilterField">
                                 <label>SKU Type</label>
                                 <select id="skuTypeSelect" onchange="onFilterChange('skuType')">
                                     <option value="">-- Any --</option>

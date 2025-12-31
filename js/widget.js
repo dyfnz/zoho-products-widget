@@ -8,6 +8,7 @@
 // CONFIGURATION
 // =====================================================
 const PROXY_BASE = 'https://tydxdpntshbobomemzxj.supabase.co/functions/v1/ingram-proxy';
+const TDSYNNEX_BASE = 'https://tydxdpntshbobomemzxj.supabase.co/functions/v1';
 const PAGE_SIZE = 50;
 
 // Distributor configurations
@@ -20,8 +21,7 @@ const DISTRIBUTORS = {
     tdsynnex: {
         name: 'TD SYNNEX',
         apiPrefix: '/tdsynnex',
-        color: '#10b981',
-        disabled: true
+        color: '#10b981'
     },
     arrow: {
         name: 'Arrow',
@@ -40,16 +40,19 @@ const state = {
     manufacturer: '',
     category: '',
     subcategory: '',
+    cat3: '',  // TD Synnex category level 3
     skuType: '',
     skuKeyword: '',
     // Filter loading state
     loadingFilters: {
         category: false,
-        subcategory: false
+        subcategory: false,
+        cat3: false
     },
     filterParams: {
         category: '',
-        subcategory: ''
+        subcategory: '',
+        cat3: ''
     },
     // Pagination and products
     currentPage: 1,
@@ -421,6 +424,20 @@ function selectDistributor(distributor) {
         btn.classList.toggle('active', btn.dataset.distributor === distributor);
     });
 
+    // Show/hide distributor-specific filters
+    const cat3Field = document.getElementById('cat3FilterField');
+    const skuTypeField = document.getElementById('skuTypeFilterField');
+
+    if (distributor === 'tdsynnex') {
+        // TD Synnex: Show cat3, hide SKU type
+        if (cat3Field) cat3Field.style.display = '';
+        if (skuTypeField) skuTypeField.style.display = 'none';
+    } else {
+        // Ingram: Hide cat3, show SKU type
+        if (cat3Field) cat3Field.style.display = 'none';
+        if (skuTypeField) skuTypeField.style.display = '';
+    }
+
     resetFilters();
     showStatus(`Switched to ${DISTRIBUTORS[distributor].name}. Search for a manufacturer.`, 'info');
 }
@@ -471,6 +488,162 @@ async function authenticate() {
 }
 
 // =====================================================
+// TD SYNNEX API FUNCTIONS
+// =====================================================
+
+// TD Synnex warehouse location mapping for display
+const TDSYNNEX_WAREHOUSES = {
+    qty_miami_fl: { id: 'MIA', location: 'Miami, FL' },
+    qty_tracy_ca: { id: 'TRC', location: 'Tracy, CA' },
+    qty_romeoville_il: { id: 'ROM', location: 'Romeoville, IL' },
+    qty_southaven_ms: { id: 'SHV', location: 'Southaven, MS' },
+    qty_columbus_oh: { id: 'COL', location: 'Columbus, OH' },
+    qty_suwanee_ga: { id: 'SUW', location: 'Suwanee, GA' },
+    qty_chino_ca: { id: 'CHI', location: 'Chino, CA' },
+    qty_swedesboro_nj: { id: 'SWD', location: 'Swedesboro, NJ' },
+    qty_south_bend_in: { id: 'SBI', location: 'South Bend, IN' },
+    qty_fort_worth_tx: { id: 'FTW', location: 'Fort Worth, TX' },
+    qty_fontana_ca: { id: 'FON', location: 'Fontana, CA' }
+};
+
+async function searchTDSynnexManufacturers(searchTerm) {
+    const response = await fetch(
+        `${TDSYNNEX_BASE}/manufacturer-lookup?search=${encodeURIComponent(searchTerm)}&limit=100`
+    );
+    const data = await response.json();
+
+    if (data.success && data.data?.manufacturers) {
+        return data.data.manufacturers.map(m => m.manufacturer_name);
+    }
+    return [];
+}
+
+async function loadTDSynnexCategories(manufacturer, cat1 = null, cat2 = null) {
+    let url = `${TDSYNNEX_BASE}/category-lookup?manufacturer=${encodeURIComponent(manufacturer)}`;
+    if (cat1) url += `&cat1=${encodeURIComponent(cat1)}`;
+    if (cat2) url += `&cat2=${encodeURIComponent(cat2)}`;
+
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.success && data.data?.categories) {
+        // Extract the appropriate description field based on level
+        const level = data.data.level;
+        return data.data.categories.map(c => {
+            if (level === 1) return { name: c.cat_description_1, count: c.product_count };
+            if (level === 2) return { name: c.cat_description_2, count: c.product_count };
+            if (level === 3) return { name: c.cat_description_3, count: c.product_count };
+            return { name: 'Unknown', count: 0 };
+        });
+    }
+    return [];
+}
+
+async function searchTDSynnexProducts(manufacturer, options = {}) {
+    const { search = '', cat1 = '', cat2 = '', cat3 = '', limit = PAGE_SIZE, offset = 0 } = options;
+
+    let url = `${TDSYNNEX_BASE}/product-search?manufacturer=${encodeURIComponent(manufacturer)}`;
+    url += `&limit=${limit}&offset=${offset}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    if (cat1) url += `&cat1=${encodeURIComponent(cat1)}`;
+    if (cat2) url += `&cat2=${encodeURIComponent(cat2)}`;
+    if (cat3) url += `&cat3=${encodeURIComponent(cat3)}`;
+
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.success && data.data) {
+        return {
+            products: data.data.products.map(mapTDSynnexProduct),
+            totalCount: data.data.total_count,
+            pagination: {
+                page: Math.floor(offset / limit) + 1,
+                pageSize: limit,
+                totalPages: Math.ceil(data.data.total_count / limit),
+                totalRecords: data.data.total_count
+            }
+        };
+    }
+    return { products: [], totalCount: 0, pagination: null };
+}
+
+// Map TD Synnex product to widget's expected format (matching Ingram structure)
+function mapTDSynnexProduct(product) {
+    return {
+        // Core identifiers
+        vendorPartNumber: product.manufacturer_part_number,
+        ingramPartNumber: product.td_synnex_sku || product.manufacturer_part_number,
+        distributorPartNumber: product.td_synnex_sku,
+
+        // Product info
+        description: product.part_description,
+        vendorName: product.manufacturer_name,
+        category: product.cat_description_1,
+        subCategory: product.cat_description_2,
+        cat3: product.cat_description_3,
+
+        // Extended description
+        extraDescription: product.long_description || product.long_description_1 || '',
+
+        // Pricing (TD Synnex has msrp directly)
+        retailPrice: product.msrp,
+        pricingData: {
+            pricing: {
+                retailPrice: product.msrp,
+                customerPrice: product.contract_price || product.unit_cost
+            },
+            availability: buildTDSynnexAvailability(product)
+        },
+
+        // Flags
+        productType: product.kit_standalone_flag || '',
+        type: 'TS::physical',
+
+        // Additional data
+        upcCode: product.upc_code,
+        commodityName: product.commodity_name,
+        lastUpdated: product.last_updated,
+
+        // Promo info
+        promoFlag: product.promo_flag,
+        promoComment: product.promo_comment,
+        promoExpiration: product.promo_expiration,
+        etaDate: product.eta_date,
+
+        // Source marker
+        _source: 'tdsynnex',
+        _rawProduct: product
+    };
+}
+
+// Build availability data in Ingram-compatible format
+function buildTDSynnexAvailability(product) {
+    const qtyTotal = product.qty_total ?? 0;
+    const isVirtual = qtyTotal === 9999;
+
+    // Build warehouse breakdown
+    const availabilityByWarehouse = [];
+    for (const [field, info] of Object.entries(TDSYNNEX_WAREHOUSES)) {
+        const qty = product[field];
+        if (qty !== null && qty !== undefined && qty > 0) {
+            availabilityByWarehouse.push({
+                warehouseId: info.id,
+                location: info.location,
+                quantityAvailable: qty,
+                quantityBackordered: 0
+            });
+        }
+    }
+
+    return {
+        available: qtyTotal > 0,
+        totalAvailability: isVirtual ? 'Unlimited' : qtyTotal,
+        availabilityByWarehouse: availabilityByWarehouse,
+        isVirtual: isVirtual
+    };
+}
+
+// =====================================================
 // MANUFACTURER SEARCH
 // =====================================================
 function debounceManufacturerSearch() {
@@ -491,22 +664,31 @@ async function searchManufacturers() {
     showStatus(`Searching manufacturers matching "${searchTerm}"...`, 'loading');
 
     try {
-        const response = await fetch(
-            `${PROXY_BASE}?action=manufacturers&search=${encodeURIComponent(searchTerm)}`
-        );
-        const data = await response.json();
+        let manufacturers = [];
+
+        if (state.currentDistributor === 'tdsynnex') {
+            // TD Synnex: Use dedicated edge function
+            manufacturers = await searchTDSynnexManufacturers(searchTerm);
+        } else {
+            // Ingram: Use proxy
+            const response = await fetch(
+                `${PROXY_BASE}?action=manufacturers&search=${encodeURIComponent(searchTerm)}`
+            );
+            const data = await response.json();
+            manufacturers = data.manufacturers || [];
+        }
 
         select.innerHTML = '<option value="">-- Select a manufacturer --</option>';
 
-        if (data.manufacturers && data.manufacturers.length > 0) {
-            data.manufacturers.forEach(mfr => {
+        if (manufacturers.length > 0) {
+            manufacturers.forEach(mfr => {
                 const option = document.createElement('option');
                 option.value = mfr;
                 option.textContent = mfr;
                 select.appendChild(option);
             });
-            document.getElementById('mfrCount').textContent = `(${data.manufacturers.length})`;
-            showStatus(`Found ${data.manufacturers.length} manufacturers`, 'success');
+            document.getElementById('mfrCount').textContent = `(${manufacturers.length})`;
+            showStatus(`Found ${manufacturers.length} manufacturers`, 'success');
         } else {
             select.innerHTML = '<option value="">No manufacturers found</option>';
             document.getElementById('mfrCount').textContent = '(0)';
@@ -554,35 +736,29 @@ async function onManufacturerSelect() {
 // FILTER LOADING
 // =====================================================
 async function loadFilterOptions(filterType) {
-    const currentParams = `${state.manufacturer}|${state.category}|${state.subcategory}|${state.skuType}`;
+    const currentParams = `${state.manufacturer}|${state.category}|${state.subcategory}|${state.cat3}|${state.skuType}`;
 
     if (state.loadingFilters[filterType]) return;
     if (state.filterParams[filterType] === currentParams) return;
 
     state.loadingFilters[filterType] = true;
 
-    let url = `${PROXY_BASE}?vendor=${encodeURIComponent(state.manufacturer)}`;
-    let selectEl, countEl, dataKey;
+    let selectEl, countEl;
 
+    // Map filter type to DOM elements
     switch (filterType) {
         case 'category':
-            url += `&action=categories`;
-            if (state.subcategory) url += `&subCategory=${encodeURIComponent(state.subcategory)}`;
-            if (state.skuType) url += `&type=${encodeURIComponent(state.skuType)}`;
             selectEl = document.getElementById('categorySelect');
             countEl = document.getElementById('catCount');
-            dataKey = 'categories';
             break;
-
         case 'subcategory':
-            url += `&action=subcategories`;
-            if (state.category) url += `&category=${encodeURIComponent(state.category)}`;
-            if (state.skuType) url += `&type=${encodeURIComponent(state.skuType)}`;
             selectEl = document.getElementById('subcategorySelect');
             countEl = document.getElementById('subCatCount');
-            dataKey = 'subcategories';
             break;
-
+        case 'cat3':
+            selectEl = document.getElementById('cat3Select');
+            countEl = document.getElementById('cat3Count');
+            break;
         default:
             state.loadingFilters[filterType] = false;
             return;
@@ -592,12 +768,50 @@ async function loadFilterOptions(filterType) {
     selectEl.innerHTML = '<option value="">Loading...</option>';
 
     try {
-        const response = await fetch(url);
-        const data = await response.json();
+        let items = [];
+
+        if (state.currentDistributor === 'tdsynnex') {
+            // TD Synnex: Use dedicated edge function
+            let categories = [];
+            if (filterType === 'category') {
+                categories = await loadTDSynnexCategories(state.manufacturer);
+            } else if (filterType === 'subcategory' && state.category) {
+                categories = await loadTDSynnexCategories(state.manufacturer, state.category);
+            } else if (filterType === 'cat3' && state.category && state.subcategory) {
+                categories = await loadTDSynnexCategories(state.manufacturer, state.category, state.subcategory);
+            }
+            items = categories.map(c => c.name);
+        } else {
+            // Ingram: Use proxy
+            let url = `${PROXY_BASE}?vendor=${encodeURIComponent(state.manufacturer)}`;
+            let dataKey;
+
+            switch (filterType) {
+                case 'category':
+                    url += `&action=categories`;
+                    if (state.subcategory) url += `&subCategory=${encodeURIComponent(state.subcategory)}`;
+                    if (state.skuType) url += `&type=${encodeURIComponent(state.skuType)}`;
+                    dataKey = 'categories';
+                    break;
+                case 'subcategory':
+                    url += `&action=subcategories`;
+                    if (state.category) url += `&category=${encodeURIComponent(state.category)}`;
+                    if (state.skuType) url += `&type=${encodeURIComponent(state.skuType)}`;
+                    dataKey = 'subcategories';
+                    break;
+                default:
+                    // Ingram doesn't have cat3
+                    state.loadingFilters[filterType] = false;
+                    return;
+            }
+
+            const response = await fetch(url);
+            const data = await response.json();
+            items = data[dataKey] || [];
+        }
 
         selectEl.innerHTML = '<option value="">-- Any --</option>';
 
-        const items = data[dataKey] || [];
         if (items.length > 0) {
             items.forEach(item => {
                 const option = document.createElement('option');
@@ -668,18 +882,40 @@ async function onFilterChange(filterType) {
     const selectEl = document.getElementById(
         filterType === 'category' ? 'categorySelect' :
         filterType === 'subcategory' ? 'subcategorySelect' :
+        filterType === 'cat3' ? 'cat3Select' :
         'skuTypeSelect'
     );
 
     state[filterType] = selectEl.value;
 
+    // Reset dependent filters
     if (filterType !== 'category') state.filterParams.category = '';
     if (filterType !== 'subcategory') state.filterParams.subcategory = '';
+    if (filterType !== 'cat3') state.filterParams.cat3 = '';
+
+    // Clear downstream filters when parent changes
+    if (filterType === 'category') {
+        state.subcategory = '';
+        state.cat3 = '';
+        document.getElementById('subcategorySelect').innerHTML = '<option value="">-- Any --</option>';
+        document.getElementById('subCatCount').textContent = '';
+        if (state.currentDistributor === 'tdsynnex') {
+            document.getElementById('cat3Select').innerHTML = '<option value="">-- Any --</option>';
+            document.getElementById('cat3Count').textContent = '';
+        }
+    } else if (filterType === 'subcategory' && state.currentDistributor === 'tdsynnex') {
+        state.cat3 = '';
+        document.getElementById('cat3Select').innerHTML = '<option value="">-- Any --</option>';
+        document.getElementById('cat3Count').textContent = '';
+    }
 
     resetProducts();
 
+    // Load child categories
     if (filterType === 'category' && state.category) {
         await loadFilterOptions('subcategory');
+    } else if (filterType === 'subcategory' && state.subcategory && state.currentDistributor === 'tdsynnex') {
+        await loadFilterOptions('cat3');
     }
 }
 
@@ -698,23 +934,44 @@ async function loadProducts(page = 1) {
     showStatus('Loading products with pricing...', 'loading');
 
     try {
-        let url = `${PROXY_BASE}?action=productsWithPricing&vendor=${encodeURIComponent(state.manufacturer)}&page=${page}`;
-        if (state.category) url += `&category=${encodeURIComponent(state.category)}`;
-        if (state.subcategory) url += `&subCategory=${encodeURIComponent(state.subcategory)}`;
-        if (state.skuType) url += `&type=${encodeURIComponent(state.skuType)}`;
-        if (state.skuKeyword && state.skuKeyword.length >= 2) {
-            url += `&keyword=${encodeURIComponent(state.skuKeyword)}`;
+        let products = [];
+        let pagination = null;
+
+        if (state.currentDistributor === 'tdsynnex') {
+            // TD Synnex: Use dedicated edge function
+            const offset = (page - 1) * PAGE_SIZE;
+            const result = await searchTDSynnexProducts(state.manufacturer, {
+                search: state.skuKeyword || '',
+                cat1: state.category || '',
+                cat2: state.subcategory || '',
+                cat3: state.cat3 || '',
+                limit: PAGE_SIZE,
+                offset: offset
+            });
+            products = result.products;
+            pagination = result.pagination;
+        } else {
+            // Ingram: Use proxy
+            let url = `${PROXY_BASE}?action=productsWithPricing&vendor=${encodeURIComponent(state.manufacturer)}&page=${page}`;
+            if (state.category) url += `&category=${encodeURIComponent(state.category)}`;
+            if (state.subcategory) url += `&subCategory=${encodeURIComponent(state.subcategory)}`;
+            if (state.skuType) url += `&type=${encodeURIComponent(state.skuType)}`;
+            if (state.skuKeyword && state.skuKeyword.length >= 2) {
+                url += `&keyword=${encodeURIComponent(state.skuKeyword)}`;
+            }
+
+            const response = await fetch(url);
+            const data = await response.json();
+            products = data.products || [];
+            pagination = data.pagination;
         }
 
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (data.products && data.products.length > 0) {
+        if (products.length > 0) {
             // Store total records for pagination display
-            state.totalRecords = data.pagination?.totalRecords || data.products.length;
-            state.totalPages = data.pagination?.totalPages || 1;
+            state.totalRecords = pagination?.totalRecords || products.length;
+            state.totalPages = pagination?.totalPages || 1;
 
-            displayProductsWithPricing(data.products, data.pagination);
+            displayProductsWithPricing(products, pagination);
             showStatus('', '');
         } else {
             document.getElementById('productsBody').innerHTML =
@@ -1079,6 +1336,25 @@ function submitQueue() {
         const pricingData = product.pricingData || state.pricingData?.[product.ingramPartNumber] || {};
         const msrp = pricingData?.pricing?.retailPrice || product.retailPrice || null;
 
+        // TD Synnex format
+        if (product._source === 'tdsynnex') {
+            return {
+                Product_Code: product.vendorPartNumber || '',
+                Product_Name: product.description || '',
+                Manufacturer: product.vendorName || state.manufacturer,
+                TDSynnex_SKU: product.distributorPartNumber || '',
+                MSRP: msrp,
+                Category: product.category || state.category || '',
+                Subcategory: product.subCategory || state.subcategory || '',
+                Category_Level_3: product.cat3 || state.cat3 || '',
+                UPC: product.upcCode || '',
+                Description: product.extraDescription || '',
+                Last_Sync_Source: 'TD SYNNEX',
+                Quantity: 1
+            };
+        }
+
+        // Ingram Micro format (default)
         return {
             Product_Code: product.vendorPartNumber || '',
             Product_Name: product.description || '',
@@ -1089,7 +1365,7 @@ function submitQueue() {
             Subcategory: product.subCategory || state.subcategory || '',
             UPC: pricingData?.upc || product.upcCode || '',
             Description: product.extraDescription || pricingData?.description || '',
-            Last_Sync_Source: DISTRIBUTORS[state.currentDistributor]?.name || 'Ingram Micro',
+            Last_Sync_Source: 'Ingram Micro',
             IM_Product_Type: product.productType || '',
             Quantity: 1
         };
@@ -1447,11 +1723,13 @@ function resetFilters() {
 function resetOptionalFilters() {
     state.category = '';
     state.subcategory = '';
+    state.cat3 = '';
     state.skuType = '';
     state.skuKeyword = '';
 
     state.filterParams.category = '';
     state.filterParams.subcategory = '';
+    state.filterParams.cat3 = '';
 
     const catSelect = document.getElementById('categorySelect');
     if (catSelect) {
@@ -1463,6 +1741,12 @@ function resetOptionalFilters() {
     if (subSelect) {
         subSelect.innerHTML = '<option value="">-- Any --</option>';
         document.getElementById('subCatCount').textContent = '';
+    }
+
+    const cat3Select = document.getElementById('cat3Select');
+    if (cat3Select) {
+        cat3Select.innerHTML = '<option value="">-- Any --</option>';
+        document.getElementById('cat3Count').textContent = '';
     }
 
     const skuTypeSelect = document.getElementById('skuTypeSelect');
