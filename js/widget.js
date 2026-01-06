@@ -911,6 +911,8 @@ async function loadFilterOptions(filterType) {
 
             const response = await fetch(url);
             const data = await response.json();
+            console.log(`[Ingram ${filterType}] URL:`, url);
+            console.log(`[Ingram ${filterType}] Response:`, data);
             items = data[dataKey] || [];
         }
 
