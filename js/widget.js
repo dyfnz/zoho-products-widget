@@ -9,6 +9,7 @@
 // =====================================================
 const PROXY_BASE = 'https://tydxdpntshbobomemzxj.supabase.co/functions/v1/ingram-proxy';
 const TDSYNNEX_BASE = 'https://tydxdpntshbobomemzxj.supabase.co/functions/v1';
+const TDSYNNEX_PROXY_BASE = 'https://tydxdpntshbobomemzxj.supabase.co/functions/v1/tdsynnex-proxy';
 const PAGE_SIZE = 50;
 
 // Distributor configurations
@@ -506,6 +507,78 @@ const TDSYNNEX_WAREHOUSES = {
     qty_fontana_ca: { id: 'FON', location: 'Fontana, CA' }
 };
 
+// TD SYNNEX Kit/Standalone formatter
+function formatKitStandalone(flag) {
+    if (!flag) return '-';
+    return flag.toUpperCase() === 'K' ? 'Kit' : 'Standalone';
+}
+
+// TD SYNNEX ABC Code formatter
+function formatABCCode(code) {
+    const defs = {
+        'A': 'Active',
+        'B': 'Special Order',
+        'C': 'EOL',
+        'T': 'To Be Discontinued'
+    };
+    if (!code) return '-';
+    return defs[code.toUpperCase()] || code;
+}
+
+// Check if TD SYNNEX product is "New" (created within 90 days)
+function isTDSynnexNew(createdDate) {
+    if (!createdDate) return false;
+    const created = new Date(createdDate);
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    return created >= ninetyDaysAgo;
+}
+
+// Check if TD SYNNEX product is Licensed
+function isTDSynnexLicensed(assignedUse) {
+    if (!assignedUse) return false;
+    return assignedUse.toLowerCase().includes('license');
+}
+
+// Check if TD SYNNEX product is a Service SKU
+function isTDSynnexServiceSku(cat1, cat2) {
+    const cat1Lower = (cat1 || '').toLowerCase();
+    const cat2Lower = (cat2 || '').toLowerCase();
+    return cat1Lower === 'service / support' ||
+           cat2Lower.includes('service') ||
+           cat2Lower.includes('support');
+}
+
+// Derive SKU Type from physical dimensions
+function deriveSKUType(weight, length, width, height) {
+    // If all dimensions are 0 or null, it's Digital
+    const allZero = (weight || 0) === 0 &&
+                    (length || 0) === 0 &&
+                    (width || 0) === 0 &&
+                    (height || 0) === 0;
+    return allZero ? 'Digital' : 'Physical';
+}
+
+// Fetch warehouse availability from TD SYNNEX XML API
+async function fetchTDSynnexWarehouseAvailability(synnexSKU) {
+    if (!synnexSKU) return { warehouses: [], totalQty: 0, totalOnOrder: 0, status: null };
+    try {
+        const response = await fetch(
+            `${TDSYNNEX_PROXY_BASE}?action=availability&synnexSKU=${encodeURIComponent(synnexSKU)}`
+        );
+        const data = await response.json();
+        return {
+            warehouses: data.warehouses || [],
+            totalQty: data.totalQty || 0,
+            totalOnOrder: data.totalOnOrder || 0,
+            status: data.status || null
+        };
+    } catch (error) {
+        console.error('[TD SYNNEX] Warehouse fetch error:', error);
+        return { warehouses: [], totalQty: 0, totalOnOrder: 0, status: null };
+    }
+}
+
 async function searchTDSynnexManufacturers(searchTerm) {
     const response = await fetch(
         `${TDSYNNEX_BASE}/manufacturer-lookup?search=${encodeURIComponent(searchTerm)}&limit=100`
@@ -569,11 +642,20 @@ async function searchTDSynnexProducts(manufacturer, options = {}) {
 
 // Map TD Synnex product to widget's expected format (matching Ingram structure)
 function mapTDSynnexProduct(product) {
+    // Derive SKU Type from physical dimensions
+    const skuType = deriveSKUType(
+        product.ship_weight,
+        product.length,
+        product.width,
+        product.height
+    );
+
     return {
         // Core identifiers
         vendorPartNumber: product.manufacturer_part_number,
-        ingramPartNumber: product.td_synnex_sku || product.manufacturer_part_number,
+        ingramPartNumber: product.manufacturer_part_number, // Use MPN for display consistency
         distributorPartNumber: product.td_synnex_sku,
+        tdSynnexSkuNumber: product.td_synnex_sku_number, // Numeric SKU for API calls (Field 5)
 
         // Product info
         description: product.part_description,
@@ -587,6 +669,8 @@ function mapTDSynnexProduct(product) {
 
         // Pricing (TD Synnex has msrp directly)
         retailPrice: product.msrp,
+        unitCost: product.unit_cost,
+        contractPrice: product.contract_price,
         pricingData: {
             pricing: {
                 retailPrice: product.msrp,
@@ -595,14 +679,34 @@ function mapTDSynnexProduct(product) {
             availability: buildTDSynnexAvailability(product)
         },
 
-        // Flags
+        // Flags and derived fields
         productType: product.kit_standalone_flag || '',
-        type: 'TS::physical',
+        kitStandaloneFlag: product.kit_standalone_flag,
+        type: skuType === 'Digital' ? 'TS::digital' : 'TS::physical',
+        skuType: skuType,
+        abcCode: product.abc_code,
+        skuAttributes: product.sku_attributes,
+        replacementSku: product.replacement_sku,
+
+        // Derived boolean flags
+        isLicensed: isTDSynnexLicensed(product.td_assigned_use),
+        isServiceSku: isTDSynnexServiceSku(product.cat_description_1, product.cat_description_2),
+        isNew: isTDSynnexNew(product.sku_created_date),
+        isDigital: skuType === 'Digital',
+        isDiscontinued: product.abc_code === 'C' || product.abc_code === 'T',
+
+        // Physical dimensions (for reference)
+        shipWeight: product.ship_weight,
+        length: product.length,
+        width: product.width,
+        height: product.height,
 
         // Additional data
         upcCode: product.upc_code,
         commodityName: product.commodity_name,
         lastUpdated: product.last_updated,
+        skuCreatedDate: product.sku_created_date,
+        tdAssignedUse: product.td_assigned_use,
 
         // Promo info
         promoFlag: product.promo_flag,
@@ -1424,8 +1528,8 @@ async function showProductDetails(productIndex) {
         return;
     }
 
-    const ingramPn = product.ingramPartNumber;
-    console.log(`[Details] Loading details for ${ingramPn}...`);
+    const isTDSynnex = product._source === 'tdsynnex';
+    console.log(`[Details] Loading details for ${product.vendorPartNumber} (${isTDSynnex ? 'TD SYNNEX' : 'Ingram'})...`);
 
     const detailsSection = document.getElementById('productDetailsSection');
     detailsSection.style.display = 'block';
@@ -1438,6 +1542,222 @@ async function showProductDetails(productIndex) {
     if (rawContainer) rawContainer.style.display = 'none';
     if (rawToggle) rawToggle.classList.remove('active');
 
+    // Helper functions (shared between distributors)
+    const yesNo = (val) => {
+        if (val === true) return 'Yes';
+        if (val === false) return 'No';
+        if (typeof val === 'string') {
+            const lower = val.toLowerCase();
+            if (lower === 'true' || lower === 'yes') return 'Yes';
+            if (lower === 'false' || lower === 'no') return 'No';
+        }
+        return '-';
+    };
+
+    const formatCurrency = (val) => {
+        if (val === null || val === undefined) return '-';
+        return `$${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    };
+
+    const renderGrid = (elementId, fields) => {
+        const grid = document.getElementById(elementId);
+        if (grid) {
+            grid.innerHTML = fields.map(f => `
+                <div class="field-mapping-item">
+                    <span class="field-label">${f.label}</span>
+                    <span class="field-value">${f.value}</span>
+                </div>
+            `).join('');
+        }
+    };
+
+    const renderGridWithOptions = (elementId, fields) => {
+        const grid = document.getElementById(elementId);
+        if (grid) {
+            grid.innerHTML = fields.map(f => `
+                <div class="field-mapping-item${f.fullWidth ? ' full-width' : ''}">
+                    <span class="field-label">${f.label}</span>
+                    <span class="field-value">${f.value}</span>
+                </div>
+            `).join('');
+        }
+    };
+
+    const renderFlagsGrid = (elementId, fields) => {
+        const grid = document.getElementById(elementId);
+        if (grid) {
+            grid.innerHTML = fields.map(f => `
+                <div class="field-mapping-item">
+                    <span class="field-label">${f.label}</span>
+                    <span class="field-value">${f.isHtml ? f.value : f.value}</span>
+                </div>
+            `).join('');
+        }
+    };
+
+    // ========================================
+    // TD SYNNEX PRODUCT DETAILS
+    // ========================================
+    if (isTDSynnex) {
+        // Access raw product data for TD SYNNEX fields
+        const rawProduct = product._rawProduct || {};
+        let warehouseData = { warehouses: [], totalQty: 0, totalOnOrder: 0, status: null };
+
+        // Fetch warehouse availability from TD SYNNEX XML API using numeric SKU (Field 5)
+        if (product.tdSynnexSkuNumber) {
+            warehouseData = await fetchTDSynnexWarehouseAvailability(product.tdSynnexSkuNumber);
+        }
+
+        const fullProductData = { ...product, warehouseData };
+
+        // Determine authorization status from API response
+        const isNotAuthorized = warehouseData.status === 'Notauthorized';
+        const authorizedText = isNotAuthorized ? 'No' : 'Yes';
+        const authorizedClass = isNotAuthorized ? 'authorized-no' : 'authorized-yes';
+
+        // Header - Product Name (from part_description)
+        document.getElementById('detailsProductName').innerHTML = `
+            <strong>Product Name:</strong> ${product.description || 'N/A'}
+        `;
+
+        // Header - TD Synnex SKU (Field 5), Vendor Part (manufacturer_part_number), Manufacturer, Authorized
+        document.getElementById('detailsSubtitle').innerHTML = `
+            <strong>TD Synnex SKU:</strong> ${product.tdSynnexSkuNumber || 'N/A'} |
+            <strong>Vendor Part:</strong> ${product.vendorPartNumber || 'N/A'} |
+            <strong>Manufacturer:</strong> ${product.vendorName || state.manufacturer} |
+            <strong>Authorized:</strong> <span class="${authorizedClass}">${authorizedText}</span>
+        `;
+
+        // Long Description (from long_description)
+        const longDesc = product.extraDescription || '';
+        const longDescEl = document.getElementById('detailsLongDesc');
+        if (longDesc) {
+            longDescEl.innerHTML = `<strong>Long Description:</strong> ${longDesc}`;
+            longDescEl.style.display = 'block';
+        } else {
+            longDescEl.style.display = 'none';
+        }
+
+        // Product Information Grid - TD SYNNEX specific labels
+        // Category 1 = cat_description_1, Category 2 = cat_description_2, Category 3 = cat_description_3
+        // SKU Type = derived from Fields 28,53,54,55 (weight/dimensions)
+        // UNSPSC = commodity_name
+        // Replacement SKU = replacement_sku
+        const productInfoFields = [
+            { label: 'Category 1', value: product.category || '-' },
+            { label: 'Category 2', value: product.subCategory || '-' },
+            { label: 'Category 3', value: product.cat3 || '-' },
+            { label: 'SKU Type', value: product.skuType || '-' },
+            { label: 'UNSPSC', value: product.commodityName || '-' },
+            { label: 'Replacement SKU', value: product.replacementSku || '-' }
+        ];
+        renderGrid('productInfoGrid', productInfoFields);
+
+        // Pricing Grid - TD SYNNEX: MSRP from msrp, Customer Price from contract_price
+        // Using pricingData.pricing which is set in mapTDSynnexProduct from raw fields
+        const pricingFields = [
+            { label: 'MSRP', value: formatCurrency(product.pricingData?.pricing?.retailPrice) },
+            { label: 'Customer Price', value: formatCurrency(product.pricingData?.pricing?.customerPrice) }
+        ];
+        renderGrid('pricingGrid', pricingFields);
+
+        // Availability Grid - use API response if available, else flat file data (qty_total)
+        const apiTotalQty = warehouseData.totalQty;
+        const flatFileTotalQty = product.pricingData?.availability?.totalAvailability ?? 0;
+        const displayQty = apiTotalQty > 0 ? apiTotalQty : flatFileTotalQty;
+        const inStock = displayQty > 0;
+
+        const availabilityFields = [
+            { label: 'In Stock', value: yesNo(inStock) },
+            { label: 'Available Qty', value: displayQty === 9999 ? 'Unlimited' : displayQty }
+        ];
+        renderGrid('availabilityGrid', availabilityFields);
+
+        // Flags Grid - TD SYNNEX specific derivation
+        // Digital = SKU Type derived from weight/dimensions
+        // Bundle = kit_standalone_flag = "K"
+        // Licensed = td_assigned_use (Field 36) contains "License"
+        // Service SKU = cat_description_1 = "Service / Support" OR cat_description_2 contains "Service"/"Support"
+        // Direct Ship = sku_attributes contains "D"
+        // New = sku_created_date (Field 37) <= 90 days
+        // Discontinued = abc_code = "C" or "T"
+        const discontinuedValue = product.isDiscontinued
+            ? '<span class="discontinued-yes">Yes</span>'
+            : '<span class="discontinued-no">No</span>';
+
+        const flagsFields = [
+            { label: 'Digital', value: yesNo(product.isDigital) },
+            { label: 'Bundle', value: yesNo(product.kitStandaloneFlag === 'K') },
+            { label: 'Licensed', value: yesNo(product.isLicensed) },
+            { label: 'Service SKU', value: yesNo(product.isServiceSku) },
+            { label: 'Direct Ship', value: yesNo(product.skuAttributes?.includes('D')) },
+            { label: 'New', value: yesNo(product.isNew) },
+            { label: 'Discontinued', value: discontinuedValue, isHtml: true }
+        ];
+        renderFlagsGrid('flagsGrid', flagsFields);
+
+        // Discounts - TD SYNNEX: show only if promo_flag = "Y"
+        // Type = "Rebate" (static), Bid Number = "N/A" (static)
+        // Discount = unit_cost - contract_price
+        // Qty = 99999 (static), Effective = "N/A" (static), Expires = promo_expiration
+        const discountsGroup = document.getElementById('discountsGroup');
+        const discountsBody = document.getElementById('discountsBody');
+
+        if (product.promoFlag === 'Y') {
+            discountsGroup.style.display = 'block';
+            // Discount = unit_cost - contract_price (from raw fields via mapped properties)
+            const discountAmount = (product.unitCost && product.contractPrice)
+                ? product.unitCost - product.contractPrice
+                : null;
+            discountsBody.innerHTML = `
+                <tr>
+                    <td>Rebate</td>
+                    <td>N/A</td>
+                    <td class="text-right">${formatCurrency(discountAmount)}</td>
+                    <td class="text-right">99999</td>
+                    <td>N/A</td>
+                    <td>${product.promoExpiration || 'N/A'}</td>
+                </tr>
+            `;
+        } else {
+            discountsGroup.style.display = 'none';
+        }
+
+        // Warehouse Availability - from TD SYNNEX XML API response
+        // Warehouse = WHS-001 (number), Location = WHS-003 (city)
+        // Available = WHS-005 (qty), Backordered = WHS-006 (onOrderQuantity)
+        const warehouseSection = document.getElementById('warehouseSection');
+        const warehouseBody = document.getElementById('warehouseBody');
+
+        if (warehouseData.warehouses && warehouseData.warehouses.length > 0) {
+            // Filter to only show warehouses with qty > 0
+            const availableWarehouses = warehouseData.warehouses.filter(wh => (wh.qty ?? 0) > 0);
+
+            if (availableWarehouses.length > 0) {
+                warehouseSection.style.display = 'block';
+                warehouseBody.innerHTML = availableWarehouses.map(wh => `
+                    <tr>
+                        <td>${wh.number || '-'}</td>
+                        <td>${wh.city || '-'}</td>
+                        <td class="text-right">${wh.qty ?? 0}</td>
+                        <td class="text-right">${wh.onOrderQuantity ?? 0}</td>
+                    </tr>
+                `).join('');
+            } else {
+                warehouseSection.style.display = 'none';
+            }
+        } else {
+            warehouseSection.style.display = 'none';
+        }
+
+        document.getElementById('rawApiResponse').textContent = JSON.stringify(fullProductData, null, 2);
+        return;
+    }
+
+    // ========================================
+    // INGRAM MICRO PRODUCT DETAILS
+    // ========================================
+    const ingramPn = product.ingramPartNumber;
     let pricingData = state.pricingData?.[ingramPn];
     let productDetails = null;
 
@@ -1488,7 +1808,7 @@ async function showProductDetails(productIndex) {
     document.getElementById('detailsProductName').innerHTML = `
         <strong>Product Name:</strong> ${product.description || 'N/A'}
     `;
-    // Row 2: Ingram SKU, Vendor Part, Manufacturer, Authorized (no duplicate Product Name)
+    // Row 2: Ingram SKU, Vendor Part, Manufacturer, Authorized
     document.getElementById('detailsSubtitle').innerHTML = `
         <strong>Ingram SKU:</strong> ${ingramPn || 'N/A'} |
         <strong>Vendor Part:</strong> ${product.vendorPartNumber || 'N/A'} |
@@ -1505,58 +1825,7 @@ async function showProductDetails(productIndex) {
         longDescEl.style.display = 'none';
     }
 
-    const renderGrid = (elementId, fields) => {
-        const grid = document.getElementById(elementId);
-        if (grid) {
-            grid.innerHTML = fields.map(f => `
-                <div class="field-mapping-item">
-                    <span class="field-label">${f.label}</span>
-                    <span class="field-value">${f.value}</span>
-                </div>
-            `).join('');
-        }
-    };
-
-    const renderGridWithOptions = (elementId, fields) => {
-        const grid = document.getElementById(elementId);
-        if (grid) {
-            grid.innerHTML = fields.map(f => `
-                <div class="field-mapping-item${f.fullWidth ? ' full-width' : ''}">
-                    <span class="field-label">${f.label}</span>
-                    <span class="field-value">${f.value}</span>
-                </div>
-            `).join('');
-        }
-    };
-
-    const renderFlagsGrid = (elementId, fields) => {
-        const grid = document.getElementById(elementId);
-        if (grid) {
-            grid.innerHTML = fields.map(f => `
-                <div class="field-mapping-item">
-                    <span class="field-label">${f.label}</span>
-                    <span class="field-value">${f.isHtml ? f.value : f.value}</span>
-                </div>
-            `).join('');
-        }
-    };
-
-    const yesNo = (val) => {
-        if (val === true) return 'Yes';
-        if (val === false) return 'No';
-        if (typeof val === 'string') {
-            const lower = val.toLowerCase();
-            if (lower === 'true' || lower === 'yes') return 'Yes';
-            if (lower === 'false' || lower === 'no') return 'No';
-        }
-        return '-';
-    };
-
-    const formatCurrency = (val) => {
-        if (val === null || val === undefined) return '-';
-        return `$${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    };
-
+    // Ingram: Category, Subcategory, Product Type, SKU Type, Product Class, Replacement SKU
     const productInfoFields = [
         { label: 'Category', value: product.category || state.category || '-' },
         { label: 'Subcategory', value: product.subCategory || state.subcategory || '-' },
@@ -1567,24 +1836,17 @@ async function showProductDetails(productIndex) {
     ];
     renderGridWithOptions('productInfoGrid', productInfoFields);
 
+    // Ingram pricing: MSRP (retailPrice) and Customer Price (customerPrice) - no Subscription Price
     const msrpValue = formatCurrency(pricingData?.pricing?.retailPrice);
     const customerPriceValue = formatCurrency(pricingData?.pricing?.customerPrice);
 
-    let subscriptionPriceValue = '-';
-    if (pricingData?.subscriptionPrice && Array.isArray(pricingData.subscriptionPrice) && pricingData.subscriptionPrice.length > 0) {
-        const subPrice = pricingData.subscriptionPrice[0];
-        if (subPrice?.options?.[0]?.resourcePricing?.[0]?.msrp) {
-            subscriptionPriceValue = formatCurrency(subPrice.options[0].resourcePricing[0].msrp);
-        }
-    }
-
     const pricingFields = [
         { label: 'MSRP', value: msrpValue },
-        { label: 'Customer Price', value: customerPriceValue },
-        { label: 'Subscription Price', value: subscriptionPriceValue }
+        { label: 'Customer Price', value: customerPriceValue }
     ];
     renderGrid('pricingGrid', pricingFields);
 
+    // Ingram discounts
     const discountsGroup = document.getElementById('discountsGroup');
     const discountsBody = document.getElementById('discountsBody');
 
@@ -1627,7 +1889,7 @@ async function showProductDetails(productIndex) {
         ? '<span class="discontinued-yes">Yes</span>'
         : '<span class="discontinued-no">No</span>';
 
-    // Order: Digital/Bundle, Licensed/Service SKU, Direct Ship/New, Discontinued
+    // Ingram flags
     const flagsFields = [
         { label: 'Digital', value: yesNo(indicators.isDigitalType || product.type === 'IM::Digital' || product.type === 'IM::digital') },
         { label: 'Bundle', value: yesNo(indicators.hasBundle || pricingData?.bundlePartIndicator) },
@@ -1639,14 +1901,13 @@ async function showProductDetails(productIndex) {
     ];
     renderFlagsGrid('flagsGrid', flagsFields);
 
+    // Ingram warehouse availability
     const warehouseSection = document.getElementById('warehouseSection');
     const warehouseBody = document.getElementById('warehouseBody');
 
-    // Check total availability - hide entire section if 0
     const totalAvailability = pricingData?.availability?.totalAvailability ?? 0;
 
     if (totalAvailability > 0 && pricingData?.availability?.availabilityByWarehouse?.length > 0) {
-        // Filter to only show warehouses with availability > 0
         const availableWarehouses = pricingData.availability.availabilityByWarehouse
             .filter(wh => (wh.quantityAvailable ?? 0) > 0);
 
