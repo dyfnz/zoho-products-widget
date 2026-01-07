@@ -425,6 +425,9 @@ function selectDistributor(distributor) {
         btn.classList.toggle('active', btn.dataset.distributor === distributor);
     });
 
+    // Clear product details when switching distributors (queue is preserved)
+    hideProductDetails();
+
     // Show/hide distributor-specific filters
     const cat3Field = document.getElementById('cat3FilterField');
     const skuTypeField = document.getElementById('skuTypeFilterField');
