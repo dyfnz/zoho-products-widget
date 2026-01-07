@@ -1742,30 +1742,21 @@ async function showProductDetails(productIndex) {
         const warehouseSection = document.getElementById('warehouseSection');
         const warehouseBody = document.getElementById('warehouseBody');
 
-        if (warehouseData.warehouses && warehouseData.warehouses.length > 0) {
-            // Filter to only show warehouses with qty > 0 OR onOrder > 0
-            const availableWarehouses = warehouseData.warehouses.filter(wh =>
-                (wh.qty ?? 0) > 0 || (wh.onOrder ?? 0) > 0
-            );
+        // Only show warehouse card when In Stock (qty > 0)
+        const availableWarehouses = (warehouseData.warehouses || []).filter(wh => (wh.qty ?? 0) > 0);
 
-            if (availableWarehouses.length > 0) {
-                warehouseSection.style.display = 'block';
-                warehouseBody.innerHTML = availableWarehouses.map(wh => `
-                    <tr>
-                        <td>${wh.warehouseId || wh.number || '-'}</td>
-                        <td>${wh.city || '-'}</td>
-                        <td class="text-right">${wh.qty ?? 0}</td>
-                        <td class="text-right">${wh.onOrder ?? wh.onOrderQuantity ?? 0}</td>
-                    </tr>
-                `).join('');
-            } else {
-                // Show section even if no stock, with "No availability" message
-                warehouseSection.style.display = 'block';
-                warehouseBody.innerHTML = '<tr><td colspan="4" class="text-center">No warehouse availability</td></tr>';
-            }
-        } else {
+        if (availableWarehouses.length > 0) {
             warehouseSection.style.display = 'block';
-            warehouseBody.innerHTML = '<tr><td colspan="4" class="text-center">Warehouse data unavailable</td></tr>';
+            warehouseBody.innerHTML = availableWarehouses.map(wh => `
+                <tr>
+                    <td>${wh.warehouseId || wh.number || '-'}</td>
+                    <td>${wh.city || '-'}</td>
+                    <td class="text-right">${wh.qty ?? 0}</td>
+                    <td class="text-right">${wh.onOrder ?? wh.onOrderQuantity ?? 0}</td>
+                </tr>
+            `).join('');
+        } else {
+            warehouseSection.style.display = 'none';
         }
 
         document.getElementById('rawApiResponse').textContent = JSON.stringify(fullProductData, null, 2);
