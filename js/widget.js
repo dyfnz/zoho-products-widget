@@ -549,6 +549,15 @@ function isTDSynnexServiceSku(cat1, cat2) {
            cat2Lower.includes('support');
 }
 
+// Format YYMMDD date to MM/DD/YYYY
+function formatPromoDate(yymmdd) {
+    if (!yymmdd || yymmdd.length !== 6) return yymmdd || 'N/A';
+    const yy = yymmdd.substring(0, 2);
+    const mm = yymmdd.substring(2, 4);
+    const dd = yymmdd.substring(4, 6);
+    return `${mm}/${dd}/20${yy}`;
+}
+
 // Derive SKU Type from physical dimensions
 function deriveSKUType(weight, length, width, height) {
     // If all dimensions are 0 or null, it's Digital
@@ -1680,7 +1689,7 @@ async function showProductDetails(productIndex) {
         // Bundle = kit_standalone_flag = "K"
         // Licensed = td_assigned_use (Field 36) contains "License"
         // Service SKU = cat_description_1 = "Service / Support" OR cat_description_2 contains "Service"/"Support"
-        // Direct Ship = sku_attributes contains "D"
+        // Direct Ship = sku_attributes first char is "Y"
         // New = sku_created_date (Field 37) <= 90 days
         // Discontinued = abc_code = "C" or "T"
         const discontinuedValue = product.isDiscontinued
@@ -1692,7 +1701,7 @@ async function showProductDetails(productIndex) {
             { label: 'Bundle', value: yesNo(product.kitStandaloneFlag === 'K') },
             { label: 'Licensed', value: yesNo(product.isLicensed) },
             { label: 'Service SKU', value: yesNo(product.isServiceSku) },
-            { label: 'Direct Ship', value: yesNo(product.skuAttributes?.includes('D')) },
+            { label: 'Direct Ship', value: yesNo(product.skuAttributes?.charAt(0) === 'Y') },
             { label: 'New', value: yesNo(product.isNew) },
             { label: 'Discontinued', value: discontinuedValue, isHtml: true }
         ];
@@ -1718,7 +1727,7 @@ async function showProductDetails(productIndex) {
                     <td class="text-right">${formatCurrency(discountAmount)}</td>
                     <td class="text-right">99999</td>
                     <td>N/A</td>
-                    <td>${product.promoExpiration || 'N/A'}</td>
+                    <td>${formatPromoDate(product.promoExpiration)}</td>
                 </tr>
             `;
         } else {
@@ -1732,24 +1741,29 @@ async function showProductDetails(productIndex) {
         const warehouseBody = document.getElementById('warehouseBody');
 
         if (warehouseData.warehouses && warehouseData.warehouses.length > 0) {
-            // Filter to only show warehouses with qty > 0
-            const availableWarehouses = warehouseData.warehouses.filter(wh => (wh.qty ?? 0) > 0);
+            // Filter to only show warehouses with qty > 0 OR onOrder > 0
+            const availableWarehouses = warehouseData.warehouses.filter(wh =>
+                (wh.qty ?? 0) > 0 || (wh.onOrder ?? 0) > 0
+            );
 
             if (availableWarehouses.length > 0) {
                 warehouseSection.style.display = 'block';
                 warehouseBody.innerHTML = availableWarehouses.map(wh => `
                     <tr>
-                        <td>${wh.number || '-'}</td>
+                        <td>${wh.warehouseId || wh.number || '-'}</td>
                         <td>${wh.city || '-'}</td>
                         <td class="text-right">${wh.qty ?? 0}</td>
-                        <td class="text-right">${wh.onOrderQuantity ?? 0}</td>
+                        <td class="text-right">${wh.onOrder ?? wh.onOrderQuantity ?? 0}</td>
                     </tr>
                 `).join('');
             } else {
-                warehouseSection.style.display = 'none';
+                // Show section even if no stock, with "No availability" message
+                warehouseSection.style.display = 'block';
+                warehouseBody.innerHTML = '<tr><td colspan="4" class="text-center">No warehouse availability</td></tr>';
             }
         } else {
-            warehouseSection.style.display = 'none';
+            warehouseSection.style.display = 'block';
+            warehouseBody.innerHTML = '<tr><td colspan="4" class="text-center">Warehouse data unavailable</td></tr>';
         }
 
         document.getElementById('rawApiResponse').textContent = JSON.stringify(fullProductData, null, 2);
