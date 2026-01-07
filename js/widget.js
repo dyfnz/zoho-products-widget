@@ -535,9 +535,11 @@ function isTDSynnexNew(createdDate) {
 }
 
 // Check if TD SYNNEX product is Licensed
-function isTDSynnexLicensed(assignedUse) {
-    if (!assignedUse) return false;
-    return assignedUse.toLowerCase().includes('license');
+function isTDSynnexLicensed(assignedUse, longDescription) {
+    const searchTerm = 'licens';
+    const assignedMatch = assignedUse && assignedUse.toLowerCase().includes(searchTerm);
+    const descMatch = longDescription && longDescription.toLowerCase().includes(searchTerm);
+    return assignedMatch || descMatch;
 }
 
 // Check if TD SYNNEX product is a Service SKU
@@ -698,7 +700,7 @@ function mapTDSynnexProduct(product) {
         replacementSku: product.replacement_sku,
 
         // Derived boolean flags
-        isLicensed: isTDSynnexLicensed(product.td_assigned_use),
+        isLicensed: isTDSynnexLicensed(product.td_assigned_use, product.long_description),
         isServiceSku: isTDSynnexServiceSku(product.cat_description_1, product.cat_description_2),
         isNew: isTDSynnexNew(product.sku_created_date),
         isDigital: skuType === 'Digital',
