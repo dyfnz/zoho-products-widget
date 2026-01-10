@@ -1454,6 +1454,7 @@ function createQueueItemElement(product, index) {
 async function normalizeManufacturer(name, distributor) {
     if (!name) return name;
     try {
+        console.log(`[MfrNorm] Calling RPC for: "${name}" (${distributor})`);
         const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/normalize_manufacturer_name`, {
             method: 'POST',
             headers: {
@@ -1466,25 +1467,31 @@ async function normalizeManufacturer(name, distributor) {
                 source_distributor: distributor
             })
         });
+        console.log(`[MfrNorm] Response status: ${response.status}`);
         const result = await response.json();
+        console.log(`[MfrNorm] Result: ${JSON.stringify(result)}`);
         if (response.ok && result) {
-            console.log(`Manufacturer normalized: "${name}" -> "${result}"`);
+            console.log(`[MfrNorm] SUCCESS: "${name}" -> "${result}"`);
             return result;
         }
+        console.log(`[MfrNorm] No result, returning original: "${name}"`);
         return name;
     } catch (error) {
-        console.warn('Manufacturer normalization failed, using original:', name, error);
+        console.error('[MfrNorm] ERROR:', error);
         return name;
     }
 }
 
 async function submitQueue() {
+    console.log('[SubmitQueue] Function called');
+
     if (state.queuedProducts.length === 0) {
         showStatus('No products in queue', 'error');
         return;
     }
 
     showStatus('Normalizing manufacturer names...', 'info');
+    console.log(`[SubmitQueue] Processing ${state.queuedProducts.length} products`);
 
     // Normalize manufacturer names before formatting
     // Group by unique manufacturer names to minimize API calls
@@ -1496,6 +1503,7 @@ async function submitQueue() {
             uniqueManufacturers.set(mfr, distributor);
         }
     }
+    console.log('[SubmitQueue] Manufacturers to normalize:', Array.from(uniqueManufacturers.keys()));
 
     // Normalize all unique manufacturers in parallel
     const normalizedMap = new Map();
@@ -1504,6 +1512,7 @@ async function submitQueue() {
         normalizedMap.set(mfr, normalized);
     });
     await Promise.all(normalizePromises);
+    console.log('[SubmitQueue] Normalization complete. Results:', Object.fromEntries(normalizedMap));
 
     const formattedProducts = state.queuedProducts.map(product => {
         const pricingData = product.pricingData || state.pricingData?.[product.ingramPartNumber] || {};
@@ -1548,15 +1557,17 @@ async function submitQueue() {
         };
     });
 
-    console.log('Sending queued products to parent:', formattedProducts);
+    console.log('[SubmitQueue] Formatted products:', formattedProducts);
+    console.log('[SubmitQueue] Manufacturer values:', formattedProducts.map(p => p.Manufacturer));
 
     if (typeof $Client !== 'undefined') {
+        console.log('[SubmitQueue] Calling $Client.close...');
         $Client.close({
             products: formattedProducts,
             distributor: state.currentDistributor
         });
     } else {
-        console.log('Standalone mode - would send:', formattedProducts);
+        console.log('[SubmitQueue] Standalone mode - would send:', formattedProducts);
         showStatus(`Queued ${formattedProducts.length} products (standalone mode)`, 'info');
     }
 }
