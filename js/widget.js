@@ -1526,7 +1526,7 @@ async function submitQueue() {
                 Product_Code: product.vendorPartNumber || '',
                 Product_Name: product.description || '',
                 Manufacturer: normalizedMfr,
-                TDSynnex_SKU: product.distributorPartNumber || '',
+                TDSynnex_SKU: product.tdSynnexSkuNumber || '',
                 MSRP: msrp,
                 Customer_Price: pricingData?.pricing?.customerPrice || product.contract_price || product.unit_cost || null,
                 Category_Level_1: product.category || state.category || '',
@@ -1535,6 +1535,8 @@ async function submitQueue() {
                 UPC: product.upcCode || '',
                 Description: product.extraDescription || '',
                 Last_Sync_Source: 'TD SYNNEX',
+                UNSPSC_Commodity: product.commodityName || '',
+                Kit_or_Standalone: product.kitStandaloneFlag === 'K' ? 'Yes' : 'No',
                 Quantity: 1
             };
         }
@@ -1553,6 +1555,7 @@ async function submitQueue() {
             Description: product.extraDescription || pricingData?.description || '',
             Last_Sync_Source: 'Ingram Micro',
             IM_Product_Type: product.productType || '',
+            Kit_or_Standalone: pricingData?.bundlePartIndicator ? 'Yes' : 'No',
             Quantity: 1
         };
     });
