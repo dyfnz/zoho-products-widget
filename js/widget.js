@@ -10,6 +10,8 @@
 const PROXY_BASE = 'https://tydxdpntshbobomemzxj.supabase.co/functions/v1/ingram-proxy';
 const TDSYNNEX_BASE = 'https://tydxdpntshbobomemzxj.supabase.co/functions/v1';
 const TDSYNNEX_PROXY_BASE = 'https://tydxdpntshbobomemzxj.supabase.co/functions/v1/tdsynnex-proxy';
+const SUPABASE_URL = 'https://tydxdpntshbobomemzxj.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5ZHhkcG50c2hib2JvbWVtenhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4MTg0MjcsImV4cCI6MjA3NjM5NDQyN30.cVcmS7yKqAF1LBOTz0ZNgxgaEILLi7FuWX9E8eZjZac';
 const PAGE_SIZE = 50;
 
 // Distributor configurations
@@ -1446,22 +1448,75 @@ function createQueueItemElement(product, index) {
     return li;
 }
 
-function submitQueue() {
+// =====================================================
+// MANUFACTURER NORMALIZATION
+// =====================================================
+async function normalizeManufacturer(name, distributor) {
+    if (!name) return name;
+    try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/normalize_manufacturer_name`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            },
+            body: JSON.stringify({
+                input_name: name,
+                source_distributor: distributor
+            })
+        });
+        const result = await response.json();
+        if (response.ok && result) {
+            console.log(`Manufacturer normalized: "${name}" -> "${result}"`);
+            return result;
+        }
+        return name;
+    } catch (error) {
+        console.warn('Manufacturer normalization failed, using original:', name, error);
+        return name;
+    }
+}
+
+async function submitQueue() {
     if (state.queuedProducts.length === 0) {
         showStatus('No products in queue', 'error');
         return;
     }
 
+    showStatus('Normalizing manufacturer names...', 'info');
+
+    // Normalize manufacturer names before formatting
+    // Group by unique manufacturer names to minimize API calls
+    const uniqueManufacturers = new Map();
+    for (const product of state.queuedProducts) {
+        const mfr = product.vendorName || state.manufacturer;
+        const distributor = product._source === 'tdsynnex' ? 'tdsynnex' : 'ingram';
+        if (mfr && !uniqueManufacturers.has(mfr)) {
+            uniqueManufacturers.set(mfr, distributor);
+        }
+    }
+
+    // Normalize all unique manufacturers in parallel
+    const normalizedMap = new Map();
+    const normalizePromises = Array.from(uniqueManufacturers.entries()).map(async ([mfr, dist]) => {
+        const normalized = await normalizeManufacturer(mfr, dist);
+        normalizedMap.set(mfr, normalized);
+    });
+    await Promise.all(normalizePromises);
+
     const formattedProducts = state.queuedProducts.map(product => {
         const pricingData = product.pricingData || state.pricingData?.[product.ingramPartNumber] || {};
         const msrp = pricingData?.pricing?.retailPrice || product.retailPrice || null;
+        const originalMfr = product.vendorName || state.manufacturer;
+        const normalizedMfr = normalizedMap.get(originalMfr) || originalMfr;
 
         // TD Synnex format
         if (product._source === 'tdsynnex') {
             return {
                 Product_Code: product.vendorPartNumber || '',
                 Product_Name: product.description || '',
-                Manufacturer: product.vendorName || state.manufacturer,
+                Manufacturer: normalizedMfr,
                 TDSynnex_SKU: product.distributorPartNumber || '',
                 MSRP: msrp,
                 Customer_Price: pricingData?.pricing?.customerPrice || product.contract_price || product.unit_cost || null,
@@ -1479,7 +1534,7 @@ function submitQueue() {
         return {
             Product_Code: product.vendorPartNumber || '',
             Product_Name: product.description || '',
-            Manufacturer: product.vendorName || state.manufacturer,
+            Manufacturer: normalizedMfr,
             Ingram_Micro_SKU: product.ingramPartNumber || '',
             MSRP: msrp,
             Customer_Price: pricingData?.pricing?.customerPrice || null,
