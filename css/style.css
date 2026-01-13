@@ -502,6 +502,16 @@ select:disabled {
     min-width: 120px;
 }
 
+/* SKU field in filter mode (when manufacturer is selected) */
+.sku-row.filter-mode .sku-combo input[type="text"] {
+    background: linear-gradient(to right, rgba(14, 165, 233, 0.04), transparent);
+    border-color: var(--color-accent);
+}
+
+.sku-row.filter-mode .field-number {
+    background: var(--color-success);
+}
+
 .filter-actions {
     align-items: flex-end;
 }

@@ -68,9 +68,9 @@
                             <span class="or-text">OR</span>
                         </div>
 
-                        <!-- SKU Search Row -->
+                        <!-- SKU Search Row (dual-purpose: SKU-first search OR filter after manufacturer selected) -->
                         <div class="filter-row sku-row" id="skuSearchRow">
-                            <label class="sku-label">
+                            <label class="sku-label" id="skuSearchLabel">
                                 <span class="field-number">1</span>
                                 SKU / Part Number
                             </label>
@@ -124,13 +124,6 @@
                             </div>
                         </div>
 
-                        <!-- SKU Filter in Optional Filters (after manufacturer selected) -->
-                        <div class="filter-row filter-actions" id="skuActionsRow" style="display: none;">
-                            <div class="filter-field sku-field">
-                                <label>SKU / Part Number</label>
-                                <input type="text" id="skuFilterInput" placeholder="Filter by SKU..." autocomplete="off">
-                            </div>
-                        </div>
                     </div>
 
                     <!-- Products Table -->
