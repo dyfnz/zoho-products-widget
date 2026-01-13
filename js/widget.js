@@ -918,7 +918,7 @@ async function lookupManufacturersFromSKU(skuPattern) {
             // Single manufacturer - auto-select it
             const mfr = manufacturers[0];
             const mfrName = mfr.manufacturer_name || mfr;
-            handleSingleManufacturerAutoSelect(mfrName, skuPattern);
+            await handleSingleManufacturerAutoSelect(mfrName, skuPattern);
         } else {
             // Multiple manufacturers - populate dropdown for user selection
             populateManufacturerDropdownFromSKU(manufacturers);
@@ -1776,11 +1776,27 @@ async function submitQueue() {
     await Promise.all(normalizePromises);
     console.log('[SubmitQueue] Normalization complete. Results:', Object.fromEntries(normalizedMap));
 
+    // Track products with missing manufacturer for error reporting
+    const productsWithMissingMfr = [];
+
     const formattedProducts = state.queuedProducts.map(product => {
         const pricingData = product.pricingData || state.pricingData?.[product.ingramPartNumber] || {};
         const msrp = pricingData?.pricing?.retailPrice || product.retailPrice || null;
         const originalMfr = product.vendorName || state.manufacturer;
         const normalizedMfr = normalizedMap.get(originalMfr) || originalMfr;
+
+        // Defensive check: Track products with missing manufacturer
+        if (!normalizedMfr) {
+            const sku = product.vendorPartNumber || product.ingramPartNumber || 'Unknown SKU';
+            console.error(`[SubmitQueue] Missing manufacturer for product: ${sku}`, {
+                vendorName: product.vendorName,
+                stateManufacturer: state.manufacturer,
+                originalMfr,
+                normalizedMfr,
+                product
+            });
+            productsWithMissingMfr.push(sku);
+        }
 
         // TD Synnex format
         if (product._source === 'tdsynnex') {
@@ -1824,6 +1840,14 @@ async function submitQueue() {
 
     console.log('[SubmitQueue] Formatted products:', formattedProducts);
     console.log('[SubmitQueue] Manufacturer values:', formattedProducts.map(p => p.Manufacturer));
+
+    // Prevent submission if any products have missing manufacturer
+    if (productsWithMissingMfr.length > 0) {
+        const errorMsg = `Cannot submit: Missing manufacturer for SKU(s): ${productsWithMissingMfr.join(', ')}. Please try re-searching for these products.`;
+        console.error('[SubmitQueue] Aborting submission due to missing manufacturers:', productsWithMissingMfr);
+        showStatus(errorMsg, 'error');
+        return;
+    }
 
     if (typeof $Client !== 'undefined') {
         console.log('[SubmitQueue] Calling $Client.close...');
