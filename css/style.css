@@ -444,6 +444,64 @@ select:disabled {
     border-top: 1px dashed var(--color-border);
 }
 
+/* OR Divider - Visual separator between Manufacturer and SKU search */
+.or-divider {
+    display: flex;
+    align-items: center;
+    margin: var(--space-2) 0;
+}
+
+.or-divider::before,
+.or-divider::after {
+    content: '';
+    flex: 1;
+    border-top: 1px dashed var(--color-border);
+}
+
+.or-text {
+    padding: 0 var(--space-2);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.or-divider.hidden {
+    display: none;
+}
+
+/* SKU Search Row - Matches manufacturer row layout */
+.sku-row {
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.sku-label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--font-size-sm);
+    font-weight: 700;
+    color: var(--color-text);
+    white-space: nowrap;
+    min-width: 100px;
+}
+
+.sku-combo {
+    flex: 1;
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    flex-wrap: wrap;
+    min-width: 200px;
+}
+
+.sku-combo input[type="text"] {
+    flex: 1;
+    min-width: 120px;
+}
+
 .filter-actions {
     align-items: flex-end;
 }

@@ -39,7 +39,7 @@
         <div class="content-wrapper">
             <!-- Status -->
             <div id="filterStatus" class="status-bar info">
-                <span class="status-message">Select a manufacturer to begin</span>
+                <span class="status-message">Select a manufacturer or enter a SKU to begin</span>
             </div>
 
             <!-- Top Panels Container -->
@@ -60,6 +60,35 @@
                                     <option value="">Select manufacturer...</option>
                                 </select>
                                 <span class="mfr-count" id="mfrCount"></span>
+                            </div>
+                        </div>
+
+                        <!-- OR Divider -->
+                        <div class="or-divider" id="orDivider">
+                            <span class="or-text">OR</span>
+                        </div>
+
+                        <!-- SKU Search Row -->
+                        <div class="filter-row sku-row" id="skuSearchRow">
+                            <label class="sku-label">
+                                <span class="field-number">1</span>
+                                SKU / Part Number
+                            </label>
+                            <div class="sku-combo">
+                                <input type="text" id="skuSearch" placeholder="Enter partial or full SKU (e.g. AB123, XYZ-456)..." autocomplete="off">
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons Row -->
+                        <div class="filter-row filter-actions" id="actionButtonsRow">
+                            <div class="action-buttons">
+                                <button onclick="handleLoadProducts()" class="btn-primary">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                                    </svg>
+                                    Load Products
+                                </button>
+                                <button onclick="resetFilters()" class="btn-secondary">Reset</button>
                             </div>
                         </div>
 
@@ -95,20 +124,11 @@
                             </div>
                         </div>
 
-                        <!-- SKU + Actions -->
+                        <!-- SKU Filter in Optional Filters (after manufacturer selected) -->
                         <div class="filter-row filter-actions" id="skuActionsRow" style="display: none;">
                             <div class="filter-field sku-field">
                                 <label>SKU / Part Number</label>
-                                <input type="text" id="skuSearch" placeholder="Enter partial or full SKU..." autocomplete="off">
-                            </div>
-                            <div class="action-buttons">
-                                <button onclick="loadProducts(1)" class="btn-primary">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-                                    </svg>
-                                    Load Products
-                                </button>
-                                <button onclick="resetFilters()" class="btn-secondary">Reset</button>
+                                <input type="text" id="skuFilterInput" placeholder="Filter by SKU..." autocomplete="off">
                             </div>
                         </div>
                     </div>

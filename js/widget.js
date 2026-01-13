@@ -69,7 +69,11 @@ const state = {
     parentContext: null,
     currentProducts: [],
     pricingData: {},
-    rawApiVisible: false
+    rawApiVisible: false,
+    // SKU-first search mode
+    skuSearchMode: false,
+    pendingSkuFilter: '',
+    skuManufacturerOptions: []
 };
 
 let searchTimeout = null;
@@ -115,7 +119,7 @@ function initZohoSDK() {
     ZOHO.embeddedApp.on("PageLoad", function(data) {
         console.log('PageLoad event received:', data);
         state.parentContext = data;
-        showStatus('Widget loaded. Select a manufacturer to begin.', 'info');
+        showStatus('Widget loaded. Select a manufacturer or enter a SKU to begin.', 'info');
     });
 
     ZOHO.embeddedApp.on("NotifyAndWait", function(data) {
@@ -135,10 +139,31 @@ function initEventListeners() {
         mfrSearch.addEventListener('input', debounceManufacturerSearch);
     }
 
+    // SKU search field (top-level, for SKU-first flow)
     const skuSearch = document.getElementById('skuSearch');
     if (skuSearch) {
         skuSearch.addEventListener('input', () => {
             state.skuKeyword = skuSearch.value.trim();
+        });
+        skuSearch.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleLoadProducts();
+            }
+        });
+    }
+
+    // SKU filter input (in optional filters, after manufacturer selected)
+    const skuFilterInput = document.getElementById('skuFilterInput');
+    if (skuFilterInput) {
+        skuFilterInput.addEventListener('input', () => {
+            state.skuKeyword = skuFilterInput.value.trim();
+        });
+        skuFilterInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                loadProducts(1);
+            }
         });
     }
 
@@ -445,7 +470,7 @@ function selectDistributor(distributor) {
     }
 
     resetFilters();
-    showStatus(`Switched to ${DISTRIBUTORS[distributor].name}. Search for a manufacturer.`, 'info');
+    showStatus(`Switched to ${DISTRIBUTORS[distributor].name}. Search by manufacturer or SKU.`, 'info');
 }
 
 // =====================================================
@@ -820,20 +845,233 @@ async function searchManufacturers() {
 }
 
 // =====================================================
+// SKU-FIRST SEARCH FUNCTIONS
+// =====================================================
+
+/**
+ * Handle the Load Products button click
+ * Determines whether to use manufacturer-first or SKU-first flow
+ */
+function handleLoadProducts() {
+    const skuValue = document.getElementById('skuSearch')?.value.trim() || '';
+
+    if (state.manufacturer) {
+        // Manufacturer is selected - use normal flow
+        loadProducts(1);
+    } else if (skuValue.length >= 2) {
+        // No manufacturer but have SKU - use SKU-first flow
+        lookupManufacturersFromSKU(skuValue);
+    } else {
+        // Neither manufacturer nor valid SKU
+        showStatus('Please select a manufacturer or enter at least 2 characters for SKU search', 'error');
+    }
+}
+
+/**
+ * Look up manufacturers that have products matching the SKU pattern
+ * @param {string} skuPattern - The SKU/part number pattern to search for
+ */
+async function lookupManufacturersFromSKU(skuPattern) {
+    showStatus(`Searching for manufacturers with SKU matching "${skuPattern}"...`, 'loading');
+    state.skuSearchMode = true;
+    state.pendingSkuFilter = skuPattern;
+
+    try {
+        let manufacturers = [];
+
+        if (state.currentDistributor === 'tdsynnex') {
+            // TD SYNNEX: Call Supabase RPC get_manufacturers_by_sku
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_manufacturers_by_sku`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                },
+                body: JSON.stringify({
+                    sku_pattern: skuPattern
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`RPC call failed: ${response.status}`);
+            }
+
+            const data = await response.json();
+            manufacturers = data || [];
+
+        } else {
+            // Ingram: Call productsWithPricing without vendor and extract unique vendors
+            const url = `${PROXY_BASE}?action=productsWithPricing&keyword=${encodeURIComponent(skuPattern)}&page=1`;
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (data.products && Array.isArray(data.products)) {
+                // Extract unique vendor names with counts
+                const vendorCounts = {};
+                data.products.forEach(product => {
+                    const vendorName = product.vendorName || 'Unknown';
+                    vendorCounts[vendorName] = (vendorCounts[vendorName] || 0) + 1;
+                });
+
+                manufacturers = Object.entries(vendorCounts).map(([name, count]) => ({
+                    manufacturer_name: name,
+                    product_count: count
+                }));
+            }
+        }
+
+        if (manufacturers.length === 0) {
+            showStatus(`No manufacturers found with products matching "${skuPattern}"`, 'info');
+            state.skuSearchMode = false;
+            state.pendingSkuFilter = '';
+            return;
+        }
+
+        if (manufacturers.length === 1) {
+            // Single manufacturer - auto-select it
+            const mfr = manufacturers[0];
+            const mfrName = mfr.manufacturer_name || mfr;
+            handleSingleManufacturerAutoSelect(mfrName, skuPattern);
+        } else {
+            // Multiple manufacturers - populate dropdown for user selection
+            populateManufacturerDropdownFromSKU(manufacturers);
+        }
+
+    } catch (error) {
+        console.error('[SKU Search] Error:', error);
+        showStatus('Error searching by SKU: ' + error.message, 'error');
+        state.skuSearchMode = false;
+        state.pendingSkuFilter = '';
+    }
+}
+
+/**
+ * Handle auto-selection when SKU search returns a single manufacturer
+ * @param {string} manufacturer - The manufacturer name
+ * @param {string} skuValue - The SKU value to use as filter
+ */
+async function handleSingleManufacturerAutoSelect(manufacturer, skuValue) {
+    // Set state
+    state.manufacturer = manufacturer;
+    state.skuKeyword = skuValue;
+
+    // Update manufacturer dropdown to show selected value
+    const select = document.getElementById('manufacturerSelect');
+    select.innerHTML = `<option value="${manufacturer}" selected>${manufacturer}</option>`;
+
+    // Update manufacturer badge
+    const mfrBadge = document.getElementById('selectedMfrBadge');
+    if (mfrBadge) {
+        mfrBadge.textContent = manufacturer;
+    }
+
+    // Hide OR divider
+    const orDivider = document.getElementById('orDivider');
+    if (orDivider) {
+        orDivider.classList.add('hidden');
+    }
+
+    // Show optional filters and SKU actions row
+    document.getElementById('optionalFiltersRow').style.display = 'flex';
+    document.getElementById('skuActionsRow').style.display = 'flex';
+
+    // Set the SKU filter input value
+    const skuFilterInput = document.getElementById('skuFilterInput');
+    if (skuFilterInput) {
+        skuFilterInput.value = skuValue;
+    }
+
+    showStatus(`Auto-selected ${manufacturer}. Loading categories...`, 'loading');
+
+    // Load categories from the manufacturer
+    await loadFilterOptions('category');
+
+    // Load products with the SKU filter
+    await loadProducts(1);
+
+    // Clear SKU search mode flags
+    state.skuSearchMode = false;
+    state.pendingSkuFilter = '';
+}
+
+/**
+ * Populate the manufacturer dropdown with results from SKU search
+ * @param {Array} manufacturers - Array of {manufacturer_name, product_count} objects
+ */
+function populateManufacturerDropdownFromSKU(manufacturers) {
+    const select = document.getElementById('manufacturerSelect');
+
+    // Clear and populate with SKU-matched manufacturers
+    select.innerHTML = '<option value="">-- Select a manufacturer --</option>';
+
+    manufacturers.forEach(mfr => {
+        const name = mfr.manufacturer_name || mfr;
+        const count = mfr.product_count || 0;
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = count > 0 ? `${name} (${count} matches)` : name;
+        select.appendChild(option);
+    });
+
+    // Store options for reference
+    state.skuManufacturerOptions = manufacturers;
+
+    // Update count badge
+    document.getElementById('mfrCount').textContent = `(${manufacturers.length})`;
+
+    // Hide OR divider
+    const orDivider = document.getElementById('orDivider');
+    if (orDivider) {
+        orDivider.classList.add('hidden');
+    }
+
+    showStatus(`Found ${manufacturers.length} manufacturers with matching SKUs. Please select one.`, 'info');
+}
+
+// =====================================================
 // MANUFACTURER SELECTION
 // =====================================================
 async function onManufacturerSelect() {
     const select = document.getElementById('manufacturerSelect');
     state.manufacturer = select.value;
 
-    resetOptionalFilters();
-    resetProducts();
+    // Hide OR divider when manufacturer is selected
+    const orDivider = document.getElementById('orDivider');
 
     if (!state.manufacturer) {
+        // Manufacturer cleared - reset state
+        resetOptionalFilters();
+        resetProducts();
         document.getElementById('optionalFiltersRow').style.display = 'none';
         document.getElementById('skuActionsRow').style.display = 'none';
         document.getElementById('selectedMfrBadge').textContent = '';
+
+        // Show OR divider when manufacturer is cleared
+        if (orDivider) {
+            orDivider.classList.remove('hidden');
+        }
+
+        // Reset SKU search mode
+        state.skuSearchMode = false;
+        state.pendingSkuFilter = '';
+        state.skuManufacturerOptions = [];
+
         return;
+    }
+
+    // Hide OR divider when manufacturer is selected
+    if (orDivider) {
+        orDivider.classList.add('hidden');
+    }
+
+    // Check if we're in SKU search mode with a pending filter
+    const hasPendingSkuFilter = state.skuSearchMode && state.pendingSkuFilter;
+
+    if (!hasPendingSkuFilter) {
+        // Normal manufacturer-first flow
+        resetOptionalFilters();
+        resetProducts();
     }
 
     document.getElementById('optionalFiltersRow').style.display = 'flex';
@@ -849,7 +1087,25 @@ async function onManufacturerSelect() {
 
     await loadFilterOptions('category');
 
-    showStatus(`Manufacturer: ${state.manufacturer}. Use filters below or click Load Products.`, 'success');
+    // If we have a pending SKU filter from SKU-first search, apply it
+    if (hasPendingSkuFilter) {
+        state.skuKeyword = state.pendingSkuFilter;
+
+        // Set the SKU filter input value
+        const skuFilterInput = document.getElementById('skuFilterInput');
+        if (skuFilterInput) {
+            skuFilterInput.value = state.pendingSkuFilter;
+        }
+
+        // Load products with the SKU filter
+        await loadProducts(1);
+
+        // Clear SKU search mode flags
+        state.skuSearchMode = false;
+        state.pendingSkuFilter = '';
+    } else {
+        showStatus(`Manufacturer: ${state.manufacturer}. Use filters below or click Load Products.`, 'success');
+    }
 }
 
 // =====================================================
@@ -2048,11 +2304,28 @@ function resetFilters() {
     state.totalRecords = 0;
     state.totalPages = 1;
 
+    // Reset SKU search mode
+    state.skuSearchMode = false;
+    state.pendingSkuFilter = '';
+    state.skuManufacturerOptions = [];
+
     document.getElementById('manufacturerSearch').value = '';
     document.getElementById('manufacturerSelect').innerHTML =
         '<option value="">Type to search manufacturers...</option>';
     document.getElementById('mfrCount').textContent = '';
     document.getElementById('selectedMfrBadge').textContent = '';
+
+    // Clear SKU search input
+    const skuSearch = document.getElementById('skuSearch');
+    if (skuSearch) {
+        skuSearch.value = '';
+    }
+
+    // Show OR divider
+    const orDivider = document.getElementById('orDivider');
+    if (orDivider) {
+        orDivider.classList.remove('hidden');
+    }
 
     document.getElementById('optionalFiltersRow').style.display = 'none';
     document.getElementById('skuActionsRow').style.display = 'none';
@@ -2061,7 +2334,7 @@ function resetFilters() {
     resetProducts();
 
     document.getElementById('productsSection').style.display = 'none';
-    showStatus('Select a manufacturer to begin', 'info');
+    showStatus('Select a manufacturer or enter a SKU to begin', 'info');
 }
 
 function resetOptionalFilters() {
