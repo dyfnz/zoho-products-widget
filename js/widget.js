@@ -2030,7 +2030,8 @@ async function showProductDetails(productIndex) {
         // Using pricingData.pricing which is set in mapTDSynnexProduct from raw fields
         const pricingFields = [
             { label: 'MSRP', value: formatCurrency(product.pricingData?.pricing?.retailPrice) },
-            { label: 'Customer Price', value: formatCurrency(product.pricingData?.pricing?.customerPrice) }
+            { label: 'Customer Price', value: formatCurrency(product.pricingData?.pricing?.customerPrice) },
+            { label: 'Regular Price', value: formatCurrency(product.unitCost) }
         ];
         renderGrid('pricingGrid', pricingFields);
 
@@ -2209,9 +2210,26 @@ async function showProductDetails(productIndex) {
     const msrpValue = formatCurrency(pricingData?.pricing?.retailPrice);
     const customerPriceValue = formatCurrency(pricingData?.pricing?.customerPrice);
 
+    // Calculate Regular Price = Customer Price + sum of all discounts
+    const customerPrice = pricingData?.pricing?.customerPrice || 0;
+    let totalDiscounts = 0;
+    if (pricingData?.discounts && Array.isArray(pricingData.discounts)) {
+        pricingData.discounts.forEach(discountGroup => {
+            if (discountGroup.specialPricing && Array.isArray(discountGroup.specialPricing)) {
+                discountGroup.specialPricing.forEach(sp => {
+                    if (sp.specialPricingDiscount) {
+                        totalDiscounts += parseFloat(sp.specialPricingDiscount) || 0;
+                    }
+                });
+            }
+        });
+    }
+    const regularPrice = customerPrice + totalDiscounts;
+
     const pricingFields = [
         { label: 'MSRP', value: msrpValue },
-        { label: 'Customer Price', value: customerPriceValue }
+        { label: 'Customer Price', value: customerPriceValue },
+        { label: 'Regular Price', value: formatCurrency(regularPrice) }
     ];
     renderGrid('pricingGrid', pricingFields);
 
