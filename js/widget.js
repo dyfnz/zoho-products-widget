@@ -73,7 +73,12 @@ const state = {
     // SKU-first search mode
     skuSearchMode: false,
     pendingSkuFilter: '',
-    skuManufacturerOptions: []
+    skuManufacturerOptions: [],
+    // Manufacturer Resolution Panel State (Phase 3)
+    prefetchedManufacturers: [],
+    mfrResolutions: new Map(),
+    unresolvedManufacturers: [],
+    mfrResolutionPromise: null
 };
 
 let searchTimeout = null;
@@ -119,6 +124,16 @@ function initZohoSDK() {
     ZOHO.embeddedApp.on("PageLoad", function(data) {
         console.log('PageLoad event received:', data);
         state.parentContext = data;
+
+        // Store pre-fetched manufacturers from Client Script (Phase 3)
+        if (data && data.manufacturers && Array.isArray(data.manufacturers)) {
+            state.prefetchedManufacturers = data.manufacturers.map(m => {
+                // Handle both {id, name} objects and plain strings
+                return typeof m === 'string' ? m : (m.name || m.Name || '');
+            }).filter(name => name.length > 0).sort();
+            console.log(`[MfrResolution] Received ${state.prefetchedManufacturers.length} manufacturers from Zoho`);
+        }
+
         showStatus('Widget loaded. Select a manufacturer or enter a SKU to begin.', 'info');
     });
 
@@ -1744,6 +1759,376 @@ async function normalizeManufacturer(name, distributor) {
     }
 }
 
+// =====================================================
+// MANUFACTURER RESOLUTION - BATCH RPC FUNCTIONS
+// =====================================================
+
+/**
+ * Check manufacturer mappings in batch via Supabase RPC
+ * @param {Array} manufacturers - Array of {name: string, distributor: string}
+ * @returns {Promise<Array>} - Array of {name, distributor, found, canonical_name}
+ */
+async function checkManufacturerMappingsBatch(manufacturers) {
+    if (!manufacturers || manufacturers.length === 0) return [];
+
+    try {
+        console.log('[MfrResolution] Checking mappings for:', manufacturers);
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/check_manufacturer_mappings_batch`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            },
+            body: JSON.stringify({
+                manufacturer_list: manufacturers
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`RPC call failed: ${response.status}`);
+        }
+
+        const results = await response.json();
+        console.log('[MfrResolution] Mapping check results:', results);
+        return results || [];
+    } catch (error) {
+        console.error('[MfrResolution] Error checking mappings:', error);
+        throw error;
+    }
+}
+
+/**
+ * Save manufacturer mappings in batch via Supabase RPC
+ * @param {Array} mappings - Array of {distributor_name, canonical_name, source}
+ * @returns {Promise<Object>} - {success: boolean, saved_count: number}
+ */
+async function saveManufacturerMappingsBatch(mappings) {
+    if (!mappings || mappings.length === 0) return { success: true, saved_count: 0 };
+
+    try {
+        console.log('[MfrResolution] Saving mappings:', mappings);
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/save_manufacturer_mappings_batch`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            },
+            body: JSON.stringify({
+                mapping_list: mappings
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`RPC call failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log('[MfrResolution] Save result:', result);
+        return result || { success: false, saved_count: 0 };
+    } catch (error) {
+        console.error('[MfrResolution] Error saving mappings:', error);
+        throw error;
+    }
+}
+
+// =====================================================
+// MANUFACTURER RESOLUTION - PANEL FUNCTIONS
+// =====================================================
+
+/**
+ * Show the manufacturer resolution panel with unresolved manufacturers
+ * @param {Array} unresolvedList - Array of {distributorName, distributor}
+ * @returns {Promise} - Resolves with normalized map or rejects on cancel
+ */
+function showMfrResolutionPanel(unresolvedList) {
+    return new Promise((resolve, reject) => {
+        state.unresolvedManufacturers = unresolvedList;
+        state.mfrResolutions = new Map();
+        state.mfrResolutionPromise = { resolve, reject };
+
+        renderMfrResolutionTable();
+        updateMfrResolutionStatus();
+
+        const panel = document.getElementById('mfrResolutionPanel');
+        if (panel) {
+            panel.style.display = 'block';
+            panel.classList.remove('collapsed');
+            panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        const collapseBtn = document.getElementById('mfrCollapseBtn');
+        if (collapseBtn) {
+            collapseBtn.classList.remove('collapsed');
+        }
+    });
+}
+
+/**
+ * Hide the manufacturer resolution panel
+ */
+function hideMfrResolutionPanel() {
+    const panel = document.getElementById('mfrResolutionPanel');
+    if (panel) {
+        panel.style.display = 'none';
+    }
+    state.unresolvedManufacturers = [];
+    state.mfrResolutions = new Map();
+    state.mfrResolutionPromise = null;
+}
+
+/**
+ * Toggle panel collapse state
+ */
+function toggleMfrPanelCollapse() {
+    const panel = document.getElementById('mfrResolutionPanel');
+    const collapseBtn = document.getElementById('mfrCollapseBtn');
+
+    if (panel && collapseBtn) {
+        panel.classList.toggle('collapsed');
+        collapseBtn.classList.toggle('collapsed');
+    }
+}
+
+/**
+ * Render the resolution table rows
+ */
+function renderMfrResolutionTable() {
+    const tbody = document.getElementById('mfrResolutionTableBody');
+    if (!tbody) return;
+
+    const zohoOptions = state.prefetchedManufacturers
+        .map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`)
+        .join('');
+
+    tbody.innerHTML = state.unresolvedManufacturers.map((mfr, index) => {
+        const distributorLabel = mfr.distributor === 'ingram' ? 'Ingram Micro' : 'TD SYNNEX';
+        const distributorClass = mfr.distributor === 'ingram' ? 'ingram' : 'tdsynnex';
+
+        return `
+            <tr id="mfr-row-${index}">
+                <td>
+                    <div class="mfr-distributor-cell">
+                        <span class="mfr-distributor-name">${escapeHtml(mfr.distributorName)}</span>
+                        <span class="mfr-distributor-source">
+                            <span class="mfr-source-badge ${distributorClass}">${distributorLabel}</span>
+                        </span>
+                    </div>
+                </td>
+                <td>
+                    <div class="mfr-select-wrapper">
+                        <select
+                            class="mfr-select"
+                            id="mfr-select-${index}"
+                            data-index="${index}"
+                            onchange="handleMfrSelectChange(${index})"
+                        >
+                            <option value="">-- Select manufacturer --</option>
+                            ${zohoOptions}
+                        </select>
+                        <span class="mfr-select-arrow">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M6 9l6 6 6-6"/>
+                            </svg>
+                        </span>
+                    </div>
+                </td>
+                <td class="mfr-divider-cell">
+                    <span class="mfr-or-badge">or</span>
+                </td>
+                <td>
+                    <div class="mfr-input-wrapper">
+                        <input
+                            type="text"
+                            class="mfr-input"
+                            id="mfr-input-${index}"
+                            data-index="${index}"
+                            placeholder="Enter new name (Title Case)..."
+                            oninput="handleMfrInputChange(${index})"
+                        />
+                        <span id="mfr-status-${index}" class="mfr-row-status">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M5 12l5 5L20 7"/>
+                            </svg>
+                        </span>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+/**
+ * Handle select dropdown change
+ */
+function handleMfrSelectChange(index) {
+    const select = document.getElementById(`mfr-select-${index}`);
+    const input = document.getElementById(`mfr-input-${index}`);
+    const row = document.getElementById(`mfr-row-${index}`);
+    const status = document.getElementById(`mfr-status-${index}`);
+
+    if (select.value) {
+        // Disable input, set resolution
+        input.value = '';
+        input.disabled = true;
+        state.mfrResolutions.set(index, { type: 'zoho', value: select.value });
+        row.classList.add('row-valid');
+        status.classList.add('show', 'valid');
+    } else {
+        // Re-enable input
+        input.disabled = false;
+        state.mfrResolutions.delete(index);
+        row.classList.remove('row-valid');
+        status.classList.remove('show', 'valid');
+    }
+
+    updateMfrResolutionStatus();
+}
+
+/**
+ * Handle text input change
+ */
+function handleMfrInputChange(index) {
+    const select = document.getElementById(`mfr-select-${index}`);
+    const input = document.getElementById(`mfr-input-${index}`);
+    const row = document.getElementById(`mfr-row-${index}`);
+    const status = document.getElementById(`mfr-status-${index}`);
+
+    if (input.value.trim()) {
+        // Disable select, set resolution
+        select.value = '';
+        select.disabled = true;
+        state.mfrResolutions.set(index, { type: 'new', value: input.value.trim() });
+        row.classList.add('row-valid');
+        status.classList.add('show', 'valid');
+    } else {
+        // Re-enable select
+        select.disabled = false;
+        state.mfrResolutions.delete(index);
+        row.classList.remove('row-valid');
+        status.classList.remove('show', 'valid');
+    }
+
+    updateMfrResolutionStatus();
+}
+
+/**
+ * Update the resolution status display
+ */
+function updateMfrResolutionStatus() {
+    const total = state.unresolvedManufacturers.length;
+    const resolved = state.mfrResolutions.size;
+    const allResolved = resolved === total;
+
+    // Update count badge
+    const countEl = document.getElementById('mfrUnresolvedCount');
+    if (countEl) {
+        countEl.textContent = total - resolved || total;
+    }
+
+    // Update status text
+    const statusText = document.getElementById('mfrStatusText');
+    if (statusText) {
+        statusText.textContent = `${resolved} of ${total} resolved`;
+    }
+
+    // Update status dot
+    const statusDot = document.getElementById('mfrStatusDot');
+    if (statusDot) {
+        statusDot.classList.toggle('complete', allResolved);
+        statusDot.classList.toggle('incomplete', !allResolved);
+    }
+
+    // Update confirm button
+    const confirmBtn = document.getElementById('mfrConfirmBtn');
+    if (confirmBtn) {
+        confirmBtn.disabled = !allResolved;
+    }
+}
+
+/**
+ * Cancel resolution - reject the promise and hide panel
+ */
+function cancelMfrResolution() {
+    if (state.mfrResolutionPromise) {
+        state.mfrResolutionPromise.reject(new Error('Resolution cancelled by user'));
+    }
+    hideMfrResolutionPanel();
+    showStatus('Submission cancelled. Queue remains intact.', 'info');
+}
+
+/**
+ * Confirm all resolutions - save to Supabase and resolve promise
+ */
+async function confirmMfrResolutions() {
+    if (state.mfrResolutions.size !== state.unresolvedManufacturers.length) {
+        showStatus('Please resolve all manufacturers before confirming', 'error');
+        return;
+    }
+
+    // Disable button to prevent double-clicks
+    const confirmBtn = document.getElementById('mfrConfirmBtn');
+    if (confirmBtn) confirmBtn.disabled = true;
+
+    showStatus('Saving manufacturer mappings...', 'loading');
+
+    try {
+        // Build the mapping list for batch save
+        const mappingsToSave = [];
+        const normalizedMap = new Map();
+
+        for (const [index, resolution] of state.mfrResolutions) {
+            const mfr = state.unresolvedManufacturers[index];
+            const canonicalName = resolution.value;
+            const source = mfr.distributor;
+
+            // Add to mappings to save
+            mappingsToSave.push({
+                distributor_name: mfr.distributorName,
+                canonical_name: canonicalName,
+                source: source
+            });
+
+            // Add to normalized map for immediate use
+            normalizedMap.set(mfr.distributorName, canonicalName);
+        }
+
+        // Save to Supabase
+        const saveResult = await saveManufacturerMappingsBatch(mappingsToSave);
+
+        if (saveResult.success || saveResult.saved_count >= 0) {
+            console.log(`[MfrResolution] Saved ${saveResult.saved_count} mappings`);
+
+            // Hide panel and resolve promise with the normalized map
+            hideMfrResolutionPanel();
+
+            if (state.mfrResolutionPromise) {
+                state.mfrResolutionPromise.resolve(normalizedMap);
+            }
+
+            showStatus(`Saved ${saveResult.saved_count} manufacturer mapping(s). Continuing submission...`, 'success');
+        } else {
+            throw new Error('Failed to save mappings');
+        }
+    } catch (error) {
+        console.error('[MfrResolution] Error confirming resolutions:', error);
+        showStatus('Error saving mappings: ' + error.message, 'error');
+        // Re-enable button on error
+        if (confirmBtn) confirmBtn.disabled = false;
+    }
+}
+
+/**
+ * Escape HTML for safe rendering
+ */
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 async function submitQueue() {
     console.log('[SubmitQueue] Function called');
 
@@ -1752,11 +2137,10 @@ async function submitQueue() {
         return;
     }
 
-    showStatus('Normalizing manufacturer names...', 'info');
+    showStatus('Checking manufacturer mappings...', 'loading');
     console.log(`[SubmitQueue] Processing ${state.queuedProducts.length} products`);
 
-    // Normalize manufacturer names before formatting
-    // Group by unique manufacturer names to minimize API calls
+    // Step 1: Extract unique manufacturers from queued products
     const uniqueManufacturers = new Map();
     for (const product of state.queuedProducts) {
         const mfr = product.vendorName || state.manufacturer;
@@ -1765,18 +2149,70 @@ async function submitQueue() {
             uniqueManufacturers.set(mfr, distributor);
         }
     }
-    console.log('[SubmitQueue] Manufacturers to normalize:', Array.from(uniqueManufacturers.keys()));
+    console.log('[SubmitQueue] Unique manufacturers:', Array.from(uniqueManufacturers.keys()));
 
-    // Normalize all unique manufacturers in parallel
+    // Step 2: Check mappings in batch via Supabase RPC
+    const manufacturerList = Array.from(uniqueManufacturers.entries()).map(([name, distributor]) => ({
+        name: name,
+        distributor: distributor
+    }));
+
+    let mappingResults = [];
+    try {
+        mappingResults = await checkManufacturerMappingsBatch(manufacturerList);
+    } catch (error) {
+        console.error('[SubmitQueue] Error checking mappings:', error);
+        showStatus('Error checking manufacturer mappings: ' + error.message, 'error');
+        return;
+    }
+
+    // Step 3: Separate resolved vs. unresolved
     const normalizedMap = new Map();
-    const normalizePromises = Array.from(uniqueManufacturers.entries()).map(async ([mfr, dist]) => {
-        const normalized = await normalizeManufacturer(mfr, dist);
-        normalizedMap.set(mfr, normalized);
-    });
-    await Promise.all(normalizePromises);
-    console.log('[SubmitQueue] Normalization complete. Results:', Object.fromEntries(normalizedMap));
+    const unresolvedList = [];
 
-    // Track products with missing manufacturer for error reporting
+    for (const result of mappingResults) {
+        if (result.found) {
+            normalizedMap.set(result.name, result.canonical_name);
+        } else {
+            unresolvedList.push({
+                distributorName: result.name,
+                distributor: result.distributor
+            });
+        }
+    }
+
+    console.log('[SubmitQueue] Resolved:', Object.fromEntries(normalizedMap));
+    console.log('[SubmitQueue] Unresolved:', unresolvedList);
+
+    // Step 4: If any unresolved, show resolution panel and wait
+    if (unresolvedList.length > 0) {
+        console.log('[SubmitQueue] Showing resolution panel for', unresolvedList.length, 'manufacturers');
+
+        // Check if we have pre-fetched manufacturers
+        if (state.prefetchedManufacturers.length === 0) {
+            showStatus('Warning: No Zoho manufacturers available. You may only create new names.', 'info');
+        }
+
+        try {
+            // Wait for user to resolve all manufacturers
+            const userResolutions = await showMfrResolutionPanel(unresolvedList);
+
+            // Merge user resolutions into normalizedMap
+            for (const [distributorName, canonicalName] of userResolutions) {
+                normalizedMap.set(distributorName, canonicalName);
+            }
+
+            console.log('[SubmitQueue] After resolution, normalizedMap:', Object.fromEntries(normalizedMap));
+        } catch (error) {
+            // User cancelled
+            console.log('[SubmitQueue] Resolution cancelled by user');
+            return;
+        }
+    }
+
+    // Step 5: Format products with normalized manufacturers
+    showStatus('Preparing products for submission...', 'loading');
+
     const productsWithMissingMfr = [];
 
     const formattedProducts = state.queuedProducts.map(product => {
@@ -1849,6 +2285,7 @@ async function submitQueue() {
         return;
     }
 
+    // Step 6: Submit to Zoho
     if (typeof $Client !== 'undefined') {
         console.log('[SubmitQueue] Calling $Client.close...');
         $Client.close({

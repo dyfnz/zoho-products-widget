@@ -225,6 +225,82 @@
                 </div>
             </div>
 
+            <!-- Manufacturer Resolution Panel (hidden by default) -->
+            <div id="mfrResolutionPanel" class="mfr-resolution-panel" style="display: none;">
+                <!-- Panel Header -->
+                <div class="mfr-panel-header">
+                    <div class="mfr-panel-header-left">
+                        <h2>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                            </svg>
+                            Resolve Manufacturer Names
+                        </h2>
+                        <span id="mfrUnresolvedCount" class="mfr-unresolved-count">0</span>
+                        <div class="mfr-data-source">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/>
+                            </svg>
+                            Manufacturers list loaded from Zoho CRM
+                        </div>
+                    </div>
+                    <button id="mfrCollapseBtn" class="mfr-panel-collapse" onclick="toggleMfrPanelCollapse()" title="Collapse panel">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 15l-6-6-6 6"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Help Text Section -->
+                <div class="mfr-help-section">
+                    <p class="mfr-help-text">
+                        The <strong>Distributor Names</strong> below reflect manufacturer names that have not been mapped to a common name yet. For example, Ingram Micro lists Hewlett Packard Enterprise as "HPE", and TD Synnex lists "HEWLETT PACKARD ENTERPRISE". The normalized name for both is "Hewlett Packard Enterprise". If the correct value already exists in the Zoho Manufacturers module, then choose that value from the picklist. If not, use Title Case and create a new value. <strong>Title Case</strong> = First letter of each word capitalized. Please match the unresolved distributor names below.
+                    </p>
+                    <div class="mfr-warning">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                        WARNING - Do not create new names if the correct names are in Zoho!
+                    </div>
+                </div>
+
+                <!-- Resolution Table -->
+                <div class="mfr-table-container">
+                    <table class="mfr-resolution-table">
+                        <thead>
+                            <tr>
+                                <th class="th-distributor">Distributor Name</th>
+                                <th class="th-zoho">Select from Zoho</th>
+                                <th class="th-divider">OR</th>
+                                <th class="th-new">Create New</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mfrResolutionTableBody">
+                            <!-- Rows populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Panel Footer -->
+                <div class="mfr-panel-footer">
+                    <div class="mfr-footer-status">
+                        <span id="mfrStatusDot" class="mfr-status-dot incomplete"></span>
+                        <span id="mfrStatusText">0 of 0 resolved</span>
+                    </div>
+                    <div class="mfr-footer-actions">
+                        <button class="mfr-btn mfr-btn-secondary" onclick="cancelMfrResolution()">
+                            Cancel
+                        </button>
+                        <button id="mfrConfirmBtn" class="mfr-btn mfr-btn-primary" onclick="confirmMfrResolutions()" disabled>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M5 12l5 5L20 7"/>
+                            </svg>
+                            Confirm All
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Product Details - Full Width Below -->
             <div class="details-panel" id="productDetailsSection" style="display: none;">
                 <div class="panel-header">
