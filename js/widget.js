@@ -1781,7 +1781,7 @@ async function checkManufacturerMappingsBatch(manufacturers) {
                 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
             },
             body: JSON.stringify({
-                manufacturer_list: manufacturers
+                p_mappings: manufacturers
             })
         });
 
@@ -1816,7 +1816,7 @@ async function saveManufacturerMappingsBatch(mappings) {
                 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
             },
             body: JSON.stringify({
-                mapping_list: mappings
+                p_mappings: mappings
             })
         });
 
@@ -2087,7 +2087,7 @@ async function confirmMfrResolutions() {
             mappingsToSave.push({
                 distributor_name: mfr.distributorName,
                 canonical_name: canonicalName,
-                source: source
+                distributor: source
             });
 
             // Add to normalized map for immediate use
