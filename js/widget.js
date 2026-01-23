@@ -2284,12 +2284,13 @@ async function submitQueue() {
     const unresolvedList = [];
 
     for (const result of mappingResults) {
+        // RPC returns: distributor_name, distributor_source, found, canonical_name, suggested_name
         if (result.found) {
-            normalizedMap.set(result.name, result.canonical_name);
+            normalizedMap.set(result.distributor_name, result.canonical_name);
         } else {
             unresolvedList.push({
-                distributorName: result.name,
-                distributor: result.distributor
+                distributorName: result.distributor_name,
+                distributor: result.distributor_source
             });
         }
     }
