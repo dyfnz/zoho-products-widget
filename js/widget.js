@@ -263,6 +263,39 @@ function initQueueResize() {
 }
 
 // =====================================================
+// TOOLTIP POSITIONING (Fixed Position + JS)
+// =====================================================
+/**
+ * Initialize tooltip positioning for info buttons
+ * Uses position: fixed and calculates position on hover
+ * Call this after dynamically rendering tooltip elements
+ */
+function initMfrResolutionTooltips() {
+    document.querySelectorAll('.mfr-resolution-table .tooltip-wrapper').forEach(wrapper => {
+        const btn = wrapper.querySelector('.info-btn');
+        const tooltip = wrapper.querySelector('.tooltip');
+
+        if (!btn || !tooltip) return;
+
+        // Remove any existing listeners (avoid duplicates)
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+
+        newBtn.addEventListener('mouseenter', (e) => {
+            const rect = newBtn.getBoundingClientRect();
+            // Center the 220px tooltip above the button
+            tooltip.style.left = (rect.left + rect.width/2 - 110) + 'px';
+            tooltip.style.top = (rect.top - tooltip.offsetHeight - 8) + 'px';
+            tooltip.classList.add('visible');
+        });
+
+        newBtn.addEventListener('mouseleave', () => {
+            tooltip.classList.remove('visible');
+        });
+    });
+}
+
+// =====================================================
 // DRAG AND DROP FOR QUEUE
 // =====================================================
 function initDragAndDrop() {
@@ -1371,7 +1404,8 @@ async function loadProducts(page = 1) {
 
             const response = await fetch(url);
             const data = await response.json();
-            products = data.products || [];
+            // Add _source marker to Ingram products for consistency with TD Synnex
+            products = (data.products || []).map(p => ({ ...p, _source: 'ingram' }));
             pagination = data.pagination;
         }
 
@@ -1884,6 +1918,9 @@ async function showMfrResolutionPanel(unresolvedList) {
         renderMfrResolutionTable();
         updateMfrResolutionStatus();
 
+        // Initialize tooltip positioning after table is rendered
+        initMfrResolutionTooltips();
+
         const panel = document.getElementById('mfrResolutionPanel');
         if (panel) {
             panel.style.display = 'block';
@@ -1944,8 +1981,17 @@ function renderMfrResolutionTable() {
     let currentDistributor = '';
 
     state.unresolvedManufacturers.forEach((mfr, index) => {
-        const distributorLabel = mfr.distributor === 'ingram' ? 'INGRAM MICRO' : 'TD SYNNEX';
-        const distributorClass = mfr.distributor === 'ingram' ? 'ingram' : 'tdsynnex';
+        // Debug: Log manufacturer data to verify correct fields
+        console.log(`[MfrResolution] Row ${index}: name="${mfr.distributorName}", distributor="${mfr.distributor}"`);
+
+        // Determine distributor label and class based on source
+        // mfr.distributor should be 'ingram' or 'tdsynnex'
+        const distributorLabel = mfr.distributor === 'ingram' ? 'INGRAM MICRO' :
+                                  mfr.distributor === 'tdsynnex' ? 'TD SYNNEX' :
+                                  'UNKNOWN';
+        const distributorClass = mfr.distributor === 'ingram' ? 'ingram' :
+                                  mfr.distributor === 'tdsynnex' ? 'tdsynnex' :
+                                  'unknown';
 
         // Add distributor group separator when distributor changes
         if (mfr.distributor !== currentDistributor) {

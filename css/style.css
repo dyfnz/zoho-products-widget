@@ -1813,17 +1813,14 @@ button svg {
     transform: scale(1.1);
 }
 
-/* Tooltip Styles */
+/* Tooltip Styles - Position Fixed + JavaScript Positioning */
 .tooltip-wrapper {
     position: relative;
     display: inline-flex;
 }
 
 .tooltip {
-    position: absolute;
-    bottom: calc(100% + 8px);
-    left: 50%;
-    transform: translateX(-50%);
+    position: fixed;
     background: var(--color-primary-dark);
     color: var(--color-text-inverse);
     padding: 8px 12px;
@@ -1843,7 +1840,8 @@ button svg {
     pointer-events: none;
 }
 
-.tooltip-wrapper:hover .tooltip {
+/* Tooltip visibility is controlled by JavaScript adding .visible class */
+.tooltip.visible {
     opacity: 1;
     visibility: visible;
 }
