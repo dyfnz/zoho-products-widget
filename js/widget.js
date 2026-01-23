@@ -2018,9 +2018,6 @@ function renderMfrResolutionTable() {
                 <td class="col-source">
                     <div class="mfr-distributor-cell">
                         <span class="mfr-name-cell">${escapeHtml(mfr.distributorName)}</span>
-                        <span class="mfr-distributor-source">
-                            <span class="mfr-source-badge ${distributorClass}">${distributorLabel}</span>
-                        </span>
                     </div>
                 </td>
                 <td>
@@ -2101,6 +2098,14 @@ function handleMfrInputChange(index) {
     const input = document.getElementById(`mfr-input-${index}`);
     const row = document.getElementById(`mfr-row-${index}`);
     const status = document.getElementById(`mfr-status-${index}`);
+
+    // Auto-convert to Title Case while preserving cursor position
+    const cursorPos = input.selectionStart;
+    const originalLength = input.value.length;
+    input.value = toTitleCase(input.value);
+    const newLength = input.value.length;
+    // Restore cursor position (adjust if length changed, though it shouldn't for title case)
+    input.setSelectionRange(cursorPos + (newLength - originalLength), cursorPos + (newLength - originalLength));
 
     if (input.value.trim()) {
         // Disable select, set resolution
@@ -2240,6 +2245,14 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+/**
+ * Convert string to Title Case (first letter of each word capitalized, rest lowercase)
+ */
+function toTitleCase(str) {
+    if (!str) return '';
+    return str.toLowerCase().replace(/(?:^|\s)\S/g, char => char.toUpperCase());
 }
 
 async function submitQueue() {
