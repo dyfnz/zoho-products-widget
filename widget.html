@@ -251,16 +251,17 @@
                     </button>
                 </div>
 
-                <!-- Help Text Section -->
-                <div class="mfr-help-section">
-                    <p class="mfr-help-text">
-                        The <strong>Distributor Names</strong> below reflect manufacturer names that have not been mapped to a common name yet. For example, Ingram Micro lists Hewlett Packard Enterprise as "HPE", and TD Synnex lists "HEWLETT PACKARD ENTERPRISE". The normalized name for both is "Hewlett Packard Enterprise". If the correct value already exists in the Zoho Manufacturers module, then choose that value from the picklist. If not, use Title Case and create a new value. <strong>Title Case</strong> = First letter of each word capitalized. Please match the unresolved distributor names below.
-                    </p>
-                    <div class="mfr-warning">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                        </svg>
-                        WARNING - Do not create new names if the correct names are in Zoho!
+                <!-- Notification Banner -->
+                <div class="mfr-notification-banner">
+                    <svg class="mfr-notification-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 16v-4m0-4h.01"/>
+                    </svg>
+                    <div class="mfr-notification-content">
+                        <div class="mfr-notification-title">Unmapped Manufacturer Names Detected</div>
+                        <div class="mfr-notification-text">
+                            These names need to be mapped to common manufacturer names. This ensures products from different distributors can be matched and compared correctly.
+                        </div>
                     </div>
                 </div>
 
@@ -269,10 +270,42 @@
                     <table class="mfr-resolution-table">
                         <thead>
                             <tr>
-                                <th class="th-distributor">Distributor Name</th>
-                                <th class="th-zoho">Select from Zoho</th>
-                                <th class="th-divider">OR</th>
-                                <th class="th-new">Create New</th>
+                                <th class="th-mfr-names">
+                                    <div class="th-header-content">
+                                        <span>Manufacturer Names</span>
+                                        <div class="tooltip-wrapper">
+                                            <button class="info-btn" type="button">i</button>
+                                            <div class="tooltip">
+                                                These are the raw manufacturer names from distributor catalogs that haven't been mapped to a standard name yet.
+                                            </div>
+                                        </div>
+                                    </div>
+                                </th>
+                                <th class="th-zoho">
+                                    <div class="th-header-content">
+                                        <span>Select From Zoho</span>
+                                        <div class="tooltip-wrapper">
+                                            <button class="info-btn" type="button">i</button>
+                                            <div class="tooltip">
+                                                Choose an existing manufacturer from the Zoho CRM Manufacturers module if one matches.
+                                            </div>
+                                        </div>
+                                    </div>
+                                </th>
+                                <th class="th-or">
+                                    <span class="th-or-text">OR</span>
+                                </th>
+                                <th class="th-create">
+                                    <div class="th-header-content">
+                                        <span>Create New</span>
+                                        <div class="tooltip-wrapper">
+                                            <button class="info-btn" type="button">i</button>
+                                            <div class="tooltip tooltip-warning">
+                                                Only create a new name if it doesn't exist in Zoho. Use proper Title Case. Avoid abbreviations, special characters, or overly long names.
+                                            </div>
+                                        </div>
+                                    </div>
+                                </th>
                             </tr>
                         </thead>
                         <tbody id="mfrResolutionTableBody">
@@ -283,9 +316,19 @@
 
                 <!-- Panel Footer -->
                 <div class="mfr-panel-footer">
-                    <div class="mfr-footer-status">
-                        <span id="mfrStatusDot" class="mfr-status-dot incomplete"></span>
-                        <span id="mfrStatusText">0 of 0 resolved</span>
+                    <div class="mfr-footer-left">
+                        <div class="mfr-footer-status">
+                            <span id="mfrStatusDot" class="mfr-status-dot incomplete"></span>
+                            <span id="mfrStatusText">0 of 0 resolved</span>
+                        </div>
+                    </div>
+                    <div class="mfr-footer-center">
+                        <div class="mfr-footer-warning">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                            </svg>
+                            Don't create duplicates - check "Select From Zoho" first!
+                        </div>
                     </div>
                     <div class="mfr-footer-actions">
                         <button class="mfr-btn mfr-btn-secondary" onclick="cancelMfrResolution()">

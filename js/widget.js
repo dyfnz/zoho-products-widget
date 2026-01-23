@@ -141,6 +141,16 @@ function initZohoSDK() {
         console.log('NotifyAndWait event received:', data);
         state.pendingResponseId = data.id;
         state.parentContext = data.data || {};
+
+        // Also check NotifyAndWait for manufacturers (might come later)
+        const eventData = data.data || {};
+        if (eventData.manufacturers && Array.isArray(eventData.manufacturers) && state.prefetchedManufacturers.length === 0) {
+            state.prefetchedManufacturers = eventData.manufacturers.map(m => {
+                return typeof m === 'string' ? m : (m.name || m.Name || '');
+            }).filter(name => name.length > 0).sort();
+            console.log(`[MfrResolution] Received ${state.prefetchedManufacturers.length} manufacturers from NotifyAndWait`);
+        }
+
         showStatus('Ready to search. Select products and click "Add to Queue".', 'info');
     });
 }
@@ -1842,7 +1852,30 @@ async function saveManufacturerMappingsBatch(mappings) {
  * @param {Array} unresolvedList - Array of {distributorName, distributor}
  * @returns {Promise} - Resolves with normalized map or rejects on cancel
  */
-function showMfrResolutionPanel(unresolvedList) {
+async function showMfrResolutionPanel(unresolvedList) {
+    // If no prefetched manufacturers, try to fetch from Zoho directly
+    if (state.prefetchedManufacturers.length === 0 && typeof ZOHO !== 'undefined') {
+        console.log('[MfrResolution] No prefetched manufacturers, attempting direct Zoho fetch...');
+        try {
+            const response = await ZOHO.CRM.API.getAllRecords({
+                Entity: "Manufacturers",
+                sort_by: "Name",
+                sort_order: "asc",
+                per_page: 200
+            });
+
+            if (response && response.data && Array.isArray(response.data)) {
+                state.prefetchedManufacturers = response.data
+                    .map(record => record.Name || '')
+                    .filter(name => name.length > 0)
+                    .sort();
+                console.log(`[MfrResolution] Fetched ${state.prefetchedManufacturers.length} manufacturers directly from Zoho`);
+            }
+        } catch (error) {
+            console.warn('[MfrResolution] Failed to fetch manufacturers from Zoho:', error);
+        }
+    }
+
     return new Promise((resolve, reject) => {
         state.unresolvedManufacturers = unresolvedList;
         state.mfrResolutions = new Map();
@@ -1855,6 +1888,7 @@ function showMfrResolutionPanel(unresolvedList) {
         if (panel) {
             panel.style.display = 'block';
             panel.classList.remove('collapsed');
+            panel.classList.remove('all-resolved');
             panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
@@ -1892,25 +1926,52 @@ function toggleMfrPanelCollapse() {
 }
 
 /**
- * Render the resolution table rows
+ * Render the resolution table rows with distributor group separators
  */
 function renderMfrResolutionTable() {
     const tbody = document.getElementById('mfrResolutionTableBody');
     if (!tbody) return;
 
+    // Debug: Log prefetchedManufacturers
+    console.log('[MfrResolution] Rendering table with', state.prefetchedManufacturers.length, 'Zoho manufacturers');
+
     const zohoOptions = state.prefetchedManufacturers
         .map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`)
         .join('');
 
-    tbody.innerHTML = state.unresolvedManufacturers.map((mfr, index) => {
-        const distributorLabel = mfr.distributor === 'ingram' ? 'Ingram Micro' : 'TD SYNNEX';
+    // Group manufacturers by distributor for group separators
+    let html = '';
+    let currentDistributor = '';
+
+    state.unresolvedManufacturers.forEach((mfr, index) => {
+        const distributorLabel = mfr.distributor === 'ingram' ? 'INGRAM MICRO' : 'TD SYNNEX';
         const distributorClass = mfr.distributor === 'ingram' ? 'ingram' : 'tdsynnex';
 
-        return `
-            <tr id="mfr-row-${index}">
-                <td>
+        // Add distributor group separator when distributor changes
+        if (mfr.distributor !== currentDistributor) {
+            currentDistributor = mfr.distributor;
+            const count = state.unresolvedManufacturers.filter(m => m.distributor === currentDistributor).length;
+            html += `
+                <tr class="mfr-group-separator">
+                    <td colspan="4">
+                        <div class="mfr-group-label">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                            </svg>
+                            ${distributorLabel}
+                            <span class="mfr-group-count">${count}</span>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+
+        // Add manufacturer row
+        html += `
+            <tr id="mfr-row-${index}" class="mfr-row">
+                <td class="col-source">
                     <div class="mfr-distributor-cell">
-                        <span class="mfr-distributor-name">${escapeHtml(mfr.distributorName)}</span>
+                        <span class="mfr-name-cell">${escapeHtml(mfr.distributorName)}</span>
                         <span class="mfr-distributor-source">
                             <span class="mfr-source-badge ${distributorClass}">${distributorLabel}</span>
                         </span>
@@ -1934,9 +1995,7 @@ function renderMfrResolutionTable() {
                         </span>
                     </div>
                 </td>
-                <td class="mfr-divider-cell">
-                    <span class="mfr-or-badge">or</span>
-                </td>
+                <td class="td-or"></td>
                 <td>
                     <div class="mfr-input-wrapper">
                         <input
@@ -1944,7 +2003,7 @@ function renderMfrResolutionTable() {
                             class="mfr-input"
                             id="mfr-input-${index}"
                             data-index="${index}"
-                            placeholder="Enter new name (Title Case)..."
+                            placeholder="Enter new name..."
                             oninput="handleMfrInputChange(${index})"
                         />
                         <span id="mfr-status-${index}" class="mfr-row-status">
@@ -1956,7 +2015,9 @@ function renderMfrResolutionTable() {
                 </td>
             </tr>
         `;
-    }).join('');
+    });
+
+    tbody.innerHTML = html;
 }
 
 /**
@@ -2019,7 +2080,7 @@ function handleMfrInputChange(index) {
 function updateMfrResolutionStatus() {
     const total = state.unresolvedManufacturers.length;
     const resolved = state.mfrResolutions.size;
-    const allResolved = resolved === total;
+    const allResolved = resolved === total && total > 0;
 
     // Update count badge
     const countEl = document.getElementById('mfrUnresolvedCount');
@@ -2044,6 +2105,12 @@ function updateMfrResolutionStatus() {
     const confirmBtn = document.getElementById('mfrConfirmBtn');
     if (confirmBtn) {
         confirmBtn.disabled = !allResolved;
+    }
+
+    // Update panel border color when all resolved
+    const panel = document.getElementById('mfrResolutionPanel');
+    if (panel) {
+        panel.classList.toggle('all-resolved', allResolved);
     }
 }
 
