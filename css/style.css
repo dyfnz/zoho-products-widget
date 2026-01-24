@@ -1838,6 +1838,7 @@ button svg {
     transition: opacity 50ms ease, visibility 50ms ease;
     z-index: 10000;
     pointer-events: none;
+    text-transform: none;
 }
 
 /* Tooltip visibility is controlled by JavaScript adding .visible class */

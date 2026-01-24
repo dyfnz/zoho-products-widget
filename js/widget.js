@@ -3113,6 +3113,15 @@ function resetFilters() {
 
     document.getElementById('productsSection').style.display = 'none';
     showStatus('Select a manufacturer or enter a SKU to begin', 'info');
+
+    // Close Manufacturer Mappings panel if open
+    const mappingsPanel = document.getElementById('mfrMappingsPanel');
+    const mappingsBtn = document.getElementById('mfrMappingsBtn');
+    if (mappingsPanel) mappingsPanel.style.display = 'none';
+    if (mappingsBtn) mappingsBtn.classList.remove('active');
+
+    // Close Resolve Manufacturer Names panel if open
+    hideMfrResolutionPanel();
 }
 
 function resetOptionalFilters() {
