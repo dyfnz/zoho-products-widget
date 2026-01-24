@@ -1024,6 +1024,10 @@ button svg {
     grid-column: 1 / -1;
 }
 
+#discountsGroup {
+    margin-bottom: var(--space-2);
+}
+
 .details-card h5 {
     font-size: 8px;
     font-weight: 700;
