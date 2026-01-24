@@ -2307,3 +2307,218 @@ button svg {
 .mfr-table-container::-webkit-scrollbar-thumb:hover {
     background: var(--color-text-muted);
 }
+
+/* =====================================================
+   MANUFACTURER MAPPINGS REFERENCE PANEL
+   ===================================================== */
+
+/* Mapping Icon Button (in mfr-row) */
+.mfr-mappings-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    margin-left: var(--space-1);
+    background: var(--color-border-light);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+}
+
+.mfr-mappings-btn:hover {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: var(--color-text-inverse);
+}
+
+.mfr-mappings-btn.active {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: var(--color-text-inverse);
+}
+
+/* Mappings Panel Container */
+.mfr-mappings-panel {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-accent);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: var(--space-3);
+    overflow: hidden;
+    animation: slideUp var(--transition-base);
+    flex: 1;
+    min-width: 0;
+}
+
+/* Panel Header */
+.mfr-mappings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-1) var(--space-2);
+    background: var(--color-primary);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.mfr-mappings-header-left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.mfr-mappings-header h3 {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    color: var(--color-text-inverse);
+    margin: 0;
+}
+
+.mfr-mappings-header h3 svg {
+    color: var(--color-text-inverse);
+    opacity: 0.8;
+}
+
+.mfr-mappings-count {
+    background: var(--color-accent);
+    color: var(--color-text-inverse);
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 10px;
+}
+
+.mfr-mappings-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    color: var(--color-text-inverse);
+    opacity: 0.7;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+}
+
+.mfr-mappings-close:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Table Container - Scrollable with resizable height */
+.mfr-mappings-table-container {
+    max-height: 180px;
+    min-height: 80px;
+    overflow-y: auto;
+    overflow-x: auto;
+}
+
+/* Mappings Table */
+.mfr-mappings-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9px !important;
+}
+
+.mfr-mappings-table th,
+.mfr-mappings-table td {
+    padding: 3px var(--space-2);
+    text-align: left;
+    border-bottom: 1px solid var(--color-border-light);
+}
+
+.mfr-mappings-table th {
+    background: var(--color-border-light);
+    color: var(--color-text);
+    font-size: 7px !important;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.mfr-mappings-table th:first-child {
+    width: 28%;
+}
+
+.mfr-mappings-table th:nth-child(2),
+.mfr-mappings-table th:nth-child(3),
+.mfr-mappings-table th:nth-child(4) {
+    width: 24%;
+}
+
+.mfr-mappings-table tbody tr:hover {
+    background: rgba(14, 165, 233, 0.04);
+}
+
+.mfr-mappings-table td {
+    color: var(--color-text);
+    font-size: 9px !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+/* Common Name column - bold */
+.mfr-mappings-table td:first-child {
+    font-weight: 600;
+}
+
+/* Alias columns - muted */
+.mfr-mappings-table td:not(:first-child) {
+    color: var(--color-text-secondary);
+    font-size: 8px !important;
+}
+
+/* Empty alias indicator */
+.mfr-mappings-no-alias {
+    color: var(--color-text-muted);
+    font-style: italic;
+}
+
+/* Resize Handle - Centered */
+.mfr-mappings-resize {
+    height: 7px;
+    background: linear-gradient(to bottom, var(--color-border-light), var(--color-border));
+    cursor: ns-resize;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background var(--transition-fast);
+    user-select: none;
+}
+
+.mfr-mappings-resize:hover {
+    background: linear-gradient(to bottom, var(--color-border), var(--color-accent));
+}
+
+.mfr-mappings-resize:active {
+    background: var(--color-accent);
+}
+
+.mfr-mappings-resize-grip {
+    width: 32px;
+    height: 3px;
+    background: var(--color-text-muted);
+    border-radius: 2px;
+    opacity: 0.5;
+}
+
+.mfr-mappings-resize:hover .mfr-mappings-resize-grip {
+    opacity: 0.8;
+    background: var(--color-accent);
+}

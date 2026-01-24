@@ -11,3 +11,6 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Preview files
+preview*.html

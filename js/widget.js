@@ -78,7 +78,8 @@ const state = {
     prefetchedManufacturers: [],
     mfrResolutions: new Map(),
     unresolvedManufacturers: [],
-    mfrResolutionPromise: null
+    mfrResolutionPromise: null,
+    manufacturerMappingsData: []  // Cached mappings from Supabase
 };
 
 let searchTimeout = null;
@@ -103,6 +104,8 @@ document.addEventListener('DOMContentLoaded', function() {
     initQueueResize();
     checkProxyStatus();
     updateQueueUI();
+    loadManufacturerMappings();
+    initMfrMappingsResize();
 
     // Set "Group by Manufacturer" checkbox to match default state
     const groupByMfrCheckbox = document.getElementById('groupByMfr');
@@ -2253,6 +2256,138 @@ function escapeHtml(text) {
 function toTitleCase(str) {
     if (!str) return '';
     return str.toLowerCase().replace(/(?:^|\s)\S/g, char => char.toUpperCase());
+}
+
+// =====================================================
+// MANUFACTURER MAPPINGS REFERENCE PANEL
+// =====================================================
+
+/**
+ * Load manufacturer mappings from Supabase
+ */
+async function loadManufacturerMappings() {
+    try {
+        console.log('[MfrMappings] Loading manufacturer mappings from Supabase...');
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/manufacturer_mappings?select=*&order=canonical_name`, {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to load mappings: ${response.status}`);
+        }
+
+        state.manufacturerMappingsData = await response.json();
+        console.log(`[MfrMappings] Loaded ${state.manufacturerMappingsData.length} mappings`);
+    } catch (error) {
+        console.error('[MfrMappings] Error loading mappings:', error);
+        state.manufacturerMappingsData = [];
+    }
+}
+
+/**
+ * Toggle the manufacturer mappings panel visibility
+ */
+function toggleMfrMappingsPanel() {
+    const panel = document.getElementById('mfrMappingsPanel');
+    const btn = document.getElementById('mfrMappingsBtn');
+
+    if (!panel) return;
+
+    const isVisible = panel.style.display !== 'none';
+
+    if (isVisible) {
+        panel.style.display = 'none';
+        btn?.classList.remove('active');
+    } else {
+        renderMfrMappingsTable();
+        panel.style.display = 'block';
+        btn?.classList.add('active');
+    }
+}
+
+/**
+ * Render the manufacturer mappings table
+ */
+function renderMfrMappingsTable() {
+    const tbody = document.getElementById('mfrMappingsTableBody');
+    const countSpan = document.getElementById('mfrMappingsCount');
+
+    if (!tbody) return;
+
+    // Update count
+    if (countSpan) {
+        countSpan.textContent = state.manufacturerMappingsData.length;
+    }
+
+    if (state.manufacturerMappingsData.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="4" style="text-align: center; color: var(--color-text-muted); padding: 12px;">
+                    No manufacturer mappings found
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    let html = '';
+    state.manufacturerMappingsData.forEach(mapping => {
+        const ingramAliases = (mapping.ingram_micro_aliases || []).join(', ') || '<span class="mfr-mappings-no-alias">--</span>';
+        const tdsynnexAliases = (mapping.td_synnex_aliases || []).join(', ') || '<span class="mfr-mappings-no-alias">--</span>';
+        const arrowAliases = (mapping.arrow_aliases || []).join(', ') || '<span class="mfr-mappings-no-alias">--</span>';
+
+        html += `
+            <tr>
+                <td>${escapeHtml(mapping.canonical_name)}</td>
+                <td>${ingramAliases}</td>
+                <td>${tdsynnexAliases}</td>
+                <td>${arrowAliases}</td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+}
+
+/**
+ * Initialize vertical resize for mappings panel
+ */
+function initMfrMappingsResize() {
+    const resizeHandle = document.getElementById('mfrMappingsResize');
+    const container = document.getElementById('mfrMappingsTableContainer');
+
+    if (!resizeHandle || !container) return;
+
+    let isResizing = false;
+    let startY = 0;
+    let startHeight = 0;
+
+    resizeHandle.addEventListener('mousedown', (e) => {
+        isResizing = true;
+        startY = e.clientY;
+        startHeight = container.offsetHeight;
+        document.body.style.cursor = 'ns-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+        const deltaY = e.clientY - startY;
+        const newHeight = Math.max(80, Math.min(400, startHeight + deltaY));
+        container.style.maxHeight = newHeight + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isResizing) {
+            isResizing = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
+    });
 }
 
 async function submitQueue() {
