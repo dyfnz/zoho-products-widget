@@ -2342,6 +2342,17 @@ button svg {
     color: var(--color-text-inverse);
 }
 
+/* Tooltip wrapper for mappings button */
+.mfr-mappings-tooltip-wrapper {
+    display: inline-flex;
+    flex-shrink: 0;
+    margin-left: var(--space-1);
+}
+
+.mfr-mappings-tooltip-wrapper .mfr-mappings-btn {
+    margin-left: 0;
+}
+
 /* Mappings Panel Container */
 .mfr-mappings-panel {
     background: var(--color-surface);
@@ -2429,6 +2440,7 @@ button svg {
     width: 100%;
     border-collapse: collapse;
     font-size: 9px !important;
+    table-layout: fixed;
 }
 
 .mfr-mappings-table th,
@@ -2450,13 +2462,31 @@ button svg {
     z-index: 1;
 }
 
-.mfr-mappings-table th:first-child {
+/* Column structure: Common Name | Arrow | Ingram Micro | TD Synnex */
+/* Responsive behavior: text wraps first, then Arrow hides at narrow widths */
+.mfr-mappings-table th:first-child,
+.mfr-mappings-table td:first-child {
+    min-width: 80px;
     width: 28%;
 }
 
+/* Arrow column - shrinks/hides when space is constrained */
 .mfr-mappings-table th:nth-child(2),
+.mfr-mappings-table td:nth-child(2) {
+    width: 30px;
+    min-width: 0;
+    max-width: 30px;
+    text-align: center;
+    overflow: hidden;
+    flex-shrink: 1;
+}
+
+/* Ingram Micro and TD Synnex columns - always visible with word wrap */
 .mfr-mappings-table th:nth-child(3),
-.mfr-mappings-table th:nth-child(4) {
+.mfr-mappings-table td:nth-child(3),
+.mfr-mappings-table th:nth-child(4),
+.mfr-mappings-table td:nth-child(4) {
+    min-width: 70px;
     width: 24%;
 }
 
@@ -2467,9 +2497,11 @@ button svg {
 .mfr-mappings-table td {
     color: var(--color-text);
     font-size: 9px !important;
-    white-space: nowrap;
+    /* Allow text to wrap naturally for responsive behavior */
+    white-space: normal;
+    word-wrap: break-word;
+    word-break: break-word;
     overflow: hidden;
-    text-overflow: ellipsis;
     min-width: 0;
 }
 
@@ -2521,4 +2553,46 @@ button svg {
 .mfr-mappings-resize:hover .mfr-mappings-resize-grip {
     opacity: 0.8;
     background: var(--color-accent);
+}
+
+/* Arrow column specific styling - graceful hide at narrow widths */
+.mfr-mappings-table .col-arrow {
+    width: 30px;
+    min-width: 0;
+    max-width: 30px;
+    text-align: center;
+    overflow: hidden;
+    padding: 3px 2px;
+    white-space: nowrap;
+}
+
+/* At narrow widths, hide the arrow column content */
+@media (max-width: 400px) {
+    .mfr-mappings-table .col-arrow,
+    .mfr-mappings-table th:nth-child(2),
+    .mfr-mappings-table td:nth-child(2) {
+        width: 0;
+        max-width: 0;
+        padding: 0;
+        border: none;
+        visibility: hidden;
+    }
+}
+
+/* Responsive behavior for the mappings panel when queue panel is resized */
+.mfr-mappings-panel {
+    min-width: 250px;
+}
+
+/* When panel gets narrow, prioritize important columns */
+.mfr-mappings-table-container {
+    min-width: 0;
+}
+
+/* Ensure distributor columns always show with wrapped text */
+.mfr-mappings-table td:nth-child(3),
+.mfr-mappings-table td:nth-child(4) {
+    white-space: normal;
+    word-wrap: break-word;
+    word-break: break-word;
 }

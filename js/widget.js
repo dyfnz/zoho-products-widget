@@ -106,6 +106,7 @@ document.addEventListener('DOMContentLoaded', function() {
     updateQueueUI();
     loadManufacturerMappings();
     initMfrMappingsResize();
+    initMfrMappingsTooltip();
 
     // Set "Group by Manufacturer" checkbox to match default state
     const groupByMfrCheckbox = document.getElementById('groupByMfr');
@@ -295,6 +296,32 @@ function initMfrResolutionTooltips() {
         newBtn.addEventListener('mouseleave', () => {
             tooltip.classList.remove('visible');
         });
+    });
+}
+
+/**
+ * Initialize tooltip for the manufacturer mappings button
+ * Uses same pattern as mfr resolution tooltips
+ */
+function initMfrMappingsTooltip() {
+    const wrapper = document.querySelector('.mfr-mappings-tooltip-wrapper');
+    if (!wrapper) return;
+
+    const btn = wrapper.querySelector('.mfr-mappings-btn');
+    const tooltip = wrapper.querySelector('.tooltip');
+
+    if (!btn || !tooltip) return;
+
+    btn.addEventListener('mouseenter', (e) => {
+        const rect = btn.getBoundingClientRect();
+        // Position tooltip below the button (since it's in the header area)
+        tooltip.style.left = (rect.left + rect.width/2 - 110) + 'px';
+        tooltip.style.top = (rect.bottom + 8) + 'px';
+        tooltip.classList.add('visible');
+    });
+
+    btn.addEventListener('mouseleave', () => {
+        tooltip.classList.remove('visible');
     });
 }
 
