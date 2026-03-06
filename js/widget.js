@@ -29,8 +29,7 @@ const DISTRIBUTORS = {
     arrow: {
         name: 'Arrow',
         apiPrefix: '/arrow',
-        color: '#f59e0b',
-        disabled: true
+        color: '#f59e0b'
     }
 };
 
@@ -537,6 +536,10 @@ function selectDistributor(distributor) {
         // TD Synnex: Show cat3, hide SKU type
         if (cat3Field) cat3Field.style.display = '';
         if (skuTypeField) skuTypeField.style.display = 'none';
+    } else if (distributor === 'arrow') {
+        // Arrow: Hide both cat3 and SKU type
+        if (cat3Field) cat3Field.style.display = 'none';
+        if (skuTypeField) skuTypeField.style.display = 'none';
     } else {
         // Ingram: Hide cat3, show SKU type
         if (cat3Field) cat3Field.style.display = 'none';
@@ -706,6 +709,22 @@ async function searchTDSynnexManufacturers(searchTerm) {
     return [];
 }
 
+async function searchArrowManufacturers(searchTerm) {
+    const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/zoho_arrow_products?select=manufacturer&manufacturer=ilike.*${encodeURIComponent(searchTerm)}*&limit=1000`,
+        {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            }
+        }
+    );
+    if (!response.ok) throw new Error(`Arrow manufacturer search failed: ${response.status}`);
+    const data = await response.json();
+    const unique = [...new Set(data.map(r => r.manufacturer))].filter(Boolean).sort();
+    return unique;
+}
+
 async function loadTDSynnexCategories(manufacturer, cat1 = null, cat2 = null) {
     let url = `${TDSYNNEX_BASE}/category-lookup?manufacturer=${encodeURIComponent(manufacturer)}`;
     if (cat1) url += `&cat1=${encodeURIComponent(cat1)}`;
@@ -863,6 +882,76 @@ function buildTDSynnexAvailability(product) {
 }
 
 // =====================================================
+// ARROW API FUNCTIONS
+// =====================================================
+async function searchArrowProducts(manufacturer, options = {}) {
+    const { search = '', category = '', subcategory = '', limit = 50, offset = 0 } = options;
+
+    let url = `${SUPABASE_URL}/rest/v1/zoho_arrow_products?manufacturer=eq.${encodeURIComponent(manufacturer)}`;
+    url += `&order=manufacturer_part_number.asc`;
+
+    if (search) url += `&manufacturer_part_number=ilike.*${encodeURIComponent(search)}*`;
+    if (category) url += `&category=eq.${encodeURIComponent(category)}`;
+    if (subcategory) url += `&subcategory=eq.${encodeURIComponent(subcategory)}`;
+
+    // Get count
+    const countResponse = await fetch(url, {
+        method: 'HEAD',
+        headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Prefer': 'count=exact'
+        }
+    });
+    const contentRange = countResponse.headers.get('content-range');
+    const totalCount = contentRange ? parseInt(contentRange.split('/')[1]) || 0 : 0;
+
+    // Get data
+    const response = await fetch(url + `&limit=${limit}&offset=${offset}`, {
+        headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+        }
+    });
+    if (!response.ok) throw new Error(`Arrow product search failed: ${response.status}`);
+    const data = await response.json();
+
+    return {
+        products: (data || []).map(mapArrowProduct),
+        totalCount,
+        pagination: {
+            page: Math.floor(offset / limit) + 1,
+            pageSize: limit,
+            totalPages: Math.ceil(totalCount / limit),
+            totalRecords: totalCount
+        }
+    };
+}
+
+function mapArrowProduct(product) {
+    return {
+        vendorPartNumber: product.manufacturer_part_number,
+        ingramPartNumber: product.manufacturer_part_number,
+        distributorPartNumber: product.vendor_part_number,
+        description: product.description,
+        vendorName: product.manufacturer,
+        category: product.category,
+        subCategory: product.subcategory,
+        retailPrice: product.unit_msrp,
+        unitCost: product.unit_cost,
+        pricingData: {
+            pricing: {
+                retailPrice: product.unit_msrp,
+                customerPrice: product.unit_cost
+            },
+            availability: null
+        },
+        _source: 'arrow',
+        _raw: product
+    };
+}
+
+// =====================================================
 // MANUFACTURER SEARCH
 // =====================================================
 function debounceManufacturerSearch() {
@@ -888,6 +977,9 @@ async function searchManufacturers() {
         if (state.currentDistributor === 'tdsynnex') {
             // TD Synnex: Use dedicated edge function
             manufacturers = await searchTDSynnexManufacturers(searchTerm);
+        } else if (state.currentDistributor === 'arrow') {
+            // Arrow: Query zoho_arrow_products view
+            manufacturers = await searchArrowManufacturers(searchTerm);
         } else {
             // Ingram: Use proxy
             const response = await fetch(
@@ -973,6 +1065,31 @@ async function lookupManufacturersFromSKU(skuPattern) {
 
             const data = await response.json();
             manufacturers = data || [];
+
+        } else if (state.currentDistributor === 'arrow') {
+            // Arrow: Query zoho_arrow_products by MPN pattern, extract unique manufacturers
+            const response = await fetch(
+                `${SUPABASE_URL}/rest/v1/zoho_arrow_products?select=manufacturer&manufacturer_part_number=ilike.*${encodeURIComponent(skuPattern)}*&limit=1000`,
+                {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    }
+                }
+            );
+            if (!response.ok) throw new Error(`Arrow SKU lookup failed: ${response.status}`);
+            const data = await response.json();
+
+            const vendorCounts = {};
+            (data || []).forEach(row => {
+                const mfr = row.manufacturer || 'Unknown';
+                vendorCounts[mfr] = (vendorCounts[mfr] || 0) + 1;
+            });
+
+            manufacturers = Object.entries(vendorCounts).map(([name, count]) => ({
+                manufacturer_name: name,
+                product_count: count
+            }));
 
         } else {
             // Ingram: Call productsWithPricing without vendor and extract unique vendors
@@ -1251,6 +1368,28 @@ async function loadFilterOptions(filterType) {
                 categories = await loadTDSynnexCategories(state.manufacturer, state.category, state.subcategory);
             }
             items = categories.map(c => c.name);
+        } else if (state.currentDistributor === 'arrow') {
+            // Arrow: Query zoho_arrow_products for distinct category/subcategory
+            if (filterType === 'category') {
+                const response = await fetch(
+                    `${SUPABASE_URL}/rest/v1/zoho_arrow_products?select=category&manufacturer=eq.${encodeURIComponent(state.manufacturer)}&limit=1000`,
+                    { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }
+                );
+                if (response.ok) {
+                    const data = await response.json();
+                    items = [...new Set(data.map(r => r.category))].filter(Boolean).sort();
+                }
+            } else if (filterType === 'subcategory' && state.category) {
+                const response = await fetch(
+                    `${SUPABASE_URL}/rest/v1/zoho_arrow_products?select=subcategory&manufacturer=eq.${encodeURIComponent(state.manufacturer)}&category=eq.${encodeURIComponent(state.category)}&limit=1000`,
+                    { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }
+                );
+                if (response.ok) {
+                    const data = await response.json();
+                    items = [...new Set(data.map(r => r.subcategory))].filter(Boolean).sort();
+                }
+            }
+            // Arrow doesn't have cat3
         } else {
             // Ingram: Use proxy
             let url = `${PROXY_BASE}?vendor=${encodeURIComponent(state.manufacturer)}`;
@@ -1417,6 +1556,18 @@ async function loadProducts(page = 1) {
                 cat1: state.category || '',
                 cat2: state.subcategory || '',
                 cat3: state.cat3 || '',
+                limit: PAGE_SIZE,
+                offset: offset
+            });
+            products = result.products;
+            pagination = result.pagination;
+        } else if (state.currentDistributor === 'arrow') {
+            // Arrow: Query zoho_arrow_products view
+            const offset = (page - 1) * PAGE_SIZE;
+            const result = await searchArrowProducts(state.manufacturer, {
+                search: state.skuKeyword || '',
+                category: state.category || '',
+                subcategory: state.subcategory || '',
                 limit: PAGE_SIZE,
                 offset: offset
             });
@@ -2018,9 +2169,11 @@ function renderMfrResolutionTable() {
         // mfr.distributor should be 'ingram' or 'tdsynnex'
         const distributorLabel = mfr.distributor === 'ingram' ? 'INGRAM MICRO' :
                                   mfr.distributor === 'tdsynnex' ? 'TD SYNNEX' :
+                                  mfr.distributor === 'arrow' ? 'ARROW' :
                                   'UNKNOWN';
         const distributorClass = mfr.distributor === 'ingram' ? 'ingram' :
                                   mfr.distributor === 'tdsynnex' ? 'tdsynnex' :
+                                  mfr.distributor === 'arrow' ? 'arrow' :
                                   'unknown';
 
         // Add distributor group separator when distributor changes
@@ -2432,7 +2585,7 @@ async function submitQueue() {
     const uniqueManufacturers = new Map();
     for (const product of state.queuedProducts) {
         const mfr = product.vendorName || state.manufacturer;
-        const distributor = product._source === 'tdsynnex' ? 'tdsynnex' : 'ingram';
+        const distributor = product._source === 'tdsynnex' ? 'tdsynnex' : product._source === 'arrow' ? 'arrow' : 'ingram';
         if (mfr && !uniqueManufacturers.has(mfr)) {
             uniqueManufacturers.set(mfr, distributor);
         }
@@ -2544,6 +2697,23 @@ async function submitQueue() {
             };
         }
 
+        // Arrow format
+        if (product._source === 'arrow') {
+            return {
+                Product_Code: product.vendorPartNumber || '',
+                Product_Name: product.description || '',
+                Manufacturer: normalizedMfr,
+                Arrow_Part_Number: product.distributorPartNumber || '',
+                MSRP: msrp,
+                Customer_Price: pricingData?.pricing?.customerPrice || product.unitCost || null,
+                Category: product.category || state.category || '',
+                Subcategory: product.subCategory || state.subcategory || '',
+                Description: '',
+                Last_Sync_Source: 'Arrow',
+                Quantity: 1
+            };
+        }
+
         // Ingram Micro format (default)
         return {
             Product_Code: product.vendorPartNumber || '',
@@ -2628,7 +2798,9 @@ async function showProductDetails(productIndex) {
     }
 
     const isTDSynnex = product._source === 'tdsynnex';
-    console.log(`[Details] Loading details for ${product.vendorPartNumber} (${isTDSynnex ? 'TD SYNNEX' : 'Ingram'})...`);
+    const isArrow = product._source === 'arrow';
+    const distLabel = isArrow ? 'Arrow' : (isTDSynnex ? 'TD SYNNEX' : 'Ingram');
+    console.log(`[Details] Loading details for ${product.vendorPartNumber} (${distLabel})...`);
 
     const detailsSection = document.getElementById('productDetailsSection');
     detailsSection.style.display = 'block';
@@ -2847,6 +3019,61 @@ async function showProductDetails(productIndex) {
         }
 
         document.getElementById('rawApiResponse').textContent = JSON.stringify(fullProductData, null, 2);
+        return;
+    }
+
+    // ========================================
+    // ARROW PRODUCT DETAILS
+    // ========================================
+    if (isArrow) {
+        const rawProduct = product._raw || {};
+
+        // Header - Product Name
+        document.getElementById('detailsProductName').innerHTML = `
+            <strong>Product Name:</strong> ${product.description || 'N/A'}
+        `;
+
+        // Header - Arrow Part, Vendor Part, Manufacturer
+        document.getElementById('detailsSubtitle').innerHTML = `
+            <strong>Arrow Part:</strong> ${product.distributorPartNumber || 'N/A'} |
+            <strong>Vendor Part:</strong> ${product.vendorPartNumber || 'N/A'} |
+            <strong>Manufacturer:</strong> ${product.vendorName || state.manufacturer}
+        `;
+
+        // No long description for Arrow
+        const longDescEl = document.getElementById('detailsLongDesc');
+        longDescEl.style.display = 'none';
+
+        // Product Information Grid
+        const productInfoFields = [
+            { label: 'Category', value: product.category || '-' },
+            { label: 'Subcategory', value: product.subCategory || '-' },
+            { label: 'Arrow Part #', value: product.distributorPartNumber || '-' },
+            { label: 'Vendor Part #', value: product.vendorPartNumber || '-' }
+        ];
+        renderGrid('productInfoGrid', productInfoFields);
+
+        // Pricing Grid
+        const pricingFields = [
+            { label: 'MSRP', value: formatCurrency(product.retailPrice) },
+            { label: 'Unit Cost', value: formatCurrency(product.unitCost) }
+        ];
+        renderGrid('pricingGrid', pricingFields);
+
+        // Availability - not available for Arrow
+        renderGrid('availabilityGrid', [
+            { label: 'Availability', value: 'Not available from catalog data' }
+        ]);
+
+        // Flags - not applicable for Arrow
+        renderFlagsGrid('flagsGrid', []);
+
+        // Hide discounts and warehouse sections
+        document.getElementById('discountsGroup').style.display = 'none';
+        document.getElementById('warehouseSection').style.display = 'none';
+
+        // Raw API response (includes raw catalog data for future Arrow API integration)
+        document.getElementById('rawApiResponse').textContent = JSON.stringify({ mapped: product, raw: rawProduct }, null, 2);
         return;
     }
 
