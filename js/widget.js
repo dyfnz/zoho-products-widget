@@ -809,17 +809,20 @@ async function loadArrowManufacturers() {
     const countEl = document.getElementById('mfrCount');
     try {
         const response = await fetch(
-            `${SUPABASE_URL}/rest/v1/zoho_arrow_products?select=manufacturer&limit=1000`,
+            `${SUPABASE_URL}/rest/v1/rpc/get_arrow_manufacturers`,
             {
+                method: 'POST',
                 headers: {
+                    'Content-Type': 'application/json',
                     'apikey': SUPABASE_ANON_KEY,
                     'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                }
+                },
+                body: JSON.stringify({})
             }
         );
         if (!response.ok) throw new Error(`Failed: ${response.status}`);
         const data = await response.json();
-        const manufacturers = [...new Set(data.map(r => r.manufacturer))].filter(Boolean).sort();
+        const manufacturers = data.map(r => r.manufacturer).filter(Boolean).sort();
 
         select.innerHTML = '<option value="">-- Select Manufacturer --</option>' +
             manufacturers.map(m => `<option value="${m}">${m}</option>`).join('');
@@ -1286,10 +1289,14 @@ async function handleSingleManufacturerAutoSelect(manufacturer, skuValue) {
         skuSearchRow.classList.add('filter-mode');
     }
 
-    showStatus(`Auto-selected ${manufacturer}. Loading categories...`, 'loading');
+    showStatus(`Auto-selected ${manufacturer}. Loading filters...`, 'loading');
 
-    // Load categories from the manufacturer
+    // Load filter options from the manufacturer
     await loadFilterOptions('category');
+    if (state.currentDistributor === 'arrow') {
+        await loadFilterOptions('brand');
+        await loadFilterOptions('subcategory');
+    }
 
     // Load products with the SKU filter
     await loadProducts(1);
@@ -1414,7 +1421,10 @@ async function onManufacturerSelect() {
     showStatus(`Manufacturer: ${state.manufacturer}. Loading filters...`, 'loading');
 
     await loadFilterOptions('category');
-    if (state.currentDistributor === 'arrow') await loadFilterOptions('brand');
+    if (state.currentDistributor === 'arrow') {
+        await loadFilterOptions('brand');
+        await loadFilterOptions('subcategory');
+    }
 
     // If we have a pending SKU filter from SKU-first search, apply it
     if (hasPendingSkuFilter) {
@@ -1490,35 +1500,30 @@ async function loadFilterOptions(filterType) {
             }
             items = categories.map(c => c.name);
         } else if (state.currentDistributor === 'arrow') {
-            // Arrow: Query zoho_arrow_products for distinct brand/category/subcategory
-            if (filterType === 'brand') {
+            // Arrow: Use RPC for distinct brand/category/subcategory (avoids limit=1000 bug)
+            if (filterType === 'brand' || filterType === 'category' || filterType === 'subcategory') {
+                const rpcBody = {
+                    p_filter_type: filterType,
+                    p_manufacturer: state.manufacturer,
+                    p_brand: state.brand || null,
+                    p_category: state.category || null,
+                    p_subcategory: state.subcategory || null
+                };
                 const response = await fetch(
-                    `${SUPABASE_URL}/rest/v1/zoho_arrow_products?select=brand&manufacturer=eq.${encodeURIComponent(state.manufacturer)}&brand=not.is.null&limit=1000`,
-                    { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }
+                    `${SUPABASE_URL}/rest/v1/rpc/get_arrow_filter_values`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        },
+                        body: JSON.stringify(rpcBody)
+                    }
                 );
                 if (response.ok) {
                     const data = await response.json();
-                    items = [...new Set(data.map(r => r.brand))].filter(Boolean).sort();
-                }
-            } else if (filterType === 'category') {
-                let catUrl = `${SUPABASE_URL}/rest/v1/zoho_arrow_products?select=item_category_name&manufacturer=eq.${encodeURIComponent(state.manufacturer)}&limit=1000`;
-                if (state.brand) catUrl += `&brand=eq.${encodeURIComponent(state.brand)}`;
-                const response = await fetch(catUrl,
-                    { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }
-                );
-                if (response.ok) {
-                    const data = await response.json();
-                    items = [...new Set(data.map(r => r.item_category_name))].filter(Boolean).sort();
-                }
-            } else if (filterType === 'subcategory' && state.category) {
-                let subUrl = `${SUPABASE_URL}/rest/v1/zoho_arrow_products?select=subcategory&manufacturer=eq.${encodeURIComponent(state.manufacturer)}&item_category_name=eq.${encodeURIComponent(state.category)}&limit=1000`;
-                if (state.brand) subUrl += `&brand=eq.${encodeURIComponent(state.brand)}`;
-                const response = await fetch(subUrl,
-                    { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }
-                );
-                if (response.ok) {
-                    const data = await response.json();
-                    items = [...new Set(data.map(r => r.subcategory))].filter(Boolean).sort();
+                    items = data.map(r => r.value).filter(Boolean).sort();
                 }
             }
             // Arrow doesn't have cat3
@@ -1654,29 +1659,41 @@ async function onFilterChange(filterType) {
 
         // Reload category/subcategory filtered by brand
         await loadFilterOptions('category');
+        await loadFilterOptions('subcategory');
         return;
     } else if (filterType === 'category') {
         state.subcategory = '';
         state.cat3 = '';
+        state.filterParams.subcategory = '';
         document.getElementById('subcategorySelect').innerHTML = '<option value="">-- Any --</option>';
         document.getElementById('subCatCount').textContent = '';
         if (state.currentDistributor === 'tdsynnex') {
             document.getElementById('cat3Select').innerHTML = '<option value="">-- Any --</option>';
             document.getElementById('cat3Count').textContent = '';
         }
-    } else if (filterType === 'subcategory' && state.currentDistributor === 'tdsynnex') {
-        state.cat3 = '';
-        document.getElementById('cat3Select').innerHTML = '<option value="">-- Any --</option>';
-        document.getElementById('cat3Count').textContent = '';
+    } else if (filterType === 'subcategory') {
+        if (state.currentDistributor === 'tdsynnex') {
+            state.cat3 = '';
+            document.getElementById('cat3Select').innerHTML = '<option value="">-- Any --</option>';
+            document.getElementById('cat3Count').textContent = '';
+        }
+        // Arrow: reload category filtered by selected subcategory
+        if (state.currentDistributor === 'arrow') {
+            state.filterParams.category = '';
+        }
     }
 
     resetProducts();
 
-    // Load child categories
-    if (filterType === 'category' && state.category) {
+    // Load child/cross-filtered categories
+    if (filterType === 'category') {
+        // Reload subcategory (filtered by category for all distributors)
         await loadFilterOptions('subcategory');
-    } else if (filterType === 'subcategory' && state.subcategory && state.currentDistributor === 'tdsynnex') {
+    } else if (filterType === 'subcategory' && state.currentDistributor === 'tdsynnex') {
         await loadFilterOptions('cat3');
+    } else if (filterType === 'subcategory' && state.currentDistributor === 'arrow') {
+        // Arrow cross-filter: reload category filtered by selected subcategory
+        await loadFilterOptions('category');
     }
 }
 
