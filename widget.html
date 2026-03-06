@@ -103,6 +103,12 @@
 
                         <!-- Optional Filters -->
                         <div class="filter-row filters-optional" id="optionalFiltersRow" style="display: none;">
+                            <div class="filter-field" id="brandFilterField" style="display: none;">
+                                <label>Brand <span class="count-badge" id="brandCount"></span></label>
+                                <select id="brandSelect" onchange="onFilterChange('brand')">
+                                    <option value="">-- Any --</option>
+                                </select>
+                            </div>
                             <div class="filter-field">
                                 <label>Category <span class="count-badge" id="catCount"></span></label>
                                 <select id="categorySelect" onchange="onFilterChange('category')" onfocus="loadFilterOptions('category')">

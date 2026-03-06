@@ -11,6 +11,7 @@ const PROXY_BASE = 'https://tydxdpntshbobomemzxj.supabase.co/functions/v1/ingram
 const TDSYNNEX_BASE = 'https://tydxdpntshbobomemzxj.supabase.co/functions/v1';
 const TDSYNNEX_PROXY_BASE = 'https://tydxdpntshbobomemzxj.supabase.co/functions/v1/tdsynnex-proxy';
 const SUPABASE_URL = 'https://tydxdpntshbobomemzxj.supabase.co';
+const ARROW_PROXY_BASE = `${SUPABASE_URL}/functions/v1/arrow-proxy`;
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5ZHhkcG50c2hib2JvbWVtenhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4MTg0MjcsImV4cCI6MjA3NjM5NDQyN30.cVcmS7yKqAF1LBOTz0ZNgxgaEILLi7FuWX9E8eZjZac';
 const PAGE_SIZE = 50;
 
@@ -42,16 +43,19 @@ const state = {
     manufacturer: '',
     category: '',
     subcategory: '',
+    brand: '',  // Arrow brand filter
     cat3: '',  // TD Synnex category level 3
     skuType: '',
     skuKeyword: '',
     // Filter loading state
     loadingFilters: {
+        brand: false,
         category: false,
         subcategory: false,
         cat3: false
     },
     filterParams: {
+        brand: '',
         category: '',
         subcategory: '',
         cat3: ''
@@ -532,18 +536,29 @@ function selectDistributor(distributor) {
     const cat3Field = document.getElementById('cat3FilterField');
     const skuTypeField = document.getElementById('skuTypeFilterField');
 
+    // Remove Arrow mode from manufacturer combo (will be re-added if Arrow)
+    const mfrComboEl = document.querySelector('.mfr-combo');
+    if (mfrComboEl) mfrComboEl.classList.remove('arrow-mode');
+
+    const brandField = document.getElementById('brandFilterField');
+
     if (distributor === 'tdsynnex') {
-        // TD Synnex: Show cat3, hide SKU type
+        // TD Synnex: Show cat3, hide SKU type, hide brand
         if (cat3Field) cat3Field.style.display = '';
         if (skuTypeField) skuTypeField.style.display = 'none';
+        if (brandField) brandField.style.display = 'none';
     } else if (distributor === 'arrow') {
-        // Arrow: Hide both cat3 and SKU type
+        // Arrow: Hide both cat3 and SKU type, show brand
         if (cat3Field) cat3Field.style.display = 'none';
         if (skuTypeField) skuTypeField.style.display = 'none';
+        if (brandField) brandField.style.display = '';
+        // Arrow: pre-populate manufacturer dropdown, hide search input
+        if (mfrComboEl) mfrComboEl.classList.add('arrow-mode');
     } else {
-        // Ingram: Hide cat3, show SKU type
+        // Ingram: Hide cat3, show SKU type, hide brand
         if (cat3Field) cat3Field.style.display = 'none';
         if (skuTypeField) skuTypeField.style.display = '';
+        if (brandField) brandField.style.display = 'none';
     }
 
     resetFilters();
@@ -697,6 +712,70 @@ async function fetchTDSynnexWarehouseAvailability(synnexSKU) {
     }
 }
 
+async function fetchArrowInventory(mpn, manufacturer) {
+    if (!mpn) return { lineItems: [], warehouses: [], totalQty: 0, resalePrice: null, status: null, raw: null };
+    try {
+        const response = await fetch(
+            `${ARROW_PROXY_BASE}?action=inventory&mpn=${encodeURIComponent(mpn)}&manufacturer=${encodeURIComponent(manufacturer || '')}`
+        );
+        if (!response.ok) throw new Error(`Arrow API error: ${response.status}`);
+        const data = await response.json();
+
+        const resp = data?.RESPONSE;
+        const headerStatus = resp?.HeaderResponse?.Status;
+        const itemDetailItems = resp?.POutItemMsg?.ItemDetail?.ItemDetailItem;
+
+        if (!itemDetailItems) {
+            return { lineItems: [], warehouses: [], totalQty: 0, resalePrice: null, status: headerStatus, raw: data };
+        }
+
+        // Normalize to array (Arrow may return single object or array)
+        const items = Array.isArray(itemDetailItems) ? itemDetailItems : [itemDetailItems];
+        const firstItem = items[0];
+        const lineInfoItems = firstItem?.ItemLineInfo?.ItemLineInfoItem;
+        if (!lineInfoItems) {
+            return { lineItems: [], warehouses: [], totalQty: 0, resalePrice: null, status: firstItem?.Status || headerStatus, raw: data };
+        }
+
+        const lineItems = Array.isArray(lineInfoItems) ? lineInfoItems : [lineInfoItems];
+        const activeLine = lineItems.find(li => li.ItemStatus === 'Active') || lineItems[0];
+
+        const resalePrice = activeLine?.ResalePrice !== undefined ? parseFloat(activeLine.ResalePrice) : null;
+        const totalQty = activeLine?.OnHandQty !== undefined ? parseInt(activeLine.OnHandQty, 10) : 0;
+
+        let warehouses = [];
+        if (activeLine?.WHInfo?.WHInfoItem) {
+            const whItems = Array.isArray(activeLine.WHInfo.WHInfoItem) ? activeLine.WHInfo.WHInfoItem : [activeLine.WHInfo.WHInfoItem];
+            warehouses = whItems.map(wh => ({
+                warehouse: wh.Warehouse || '-',
+                warehouseId: wh.WarehouseId || wh.WarehouseCode || '-',
+                city: wh.City || wh.Location || '-',
+                state: wh.State || '',
+                onHandQty: parseInt(wh.OnHandQty || '0', 10),
+                onOrderQty: parseInt(wh.OnOrderQty || '0', 10),
+                eta: wh.ETAOnAvail || null
+            }));
+        }
+
+        return {
+            lineItems,
+            warehouses,
+            totalQty: isNaN(totalQty) ? 0 : totalQty,
+            resalePrice: isNaN(resalePrice) ? null : resalePrice,
+            itemStatus: activeLine?.ItemStatus || null,
+            description: activeLine?.Description || null,
+            manufacturer: activeLine?.Manufacturer || null,
+            brand: activeLine?.Brand || null,
+            status: headerStatus,
+            message: firstItem?.Message || null,
+            raw: data
+        };
+    } catch (error) {
+        console.error('[Arrow] Inventory fetch error:', error);
+        return { lineItems: [], warehouses: [], totalQty: 0, resalePrice: null, status: null, raw: null };
+    }
+}
+
 async function searchTDSynnexManufacturers(searchTerm) {
     const response = await fetch(
         `${TDSYNNEX_BASE}/manufacturer-lookup?search=${encodeURIComponent(searchTerm)}&limit=100`
@@ -723,6 +802,33 @@ async function searchArrowManufacturers(searchTerm) {
     const data = await response.json();
     const unique = [...new Set(data.map(r => r.manufacturer))].filter(Boolean).sort();
     return unique;
+}
+
+async function loadArrowManufacturers() {
+    const select = document.getElementById('manufacturerSelect');
+    const countEl = document.getElementById('mfrCount');
+    try {
+        const response = await fetch(
+            `${SUPABASE_URL}/rest/v1/zoho_arrow_products?select=manufacturer&limit=1000`,
+            {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                }
+            }
+        );
+        if (!response.ok) throw new Error(`Failed: ${response.status}`);
+        const data = await response.json();
+        const manufacturers = [...new Set(data.map(r => r.manufacturer))].filter(Boolean).sort();
+
+        select.innerHTML = '<option value="">-- Select Manufacturer --</option>' +
+            manufacturers.map(m => `<option value="${m}">${m}</option>`).join('');
+        if (countEl) countEl.textContent = `(${manufacturers.length})`;
+        select.disabled = false;
+    } catch (error) {
+        console.error('[Arrow] Failed to load manufacturers:', error);
+        select.innerHTML = '<option value="">Error loading manufacturers</option>';
+    }
 }
 
 async function loadTDSynnexCategories(manufacturer, cat1 = null, cat2 = null) {
@@ -885,13 +991,14 @@ function buildTDSynnexAvailability(product) {
 // ARROW API FUNCTIONS
 // =====================================================
 async function searchArrowProducts(manufacturer, options = {}) {
-    const { search = '', category = '', subcategory = '', limit = 50, offset = 0 } = options;
+    const { search = '', brand = '', category = '', subcategory = '', limit = 50, offset = 0 } = options;
 
     let url = `${SUPABASE_URL}/rest/v1/zoho_arrow_products?manufacturer=eq.${encodeURIComponent(manufacturer)}`;
     url += `&order=manufacturer_part_number.asc`;
 
     if (search) url += `&manufacturer_part_number=ilike.*${encodeURIComponent(search)}*`;
-    if (category) url += `&category=eq.${encodeURIComponent(category)}`;
+    if (brand) url += `&brand=eq.${encodeURIComponent(brand)}`;
+    if (category) url += `&item_category_name=eq.${encodeURIComponent(category)}`;
     if (subcategory) url += `&subcategory=eq.${encodeURIComponent(subcategory)}`;
 
     // Get count
@@ -935,8 +1042,9 @@ function mapArrowProduct(product) {
         distributorPartNumber: product.vendor_part_number,
         description: product.description,
         vendorName: product.manufacturer,
-        category: product.category,
+        category: product.item_category_name || product.category,
         subCategory: product.subcategory,
+        brand: product.brand,
         retailPrice: product.unit_msrp,
         unitCost: product.unit_cost,
         pricingData: {
@@ -960,6 +1068,7 @@ function debounceManufacturerSearch() {
 }
 
 async function searchManufacturers() {
+    if (state.currentDistributor === 'arrow') return;
     const searchTerm = document.getElementById('manufacturerSearch').value.trim();
     const select = document.getElementById('manufacturerSelect');
 
@@ -1235,7 +1344,14 @@ async function onManufacturerSelect() {
     const orDivider = document.getElementById('orDivider');
 
     if (!state.manufacturer) {
-        // Manufacturer cleared - reset state
+        // Manufacturer cleared - reset state (including brand for Arrow)
+        state.brand = '';
+        const brandSelect = document.getElementById('brandSelect');
+        if (brandSelect) brandSelect.innerHTML = '<option value="">-- Any --</option>';
+        const brandCount = document.getElementById('brandCount');
+        if (brandCount) brandCount.textContent = '';
+        state.filterParams.brand = '';
+
         resetOptionalFilters();
         resetProducts();
         document.getElementById('optionalFiltersRow').style.display = 'none';
@@ -1295,9 +1411,10 @@ async function onManufacturerSelect() {
         skuSearchRow.classList.add('filter-mode');
     }
 
-    showStatus(`Manufacturer: ${state.manufacturer}. Loading categories...`, 'loading');
+    showStatus(`Manufacturer: ${state.manufacturer}. Loading filters...`, 'loading');
 
     await loadFilterOptions('category');
+    if (state.currentDistributor === 'arrow') await loadFilterOptions('brand');
 
     // If we have a pending SKU filter from SKU-first search, apply it
     if (hasPendingSkuFilter) {
@@ -1323,7 +1440,7 @@ async function onManufacturerSelect() {
 // FILTER LOADING
 // =====================================================
 async function loadFilterOptions(filterType) {
-    const currentParams = `${state.manufacturer}|${state.category}|${state.subcategory}|${state.cat3}|${state.skuType}`;
+    const currentParams = `${state.manufacturer}|${state.brand}|${state.category}|${state.subcategory}|${state.cat3}|${state.skuType}`;
 
     if (state.loadingFilters[filterType]) return;
     if (state.filterParams[filterType] === currentParams) return;
@@ -1334,6 +1451,10 @@ async function loadFilterOptions(filterType) {
 
     // Map filter type to DOM elements
     switch (filterType) {
+        case 'brand':
+            selectEl = document.getElementById('brandSelect');
+            countEl = document.getElementById('brandCount');
+            break;
         case 'category':
             selectEl = document.getElementById('categorySelect');
             countEl = document.getElementById('catCount');
@@ -1369,19 +1490,30 @@ async function loadFilterOptions(filterType) {
             }
             items = categories.map(c => c.name);
         } else if (state.currentDistributor === 'arrow') {
-            // Arrow: Query zoho_arrow_products for distinct category/subcategory
-            if (filterType === 'category') {
+            // Arrow: Query zoho_arrow_products for distinct brand/category/subcategory
+            if (filterType === 'brand') {
                 const response = await fetch(
-                    `${SUPABASE_URL}/rest/v1/zoho_arrow_products?select=category&manufacturer=eq.${encodeURIComponent(state.manufacturer)}&limit=1000`,
+                    `${SUPABASE_URL}/rest/v1/zoho_arrow_products?select=brand&manufacturer=eq.${encodeURIComponent(state.manufacturer)}&brand=not.is.null&limit=1000`,
                     { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }
                 );
                 if (response.ok) {
                     const data = await response.json();
-                    items = [...new Set(data.map(r => r.category))].filter(Boolean).sort();
+                    items = [...new Set(data.map(r => r.brand))].filter(Boolean).sort();
+                }
+            } else if (filterType === 'category') {
+                let catUrl = `${SUPABASE_URL}/rest/v1/zoho_arrow_products?select=item_category_name&manufacturer=eq.${encodeURIComponent(state.manufacturer)}&limit=1000`;
+                if (state.brand) catUrl += `&brand=eq.${encodeURIComponent(state.brand)}`;
+                const response = await fetch(catUrl,
+                    { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }
+                );
+                if (response.ok) {
+                    const data = await response.json();
+                    items = [...new Set(data.map(r => r.item_category_name))].filter(Boolean).sort();
                 }
             } else if (filterType === 'subcategory' && state.category) {
-                const response = await fetch(
-                    `${SUPABASE_URL}/rest/v1/zoho_arrow_products?select=subcategory&manufacturer=eq.${encodeURIComponent(state.manufacturer)}&category=eq.${encodeURIComponent(state.category)}&limit=1000`,
+                let subUrl = `${SUPABASE_URL}/rest/v1/zoho_arrow_products?select=subcategory&manufacturer=eq.${encodeURIComponent(state.manufacturer)}&item_category_name=eq.${encodeURIComponent(state.category)}&limit=1000`;
+                if (state.brand) subUrl += `&brand=eq.${encodeURIComponent(state.brand)}`;
+                const response = await fetch(subUrl,
                     { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }
                 );
                 if (response.ok) {
@@ -1491,6 +1623,7 @@ function formatProductClass(code) {
 
 async function onFilterChange(filterType) {
     const selectEl = document.getElementById(
+        filterType === 'brand' ? 'brandSelect' :
         filterType === 'category' ? 'categorySelect' :
         filterType === 'subcategory' ? 'subcategorySelect' :
         filterType === 'cat3' ? 'cat3Select' :
@@ -1500,12 +1633,29 @@ async function onFilterChange(filterType) {
     state[filterType] = selectEl.value;
 
     // Reset dependent filters
+    if (filterType !== 'brand') state.filterParams.brand = '';
     if (filterType !== 'category') state.filterParams.category = '';
     if (filterType !== 'subcategory') state.filterParams.subcategory = '';
     if (filterType !== 'cat3') state.filterParams.cat3 = '';
 
     // Clear downstream filters when parent changes
-    if (filterType === 'category') {
+    if (filterType === 'brand') {
+        // Brand changed (Arrow only) — clear category, subcategory, reload them
+        state.category = '';
+        state.subcategory = '';
+        state.filterParams.category = '';
+        state.filterParams.subcategory = '';
+        document.getElementById('categorySelect').innerHTML = '<option value="">-- Any --</option>';
+        document.getElementById('catCount').textContent = '';
+        document.getElementById('subcategorySelect').innerHTML = '<option value="">-- Any --</option>';
+        document.getElementById('subCatCount').textContent = '';
+
+        resetProducts();
+
+        // Reload category/subcategory filtered by brand
+        await loadFilterOptions('category');
+        return;
+    } else if (filterType === 'category') {
         state.subcategory = '';
         state.cat3 = '';
         document.getElementById('subcategorySelect').innerHTML = '<option value="">-- Any --</option>';
@@ -1566,6 +1716,7 @@ async function loadProducts(page = 1) {
             const offset = (page - 1) * PAGE_SIZE;
             const result = await searchArrowProducts(state.manufacturer, {
                 search: state.skuKeyword || '',
+                brand: state.brand || '',
                 category: state.category || '',
                 subcategory: state.subcategory || '',
                 limit: PAGE_SIZE,
@@ -3027,17 +3178,26 @@ async function showProductDetails(productIndex) {
     // ========================================
     if (isArrow) {
         const rawProduct = product._raw || {};
+        let arrowLive = { lineItems: [], warehouses: [], totalQty: 0, resalePrice: null, status: null, raw: null };
+
+        // Fetch live pricing + availability from Arrow API
+        if (product.vendorPartNumber) {
+            arrowLive = await fetchArrowInventory(product.vendorPartNumber, product.vendorName);
+        }
 
         // Header - Product Name
         document.getElementById('detailsProductName').innerHTML = `
-            <strong>Product Name:</strong> ${product.description || 'N/A'}
+            <strong>Product Name:</strong> ${arrowLive.description || product.description || 'N/A'}
         `;
 
-        // Header - Arrow Part, Vendor Part, Manufacturer
+        // Header subtitle with status
+        const itemStatus = arrowLive.itemStatus || 'Unknown';
+        const statusClass = itemStatus === 'Active' ? 'authorized-yes' : 'authorized-no';
         document.getElementById('detailsSubtitle').innerHTML = `
             <strong>Arrow Part:</strong> ${product.distributorPartNumber || 'N/A'} |
             <strong>Vendor Part:</strong> ${product.vendorPartNumber || 'N/A'} |
-            <strong>Manufacturer:</strong> ${product.vendorName || state.manufacturer}
+            <strong>Manufacturer:</strong> ${arrowLive.manufacturer || product.vendorName || state.manufacturer} |
+            <strong>Status:</strong> <span class="${statusClass}">${itemStatus}</span>
         `;
 
         // No long description for Arrow
@@ -3048,32 +3208,61 @@ async function showProductDetails(productIndex) {
         const productInfoFields = [
             { label: 'Category', value: product.category || '-' },
             { label: 'Subcategory', value: product.subCategory || '-' },
+            { label: 'Brand', value: arrowLive.brand || product.brand || '-' },
             { label: 'Arrow Part #', value: product.distributorPartNumber || '-' },
             { label: 'Vendor Part #', value: product.vendorPartNumber || '-' }
         ];
         renderGrid('productInfoGrid', productInfoFields);
 
-        // Pricing Grid
+        // Pricing Grid - prefer live API data, fall back to flat file
+        const liveResale = arrowLive.resalePrice;
         const pricingFields = [
-            { label: 'MSRP', value: formatCurrency(product.retailPrice) },
-            { label: 'Unit Cost', value: formatCurrency(product.unitCost) }
+            { label: 'MSRP (Catalog)', value: formatCurrency(product.retailPrice) },
+            { label: 'Reseller Price (Live)', value: liveResale !== null ? formatCurrency(liveResale) : 'N/A' },
+            { label: 'Unit Cost (Catalog)', value: formatCurrency(product.unitCost) }
         ];
         renderGrid('pricingGrid', pricingFields);
 
-        // Availability - not available for Arrow
-        renderGrid('availabilityGrid', [
-            { label: 'Availability', value: 'Not available from catalog data' }
-        ]);
+        // Availability Grid - live data from API
+        const totalQty = arrowLive.totalQty;
+        const hasLiveData = arrowLive.raw !== null;
+        const availabilityFields = [
+            { label: 'In Stock', value: hasLiveData ? (totalQty > 0 ? 'Yes' : 'No') : '-' },
+            { label: 'Available Qty', value: hasLiveData ? totalQty.toString() : 'N/A' },
+            { label: 'API Status', value: arrowLive.status || 'N/A' }
+        ];
+        if (arrowLive.message) {
+            availabilityFields.push({ label: 'Message', value: arrowLive.message });
+        }
+        renderGrid('availabilityGrid', availabilityFields);
 
         // Flags - not applicable for Arrow
         renderFlagsGrid('flagsGrid', []);
 
-        // Hide discounts and warehouse sections
+        // Hide discounts
         document.getElementById('discountsGroup').style.display = 'none';
-        document.getElementById('warehouseSection').style.display = 'none';
 
-        // Raw API response (includes raw catalog data for future Arrow API integration)
-        document.getElementById('rawApiResponse').textContent = JSON.stringify({ mapped: product, raw: rawProduct }, null, 2);
+        // Warehouse Availability from Arrow API
+        const warehouseSection = document.getElementById('warehouseSection');
+        const warehouseBody = document.getElementById('warehouseBody');
+        const availableWarehouses = (arrowLive.warehouses || []).filter(wh => wh.onHandQty > 0 || wh.onOrderQty > 0);
+
+        if (availableWarehouses.length > 0) {
+            warehouseSection.style.display = 'block';
+            warehouseBody.innerHTML = availableWarehouses.map(wh => `
+                <tr>
+                    <td>${wh.warehouse || '-'}</td>
+                    <td>${[wh.city, wh.state].filter(Boolean).join(', ') || '-'}</td>
+                    <td class="text-right">${wh.onHandQty}</td>
+                    <td class="text-right">${wh.onOrderQty}</td>
+                </tr>
+            `).join('');
+        } else {
+            warehouseSection.style.display = 'none';
+        }
+
+        // Raw API response
+        document.getElementById('rawApiResponse').textContent = JSON.stringify({ mapped: product, live: arrowLive }, null, 2);
         return;
     }
 
@@ -3311,8 +3500,13 @@ function resetFilters() {
     state.skuManufacturerOptions = [];
 
     document.getElementById('manufacturerSearch').value = '';
-    document.getElementById('manufacturerSelect').innerHTML =
-        '<option value="">Type to search manufacturers...</option>';
+    if (state.currentDistributor === 'arrow') {
+        // Arrow: re-populate the pre-loaded manufacturer dropdown
+        loadArrowManufacturers();
+    } else {
+        document.getElementById('manufacturerSelect').innerHTML =
+            '<option value="">Type to search manufacturers...</option>';
+    }
     document.getElementById('mfrCount').textContent = '';
     document.getElementById('selectedMfrBadge').textContent = '';
 
@@ -3352,15 +3546,24 @@ function resetFilters() {
 }
 
 function resetOptionalFilters() {
+    state.brand = '';
     state.category = '';
     state.subcategory = '';
     state.cat3 = '';
     state.skuType = '';
     state.skuKeyword = '';
 
+    state.filterParams.brand = '';
     state.filterParams.category = '';
     state.filterParams.subcategory = '';
     state.filterParams.cat3 = '';
+
+    // Reset brand dropdown (Arrow)
+    const brandSelect = document.getElementById('brandSelect');
+    if (brandSelect) {
+        brandSelect.innerHTML = '<option value="">-- Any --</option>';
+        document.getElementById('brandCount').textContent = '';
+    }
 
     const catSelect = document.getElementById('categorySelect');
     if (catSelect) {

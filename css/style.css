@@ -2601,3 +2601,11 @@ button svg {
     word-wrap: break-word;
     word-break: break-word;
 }
+
+/* Arrow mode: hide search input, expand select dropdown */
+.mfr-combo.arrow-mode input[type="text"] {
+    display: none;
+}
+.mfr-combo.arrow-mode select {
+    flex: 2;
+}
