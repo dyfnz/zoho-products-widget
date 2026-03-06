@@ -715,9 +715,13 @@ async function fetchTDSynnexWarehouseAvailability(synnexSKU) {
 async function fetchArrowInventory(mpn, manufacturer) {
     if (!mpn) return { lineItems: [], warehouses: [], totalQty: 0, resalePrice: null, status: null, raw: null };
     try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
         const response = await fetch(
-            `${ARROW_PROXY_BASE}?action=inventory&mpn=${encodeURIComponent(mpn)}&manufacturer=${encodeURIComponent(manufacturer || '')}`
+            `${ARROW_PROXY_BASE}?action=inventory&mpn=${encodeURIComponent(mpn)}&manufacturer=${encodeURIComponent(manufacturer || '')}`,
+            { signal: controller.signal }
         );
+        clearTimeout(timeoutId);
         if (!response.ok) throw new Error(`Arrow API error: ${response.status}`);
         const data = await response.json();
 
@@ -1947,6 +1951,10 @@ function addSelectedToQueue() {
             // Enrich product with pricing data if available
             const pricingData = product.pricingData || state.pricingData?.[product.ingramPartNumber];
             const enrichedProduct = { ...product, pricingData };
+            // Arrow MPNs use spaces but Zoho stores them with # — convert on queue entry
+            if (enrichedProduct._source === 'arrow' && enrichedProduct.vendorPartNumber) {
+                enrichedProduct.vendorPartNumber = enrichedProduct.vendorPartNumber.replace(/ /g, '#');
+            }
             state.queuedProducts.push(enrichedProduct);
             addedCount++;
         }
@@ -2868,7 +2876,7 @@ async function submitQueue() {
         // Arrow format
         if (product._source === 'arrow') {
             return {
-                Product_Code: product.vendorPartNumber || '',
+                Product_Code: (product.vendorPartNumber || '').replace(/ /g, '#'),
                 Product_Name: product.description || '',
                 Manufacturer: normalizedMfr,
                 Arrow_Part_Number: product.distributorPartNumber || '',
@@ -3197,17 +3205,49 @@ async function showProductDetails(productIndex) {
         const rawProduct = product._raw || {};
         let arrowLive = { lineItems: [], warehouses: [], totalQty: 0, resalePrice: null, status: null, raw: null };
 
+        // Show immediate catalog data + loading indicators for live API fields
+        document.getElementById('detailsProductName').innerHTML = `
+            <strong>Product Name:</strong> ${product.description || 'N/A'}
+        `;
+        document.getElementById('detailsSubtitle').innerHTML = `
+            <strong>Arrow Part:</strong> ${product.distributorPartNumber || 'N/A'} |
+            <strong>Vendor Part:</strong> ${product.vendorPartNumber || 'N/A'} |
+            <strong>Manufacturer:</strong> ${product.vendorName || state.manufacturer} |
+            <strong>Status:</strong> <span class="arrow-loading-indicator">Loading...</span>
+        `;
+        document.getElementById('detailsLongDesc').style.display = 'none';
+        renderGrid('productInfoGrid', [
+            { label: 'Category', value: product.category || '-' },
+            { label: 'Subcategory', value: product.subCategory || '-' },
+            { label: 'Brand', value: product.brand || '-' },
+            { label: 'Arrow Part #', value: product.distributorPartNumber || '-' },
+            { label: 'Vendor Part #', value: product.vendorPartNumber || '-' }
+        ]);
+        renderGrid('pricingGrid', [
+            { label: 'MSRP (Catalog)', value: formatCurrency(product.retailPrice) },
+            { label: 'Reseller Price (Live)', value: '<span class="arrow-loading-indicator">Fetching from Arrow API...</span>' },
+            { label: 'Unit Cost (Catalog)', value: formatCurrency(product.unitCost) }
+        ]);
+        renderGrid('availabilityGrid', [
+            { label: 'In Stock', value: '<span class="arrow-loading-indicator">Fetching...</span>' },
+            { label: 'Available Qty', value: '<span class="arrow-loading-indicator">Fetching...</span>' },
+            { label: 'API Status', value: '<span class="arrow-loading-indicator">Fetching...</span>' }
+        ]);
+        renderFlagsGrid('flagsGrid', []);
+        document.getElementById('discountsGroup').style.display = 'none';
+        document.getElementById('warehouseSection').style.display = 'none';
+        document.getElementById('rawApiResponse').textContent = 'Fetching live data from Arrow API...';
+
         // Fetch live pricing + availability from Arrow API
         if (product.vendorPartNumber) {
             arrowLive = await fetchArrowInventory(product.vendorPartNumber, product.vendorName);
         }
 
-        // Header - Product Name
+        // Update header with live data
         document.getElementById('detailsProductName').innerHTML = `
             <strong>Product Name:</strong> ${arrowLive.description || product.description || 'N/A'}
         `;
 
-        // Header subtitle with status
         const itemStatus = arrowLive.itemStatus || 'Unknown';
         const statusClass = itemStatus === 'Active' ? 'authorized-yes' : 'authorized-no';
         document.getElementById('detailsSubtitle').innerHTML = `
@@ -3217,11 +3257,7 @@ async function showProductDetails(productIndex) {
             <strong>Status:</strong> <span class="${statusClass}">${itemStatus}</span>
         `;
 
-        // No long description for Arrow
-        const longDescEl = document.getElementById('detailsLongDesc');
-        longDescEl.style.display = 'none';
-
-        // Product Information Grid
+        // Product Information Grid - update with live brand
         const productInfoFields = [
             { label: 'Category', value: product.category || '-' },
             { label: 'Subcategory', value: product.subCategory || '-' },

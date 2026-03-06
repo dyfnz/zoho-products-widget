@@ -998,6 +998,20 @@ button svg {
     font-size: var(--font-size-2xs);
 }
 
+/* Arrow API loading indicator */
+.arrow-loading-indicator {
+    display: inline-block;
+    color: var(--color-text-secondary, #666);
+    font-style: italic;
+    font-size: var(--font-size-2xs);
+    animation: arrow-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes arrow-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
 .details-section h4 {
     font-size: var(--font-size-xs);
     font-weight: 700;
