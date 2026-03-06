@@ -3213,7 +3213,7 @@ async function showProductDetails(productIndex) {
             <strong>Arrow Part:</strong> ${product.distributorPartNumber || 'N/A'} |
             <strong>Vendor Part:</strong> ${product.vendorPartNumber || 'N/A'} |
             <strong>Manufacturer:</strong> ${product.vendorName || state.manufacturer} |
-            <strong>Status:</strong> <span class="arrow-loading-indicator">Loading...</span>
+            <strong>Status:</strong> <span class="authorized-yes">Active</span>
         `;
         document.getElementById('detailsLongDesc').style.display = 'none';
         renderGrid('productInfoGrid', [
@@ -3248,13 +3248,11 @@ async function showProductDetails(productIndex) {
             <strong>Product Name:</strong> ${arrowLive.description || product.description || 'N/A'}
         `;
 
-        const itemStatus = arrowLive.itemStatus || 'Unknown';
-        const statusClass = itemStatus === 'Active' ? 'authorized-yes' : 'authorized-no';
         document.getElementById('detailsSubtitle').innerHTML = `
             <strong>Arrow Part:</strong> ${product.distributorPartNumber || 'N/A'} |
             <strong>Vendor Part:</strong> ${product.vendorPartNumber || 'N/A'} |
             <strong>Manufacturer:</strong> ${arrowLive.manufacturer || product.vendorName || state.manufacturer} |
-            <strong>Status:</strong> <span class="${statusClass}">${itemStatus}</span>
+            <strong>Status:</strong> <span class="authorized-yes">Active</span>
         `;
 
         // Product Information Grid - update with live brand
