@@ -725,9 +725,9 @@ async function fetchArrowInventory(mpn, manufacturer) {
         if (!response.ok) throw new Error(`Arrow API error: ${response.status}`);
         const data = await response.json();
 
-        const resp = data?.RESPONSE;
-        const headerStatus = resp?.HeaderResponse?.Status;
-        const itemDetailItems = resp?.POutItemMsg?.ItemDetail?.ItemDetailItem;
+        // Arrow API response has no RESPONSE wrapper — fields are at top level
+        const headerStatus = data?.HeaderResponse?.Status;
+        const itemDetailItems = data?.POutItemMsg?.ItemDetail?.ItemDetailItem;
 
         if (!itemDetailItems) {
             return { lineItems: [], warehouses: [], totalQty: 0, resalePrice: null, status: headerStatus, raw: data };
