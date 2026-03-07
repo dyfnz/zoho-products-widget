@@ -3213,7 +3213,7 @@ async function showProductDetails(productIndex) {
             <strong>Arrow Part:</strong> ${product.distributorPartNumber || 'N/A'} |
             <strong>Vendor Part:</strong> ${product.vendorPartNumber || 'N/A'} |
             <strong>Manufacturer:</strong> ${product.vendorName || state.manufacturer} |
-            <strong>Status:</strong> <span class="authorized-yes">Active</span>
+            <strong>Status:</strong> <span class="arrow-loading-indicator">Fetching...</span>
         `;
         document.getElementById('detailsLongDesc').style.display = 'none';
         renderGrid('productInfoGrid', [
@@ -3252,7 +3252,7 @@ async function showProductDetails(productIndex) {
             <strong>Arrow Part:</strong> ${product.distributorPartNumber || 'N/A'} |
             <strong>Vendor Part:</strong> ${product.vendorPartNumber || 'N/A'} |
             <strong>Manufacturer:</strong> ${arrowLive.manufacturer || product.vendorName || state.manufacturer} |
-            <strong>Status:</strong> <span class="authorized-yes">Active</span>
+            <strong>Status:</strong> <span class="${arrowLive.itemStatus === 'Active' ? 'authorized-yes' : 'authorized-no'}">${arrowLive.itemStatus || 'Unknown'}</span>
         `;
 
         // Product Information Grid - update with live brand
