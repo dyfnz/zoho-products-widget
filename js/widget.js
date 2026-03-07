@@ -2885,7 +2885,7 @@ async function submitQueue() {
                 Arrow_Subcategory: product.subCategory || state.subcategory || '',
                 MSRP: msrp,
                 Customer_Price: pricingData?.pricing?.customerPrice || product.unitCost || null,
-                Description: '',
+                Description: product.description || '',
                 Last_Sync_Source: 'Arrow',
                 Quantity: 1
             };
