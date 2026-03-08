@@ -3740,3 +3740,98 @@ button.sel-btn .sel-btn-icon {
     color: var(--color-text-muted);
     font-family: var(--font-family);
 }
+
+/* BULK SEARCH — RPC Search & Progress (Phase 4) */
+
+.bulk-action-bar {
+    display: flex;
+    gap: var(--space-2);
+    padding: var(--space-3) 0;
+    align-items: center;
+}
+
+.bulk-load-btn {
+    padding: var(--space-2) var(--space-5);
+    background: var(--color-accent);
+    color: var(--color-text-inverse);
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.bulk-load-btn:hover {
+    background: var(--color-accent-dark);
+}
+
+.bulk-load-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.bulk-clear-btn {
+    padding: var(--space-2) var(--space-4);
+    background: transparent;
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.bulk-clear-btn:hover {
+    border-color: var(--color-text-secondary);
+    color: var(--color-text);
+}
+
+.bulk-progress {
+    display: none;
+    margin-top: var(--space-2);
+}
+
+.bulk-progress.visible {
+    display: block;
+}
+
+.bulk-progress-bar {
+    height: 4px;
+    background: var(--color-border-light);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.bulk-progress-fill {
+    height: 100%;
+    background: var(--color-accent);
+    transition: width 300ms ease;
+    border-radius: 2px;
+}
+
+.bulk-progress-text {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    margin-top: var(--space-1);
+}
+
+.bulk-unmatched {
+    background: rgba(239, 68, 68, 0.05);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    margin-top: var(--space-2);
+    font-size: var(--font-size-sm);
+}
+
+.bulk-unmatched-title {
+    font-weight: 600;
+    color: #ef4444;
+    margin-bottom: var(--space-1);
+}
+
+.bulk-unmatched-list {
+    color: var(--color-text-secondary);
+    word-break: break-all;
+}

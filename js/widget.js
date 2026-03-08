@@ -3715,6 +3715,9 @@ const bulkState = {
     userManuallyZoomed: false,
     userHasResized: false,
     activeHiddenRowsDropdown: null,
+    products: [],
+    unmatchedMpns: [],
+    isLoading: false,
 };
 
 const BULK_PREVIEW_MAX_ROWS = 50;
@@ -4869,6 +4872,10 @@ function bulkApplyColumnSelection() {
         (qtyColumn !== null ? ', with QTY column' : '') +
         (resellerPriceColumn !== null ? ', with Reseller Price column' : '')
     );
+
+    // Show action bar when we have SKUs
+    const actionBar = document.getElementById('bulkActionBar');
+    if (actionBar && bulkState.parsedSkus.length > 0) actionBar.style.display = '';
 }
 
 function bulkUpdateParsedPreview() {
@@ -4892,6 +4899,9 @@ function bulkUpdateParsedPreview() {
         const parsedRow = document.getElementById('bulkParsedRow');
         if (parsedRow) parsedRow.style.display = '';
     }
+
+    const actionBar = document.getElementById('bulkActionBar');
+    if (actionBar) actionBar.style.display = bulkState.parsedSkus.length > 0 ? '' : 'none';
 }
 
 function bulkUpdateParsedFromEdit() {
@@ -4935,4 +4945,325 @@ function bulkUpdateParsedFromEdit() {
     // Update count only (don't rewrite the textarea while editing)
     const countEl = document.getElementById('bulkParsedCount');
     if (countEl) countEl.textContent = `${bulkState.parsedSkus.length} SKUs`;
+}
+
+// =====================================================
+// BULK SEARCH — Phase 4: RPC Search & Product Loading
+// =====================================================
+
+function bulkGetBatchSize() {
+    const input = document.getElementById('bulkBatchSizeInput');
+    return input ? Math.min(Math.max(parseInt(input.value) || 50, 1), 500) : 50;
+}
+
+async function bulkFetchRpcBatch(fnName, bodyPayload) {
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fnName}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify(bodyPayload)
+    });
+    if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(`RPC ${fnName} failed (${resp.status}): ${errText}`);
+    }
+    const data = await resp.json();
+    return Array.isArray(data) ? data : [];
+}
+
+function bulkFetchMpnBatch(mpns) {
+    const rpcMap = {
+        ingram: 'bulk_mpn_lookup_ingram',
+        tdsynnex: 'bulk_mpn_lookup_tdsynnex',
+        arrow: 'bulk_mpn_lookup_arrow',
+    };
+    const fnName = rpcMap[state.currentDistributor];
+    if (!fnName) throw new Error(`Unknown distributor: ${state.currentDistributor}`);
+    return bulkFetchRpcBatch(fnName, { mpns });
+}
+
+function bulkFetchVpnBatch(vpns) {
+    return bulkFetchRpcBatch('bulk_ingram_vpn_lookup', { vpns });
+}
+
+function bulkMapRpcRowToProduct(row, distributor) {
+    switch (distributor) {
+        case 'ingram':
+            return {
+                mpn: row.vendor_part_number || '',
+                vpn: row.ingram_part_number || '',
+                manufacturer: row.manufacturer || row.vendor_name || '',
+                description: row.description_line_1 || '',
+                msrp: parseFloat(row.retail_price) || 0,
+                resellerPrice: parseFloat(row.customer_price) || 0,
+                category: row.category || '',
+            };
+        case 'tdsynnex':
+            return {
+                mpn: row.manufacturer_part_number || '',
+                vpn: row.synnex_sku || row.td_synnex_sku || '',
+                manufacturer: row.manufacturer_name || '',
+                description: row.part_description || row.long_description_1 || '',
+                msrp: parseFloat(row.msrp) || 0,
+                resellerPrice: parseFloat(row.contract_price) || 0,
+                category: row.category_description || '',
+            };
+        case 'arrow':
+            return {
+                mpn: row.manufacturer_part_number || '',
+                vpn: row.sku || '',
+                manufacturer: row.manufacturer || '',
+                description: row.description || '',
+                msrp: parseFloat(row.unit_msrp) || 0,
+                resellerPrice: parseFloat(row.unit_cost) || 0,
+                category: row.item_category_name || '',
+            };
+        default:
+            return { mpn: '', manufacturer: '', description: '', msrp: 0, resellerPrice: 0 };
+    }
+}
+
+async function bulkLoadProducts() {
+    if (bulkState.isLoading) return;
+    if (bulkState.parsedSkus.length === 0) {
+        alert('No MPNs to search. Please upload a file or paste MPNs first.');
+        return;
+    }
+
+    bulkState.isLoading = true;
+
+    // Deduplicate MPNs
+    const uniqueMpns = [...new Set(bulkState.parsedSkus.map(m => m.trim().toUpperCase()))].filter(Boolean);
+
+    // Determine if VPN lookup is available (ingram + file data + VPN values present)
+    const useVpnLookup = (
+        state.currentDistributor === 'ingram' &&
+        bulkState.parsedFileData &&
+        bulkState.parsedFileData.length > 0 &&
+        bulkState.parsedFileData.some(d => d.vpn)
+    );
+
+    // Disable Load button
+    const loadBtn = document.getElementById('bulkLoadProductsBtn');
+    const originalBtnHTML = loadBtn ? loadBtn.innerHTML : '';
+    if (loadBtn) {
+        loadBtn.disabled = true;
+        loadBtn.innerHTML = 'Loading\u2026';
+    }
+
+    // Show progress bar
+    const progressEl = document.getElementById('bulkProgress');
+    const progressFill = document.getElementById('bulkProgressFill');
+    const progressText = document.getElementById('bulkProgressText');
+    if (progressEl) progressEl.classList.add('visible');
+    if (progressFill) progressFill.style.width = '0%';
+    if (progressText) progressText.textContent = 'Starting...';
+
+    // Clear previous results
+    bulkState.products = [];
+    bulkState.unmatchedMpns = [];
+    bulkClearUnmatchedDisplay();
+
+    try {
+        const batchSize = bulkGetBatchSize();
+        const allRows = [];
+        const totalBatches = Math.ceil(uniqueMpns.length / batchSize);
+
+        // Chunk MPNs per batch size (sequential to avoid overwhelming the API)
+        for (let i = 0; i < uniqueMpns.length; i += batchSize) {
+            const batchNum = Math.floor(i / batchSize) + 1;
+            const chunk = uniqueMpns.slice(i, i + batchSize);
+
+            // Update progress
+            const pct = Math.round((batchNum / totalBatches) * 100);
+            if (progressFill) progressFill.style.width = `${pct}%`;
+            if (progressText) progressText.textContent = `Batch ${batchNum}/${totalBatches}`;
+
+            let rows;
+
+            if (useVpnLookup) {
+                // Guard: VPN and MPN columns must not be the same
+                const vpnColIdx = document.getElementById('bulkVpnColumnSelect')?.value;
+                const mpnColIdx = document.getElementById('bulkColumnSelect')?.value;
+                if (vpnColIdx && mpnColIdx && vpnColIdx === mpnColIdx) {
+                    throw new Error('VPN and MPN columns are set to the same column. Please re-select your columns.');
+                }
+
+                // Build VPN array parallel to this MPN chunk
+                const mpnToVpn = new Map(
+                    bulkState.parsedFileData
+                        .filter(d => d.vpn)
+                        .map(d => [d.mpn.trim().toUpperCase(), d.vpn])
+                );
+                const vpnChunk = chunk
+                    .map(mpn => mpnToVpn.get(mpn))
+                    .filter(Boolean);
+
+                if (vpnChunk.length > 0) {
+                    rows = await bulkFetchVpnBatch(vpnChunk);
+                    if (rows.length === 0) {
+                        throw new Error(
+                            'VPN lookup returned no results. Please verify:\n' +
+                            '1. The VPN column is set to the Ingram Part Number column (not MPN)\n' +
+                            '2. The uploaded file is an Ingram Micro distributor quote\n' +
+                            '3. The products exist in the Ingram catalog\n\n' +
+                            'First 3 VPN values sent: ' + vpnChunk.slice(0, 3).join(', ')
+                        );
+                    }
+                } else {
+                    rows = await bulkFetchMpnBatch(chunk);
+                }
+            } else {
+                rows = await bulkFetchMpnBatch(chunk);
+            }
+
+            allRows.push(...rows);
+        }
+
+        // Map RPC rows to product format
+        bulkState.products = allRows.map(row => bulkMapRpcRowToProduct(row, state.currentDistributor));
+
+        // Merge in qty, resellerPrice, and msrp from file data if available
+        if (bulkState.parsedFileData && bulkState.parsedFileData.length > 0) {
+            const fileDataMap = new Map(bulkState.parsedFileData.map(d => [d.mpn.trim().toUpperCase(), d]));
+            bulkState.products.forEach(p => {
+                const fd = fileDataMap.get(p.mpn.toUpperCase());
+                if (fd) {
+                    if (fd.qty) p.qty = fd.qty;
+                    if (fd.resellerPrice) p.resellerPrice = fd.resellerPrice;
+                    if (fd.msrp !== null && fd.msrp !== undefined) p.msrp = fd.msrp;
+                }
+            });
+        }
+
+        // Identify unmatched MPNs
+        const matchedMpns = new Set(bulkState.products.map(p => p.mpn.toUpperCase()));
+        bulkState.unmatchedMpns = uniqueMpns.filter(m => !matchedMpns.has(m));
+
+        // Show unmatched MPNs if any
+        if (bulkState.unmatchedMpns.length > 0) {
+            bulkShowUnmatchedDisplay(bulkState.unmatchedMpns);
+        }
+
+        console.log(`[BulkSearch] Loaded ${bulkState.products.length} products, ${bulkState.unmatchedMpns.length} unmatched`);
+
+        // NOTE: Phase 5 will add result rendering — for now results are stored in bulkState.products
+
+    } catch (err) {
+        console.error('[BulkSearch] RPC error:', err);
+        // Show error using unmatched display slot
+        bulkClearUnmatchedDisplay();
+        const container = document.getElementById('bulkParsedRow');
+        if (container) {
+            const div = document.createElement('div');
+            div.className = 'bulk-unmatched';
+            div.style.cssText = 'margin-top:6px;padding:6px 8px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.5);border-radius:4px;font-size:var(--font-size-xs);color:var(--color-error)';
+            div.innerHTML = `<strong>Error loading products:</strong> ${err.message || 'Unknown error contacting Supabase'}`;
+            container.appendChild(div);
+        }
+    } finally {
+        // Hide progress bar
+        if (progressEl) progressEl.classList.remove('visible');
+
+        // Restore button
+        if (loadBtn) {
+            loadBtn.disabled = false;
+            loadBtn.innerHTML = originalBtnHTML;
+        }
+
+        bulkState.isLoading = false;
+    }
+}
+
+function bulkShowUnmatchedDisplay(list) {
+    bulkClearUnmatchedDisplay();
+    const container = document.getElementById('bulkParsedRow');
+    if (!container) return;
+
+    const div = document.createElement('div');
+    div.className = 'bulk-unmatched';
+    div.style.cssText = [
+        'margin-top: 6px',
+        'padding: 6px 8px',
+        'background: rgba(239,68,68,0.08)',
+        'border: 1px solid rgba(239,68,68,0.3)',
+        'border-radius: 4px',
+        'font-size: var(--font-size-xs)',
+        'color: var(--color-error)',
+        'line-height: 1.5',
+    ].join('; ');
+
+    div.innerHTML = `<strong>${list.length} MPN${list.length > 1 ? 's' : ''} not found:</strong> ${list.join(', ')}`;
+    container.appendChild(div);
+}
+
+function bulkClearUnmatchedDisplay() {
+    const els = document.querySelectorAll('.bulk-unmatched');
+    els.forEach(el => el.remove());
+}
+
+function bulkClearSearch() {
+    // Reset bulkState to initial values
+    bulkState.products = [];
+    bulkState.unmatchedMpns = [];
+    bulkState.isLoading = false;
+    bulkState.parsedSkus = [];
+    bulkState.fileRows = [];
+    bulkState.workbook = null;
+    bulkState.parsedFileData = null;
+    bulkState.fileName = null;
+    bulkState.selectionMode = null;
+    bulkState.hiddenColumns = new Set();
+    bulkState.hiddenRows = new Set();
+    bulkState.previewZoom = 55;
+    bulkState.userManuallyZoomed = false;
+    bulkState.userHasResized = false;
+    bulkState.activeHiddenRowsDropdown = null;
+
+    // Clear paste area
+    const pasteArea = document.getElementById('bulkPasteArea');
+    if (pasteArea) pasteArea.value = '';
+
+    // Reset file input
+    const fileInput = document.getElementById('bulkFileInput');
+    if (fileInput) fileInput.value = '';
+
+    // Hide spreadsheet preview
+    bulkHideSpreadsheetPreview();
+
+    // Hide parsed row
+    const parsedRow = document.getElementById('bulkParsedRow');
+    if (parsedRow) parsedRow.style.display = 'none';
+
+    // Hide action bar
+    const actionBar = document.getElementById('bulkActionBar');
+    if (actionBar) actionBar.style.display = 'none';
+
+    // Hide progress bar
+    const progressEl = document.getElementById('bulkProgress');
+    if (progressEl) progressEl.classList.remove('visible');
+
+    // Clear unmatched display
+    bulkClearUnmatchedDisplay();
+
+    // Reset drop zone
+    const dropZone = document.getElementById('bulkDropZone');
+    if (dropZone) dropZone.classList.remove('has-file');
+    const dropStatus = document.getElementById('bulkDropZoneStatus');
+    if (dropStatus) dropStatus.textContent = '';
+
+    // Disable mappings panel
+    const mappingsPanel = document.getElementById('bulkMappingsPanel');
+    if (mappingsPanel) mappingsPanel.classList.add('disabled');
+
+    // Reset column dropdowns
+    bulkResetColumnDropdowns();
+
+    // Update parsed preview (will show empty state)
+    bulkUpdateParsedPreview();
+
+    console.log('[BulkSearch] Cleared all bulk search state');
 }
