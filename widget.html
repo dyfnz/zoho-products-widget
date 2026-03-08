@@ -403,8 +403,8 @@
                     </div>
                 </div>
             </div>
-
-            <!-- Product Details - Full Width Below -->
+            <!-- MOVED: Product Details panel moved outside single-search-panel to be shared by both modes (see below bulk-search-panel-container) -->
+            <!--
             <div class="details-panel" id="productDetailsSection" style="display: none;">
                 <div class="panel-header">
                     <h2>
@@ -482,7 +482,6 @@
                         </div>
                     </div>
 
-                    <!-- Discreet Raw API Toggle -->
                     <div class="raw-api-toggle" id="rawApiToggle" onclick="toggleRawApi()">
                         <span class="raw-api-icon">{&nbsp;}</span>
                     </div>
@@ -491,6 +490,7 @@
                     </div>
                 </div>
             </div>
+            -->
             </div><!-- /.single-search-panel -->
             <!-- Bulk Search Panel (Phase 1 - Coming Soon) -->
             <div class="bulk-search-panel-container" style="display: none;">
@@ -737,6 +737,94 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Product Details - Shared by Single & Bulk modes -->
+            <div class="details-panel" id="productDetailsSection" style="display: none;">
+                <div class="panel-header">
+                    <h2>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>
+                        </svg>
+                        Product Details
+                    </h2>
+                    <button onclick="hideProductDetails()" class="btn-ghost btn-small">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6 6 18M6 6l12 12"/>
+                        </svg>
+                        Close
+                    </button>
+                </div>
+
+                <div class="details-content">
+                    <div class="product-hero">
+                        <div class="product-name-row" id="detailsProductName"></div>
+                        <div class="product-meta" id="detailsSubtitle"></div>
+                    </div>
+                    <div class="product-description" id="detailsLongDesc"></div>
+
+                    <div class="details-section">
+                        <h4>Extended Details</h4>
+                        <div class="details-grid">
+                            <div class="details-card">
+                                <h5>Product Information</h5>
+                                <div class="field-grid" id="productInfoGrid"></div>
+                            </div>
+                            <div class="details-card">
+                                <h5>Pricing</h5>
+                                <div class="field-grid" id="pricingGrid"></div>
+                            </div>
+                            <div class="details-card">
+                                <h5>Availability</h5>
+                                <div class="field-grid" id="availabilityGrid"></div>
+                            </div>
+                            <div class="details-card">
+                                <h5>Product Flags</h5>
+                                <div class="field-grid" id="flagsGrid"></div>
+                            </div>
+                        </div>
+
+                        <div class="details-card full-width" id="discountsGroup" style="display: none;">
+                            <h5>Available Discounts</h5>
+                            <table class="mini-table">
+                                <thead>
+                                    <tr>
+                                        <th>Type</th>
+                                        <th>Bid Number</th>
+                                        <th class="text-right">Discount</th>
+                                        <th class="text-right">Qty</th>
+                                        <th>Effective</th>
+                                        <th>Expires</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="discountsBody"></tbody>
+                            </table>
+                        </div>
+
+                        <div class="details-card full-width" id="warehouseSection" style="display: none;">
+                            <h5>Warehouse Availability</h5>
+                            <table class="mini-table">
+                                <thead>
+                                    <tr>
+                                        <th>Warehouse</th>
+                                        <th>Location</th>
+                                        <th class="text-right">Available</th>
+                                        <th class="text-right">Backordered</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="warehouseBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Discreet Raw API Toggle -->
+                    <div class="raw-api-toggle" id="rawApiToggle" onclick="toggleRawApi()">
+                        <span class="raw-api-icon">{&nbsp;}</span>
+                    </div>
+                    <div class="raw-api-container" id="rawApiContainer" style="display: none;">
+                        <pre id="rawApiResponse"></pre>
                     </div>
                 </div>
             </div>
