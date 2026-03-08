@@ -22,6 +22,11 @@
                     <button onclick="authenticate()" class="btn-link">Reconnect</button>
                 </div>
             </div>
+            <!-- Mode Toggle -->
+            <div class="mode-toggle">
+                <button class="mode-btn active" data-mode="single" onclick="setSearchMode('single')">Single</button>
+                <button class="mode-btn" data-mode="bulk" onclick="setSearchMode('bulk')">Bulk</button>
+            </div>
             <div class="distributor-tabs">
                 <button class="tab-btn active" data-distributor="ingram" onclick="selectDistributor('ingram')">
                     <span class="tab-icon">IM</span>Ingram Micro
@@ -37,6 +42,7 @@
 
         <!-- Scrollable Content -->
         <div class="content-wrapper">
+            <div class="single-search-panel">
             <!-- Status -->
             <div id="filterStatus" class="status-bar info">
                 <span class="status-message">Select a manufacturer or enter a SKU to begin</span>
@@ -482,6 +488,23 @@
                     <div class="raw-api-container" id="rawApiContainer" style="display: none;">
                         <pre id="rawApiResponse"></pre>
                     </div>
+                </div>
+            </div>
+            </div><!-- /.single-search-panel -->
+            <!-- Bulk Search Panel (Phase 1 - Coming Soon) -->
+            <div class="bulk-search-panel-container" style="display: none;">
+                <div class="bulk-coming-soon" id="bulkComingSoon">
+                    <div class="coming-soon-content">
+                        <svg onclick="handleBulkBypassClick()" style="cursor: default;" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M12 8v4l3 3"/>
+                        </svg>
+                        <h3>Bulk Search</h3>
+                        <p>Coming Soon</p>
+                    </div>
+                </div>
+                <div class="bulk-search-content" id="bulkSearchContent" style="display: none;">
+                    <p style="padding: 20px; color: var(--color-text-muted);">Bulk search workspace — content will be added in Phase 2+</p>
                 </div>
             </div>
         </div>

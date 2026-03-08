@@ -82,7 +82,9 @@ const state = {
     mfrResolutions: new Map(),
     unresolvedManufacturers: [],
     mfrResolutionPromise: null,
-    manufacturerMappingsData: []  // Cached mappings from Supabase
+    manufacturerMappingsData: [],  // Cached mappings from Supabase
+    searchMode: 'single',      // 'single' or 'bulk'
+    bulkAdminBypass: false,     // admin bypass for Coming Soon overlay
 };
 
 let searchTimeout = null;
@@ -3690,5 +3692,55 @@ function showStatus(message, type) {
                 el.style.display = 'none';
             }, 10000);
         }
+    }
+}
+
+// =====================================================
+// BULK SEARCH — STATE & MODE TOGGLE (Phase 1)
+// Completely independent from single-search code above.
+// =====================================================
+
+const bulkState = {
+    // Phase 2+: file data, column mappings, parsed MPNs, results, etc.
+    initialized: false,
+};
+
+function setSearchMode(mode) {
+    if (mode === state.searchMode) return;
+    state.searchMode = mode;
+
+    const singlePanel = document.querySelector('.single-search-panel');
+    const bulkPanel = document.querySelector('.bulk-search-panel-container');
+    const modeBtns = document.querySelectorAll('.mode-btn');
+
+    modeBtns.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+    });
+
+    if (mode === 'single') {
+        singlePanel.style.display = '';
+        bulkPanel.style.display = 'none';
+    } else {
+        singlePanel.style.display = 'none';
+        bulkPanel.style.display = '';
+    }
+}
+
+// Admin bypass: triple-click the clock icon in Coming Soon to unlock bulk content
+let bulkBypassClicks = 0;
+let bulkBypassTimer = null;
+
+function handleBulkBypassClick() {
+    bulkBypassClicks++;
+    clearTimeout(bulkBypassTimer);
+
+    if (bulkBypassClicks >= 3) {
+        state.bulkAdminBypass = true;
+        document.getElementById('bulkComingSoon').style.display = 'none';
+        document.getElementById('bulkSearchContent').style.display = '';
+        bulkBypassClicks = 0;
+        console.log('[BulkSearch] Admin bypass activated');
+    } else {
+        bulkBypassTimer = setTimeout(() => { bulkBypassClicks = 0; }, 600);
     }
 }
