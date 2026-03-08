@@ -3718,6 +3718,7 @@ const bulkState = {
     products: [],
     unmatchedMpns: [],
     isLoading: false,
+    rawRpcRows: new Map(),
     // Phase 5
     selectedProductIndices: new Set(),
     collapsedGroups: new Set(),
@@ -5069,6 +5070,7 @@ async function bulkLoadProducts() {
     // Clear previous results
     bulkState.products = [];
     bulkState.unmatchedMpns = [];
+    bulkState.rawRpcRows.clear();
     bulkClearUnmatchedDisplay();
 
     try {
@@ -5125,6 +5127,17 @@ async function bulkLoadProducts() {
             }
 
             allRows.push(...rows);
+
+            // Store raw RPC rows for product details lookup
+            rows.forEach(row => {
+                let mpnKey = '';
+                if (state.currentDistributor === 'ingram') {
+                    mpnKey = (row.vendor_part_number || '').toUpperCase();
+                } else {
+                    mpnKey = (row.manufacturer_part_number || '').toUpperCase();
+                }
+                if (mpnKey) bulkState.rawRpcRows.set(mpnKey, row);
+            });
         }
 
         // Map RPC rows to product format
@@ -5229,6 +5242,7 @@ function bulkClearSearch() {
     bulkState.activeHiddenRowsDropdown = null;
     bulkState.selectedProductIndices.clear();
     bulkState.collapsedGroups.clear();
+    bulkState.rawRpcRows.clear();
 
     // Hide results panel
     const resultsPanel = document.getElementById('bulkResultsPanel');
@@ -5306,11 +5320,13 @@ function bulkDisplayResults() {
 
     emptyState.style.display = 'none';
     resultsPanel.style.display = '';
-    countEl.textContent = `${bulkState.products.length} product${bulkState.products.length !== 1 ? 's' : ''}`;
+    const foundCount = bulkState.products.filter(p => !p.not_found).length;
+    countEl.textContent = `${foundCount} product${foundCount !== 1 ? 's' : ''}`;
 
-    // Group by manufacturer
+    // Group by manufacturer (exclude not-found products)
     const grouped = {};
     bulkState.products.forEach((p) => {
+        if (p.not_found) return;
         const mfr = p.manufacturer || 'Unknown';
         if (!grouped[mfr]) grouped[mfr] = [];
         grouped[mfr].push(p);
@@ -5341,22 +5357,16 @@ function bulkDisplayResults() {
             const hiddenClass = isCollapsed ? 'bulk-hidden' : '';
             const escapedMfr = mfr.replace(/"/g, '&quot;');
 
-            if (p.not_found) {
-                html += `<tr class="bulk-product-row bulk-not-found ${hiddenClass}" data-index="${globalIdx}" data-mfr="${escapedMfr}">` +
-                    `<td class="bulk-col-checkbox"></td>` +
-                    `<td class="bulk-col-part">${p.mpn || ''}</td>` +
-                    `<td class="bulk-col-desc"><span class="bulk-not-found-badge">Not Found</span></td>` +
-                    `<td class="bulk-col-price">&mdash;</td>` +
-                    `<td class="bulk-col-action"></td></tr>`;
-            } else {
-                const price = bulkState.pricingMode === 'reseller' && p.resellerPrice != null ? p.resellerPrice : p.msrp;
-                html += `<tr class="bulk-product-row ${isSelected ? 'bulk-selected' : ''} ${hiddenClass}" data-index="${globalIdx}" data-mfr="${escapedMfr}">` +
-                    `<td class="bulk-col-checkbox"><input type="checkbox" ${isSelected ? 'checked' : ''} onchange="bulkToggleProductSelection(${globalIdx})"></td>` +
-                    `<td class="bulk-col-part">${p.mpn || ''}</td>` +
-                    `<td class="bulk-col-desc" title="${(p.description || '').replace(/"/g, '&quot;')}">${p.description || ''}</td>` +
-                    `<td class="bulk-col-price">${bulkFormatPrice(price)}</td>` +
-                    `<td class="bulk-col-action"><button class="bulk-info-btn" onclick="bulkShowProductInfo(${globalIdx})">i</button></td></tr>`;
-            }
+            // Skip not-found products — they already show in the error message above Load Products
+            if (p.not_found) return;
+
+            const price = bulkState.pricingMode === 'reseller' && p.resellerPrice != null ? p.resellerPrice : p.msrp;
+            html += `<tr class="bulk-product-row ${isSelected ? 'bulk-selected' : ''} ${hiddenClass}" data-index="${globalIdx}" data-mfr="${escapedMfr}">` +
+                `<td class="bulk-col-checkbox"><input type="checkbox" ${isSelected ? 'checked' : ''} onchange="bulkToggleProductSelection(${globalIdx})"></td>` +
+                `<td class="bulk-col-part">${p.mpn || ''}</td>` +
+                `<td class="bulk-col-desc" title="${(p.description || '').replace(/"/g, '&quot;')}">${p.description || ''}</td>` +
+                `<td class="bulk-col-price">${bulkFormatPrice(price)}</td>` +
+                `<td class="bulk-col-action"><button class="bulk-info-btn" onclick="bulkShowProductInfo(${globalIdx})">i</button></td></tr>`;
         });
     });
 
@@ -5455,18 +5465,53 @@ function bulkAddSelectedToQueue() {
 
 function bulkShowProductInfo(index) {
     const product = bulkState.products[index];
-    if (product && !product.not_found) {
-        // Enrich with fields showProductDetails expects
-        const enriched = {
-            ...product,
-            vendorPartNumber: product.mpn,
-            _source: state.currentDistributor === 'tdsynnex' ? 'tdsynnex' : (state.currentDistributor === 'arrow' ? 'arrow' : 'ingram'),
-        };
-        // Temporarily place product into state.currentProducts so showProductDetails can find it
-        const tempIndex = state.currentProducts.length;
-        state.currentProducts.push(enriched);
-        showProductDetails(tempIndex);
+    if (!product || product.not_found) return;
+
+    // Look up the raw RPC row using the product's MPN
+    const mpnKey = (product.mpn || '').toUpperCase();
+    const rawRow = bulkState.rawRpcRows.get(mpnKey);
+
+    let mapped;
+    switch (state.currentDistributor) {
+        case 'tdsynnex':
+            if (rawRow) {
+                mapped = mapTDSynnexProduct(rawRow);
+            } else {
+                mapped = { ...product, vendorPartNumber: product.mpn, _source: 'tdsynnex' };
+            }
+            break;
+        case 'arrow':
+            if (rawRow) {
+                mapped = mapArrowProduct(rawRow);
+            } else {
+                mapped = { ...product, vendorPartNumber: product.mpn, _source: 'arrow' };
+            }
+            break;
+        case 'ingram':
+        default:
+            if (rawRow) {
+                // Map Ingram RPC row to the format showProductDetails expects
+                mapped = {
+                    ingramPartNumber: rawRow.ingram_part_number || '',
+                    vendorPartNumber: rawRow.vendor_part_number || '',
+                    vendorName: rawRow.manufacturer || rawRow.vendor_name || '',
+                    description: rawRow.description_line_1 || rawRow.description || '',
+                    category: rawRow.category || '',
+                    retailPrice: rawRow.retail_price,
+                    customerPrice: rawRow.customer_price,
+                    pricingData: null,
+                    _source: 'ingram'
+                };
+            } else {
+                mapped = { ...product, vendorPartNumber: product.mpn, ingramPartNumber: product.vpn || product.mpn, _source: 'ingram' };
+            }
+            break;
     }
+
+    // Temporarily place the fully mapped product into state.currentProducts so showProductDetails can find it
+    const tempIndex = state.currentProducts.length;
+    state.currentProducts.push(mapped);
+    showProductDetails(tempIndex);
 }
 
 function bulkFormatPrice(value) {

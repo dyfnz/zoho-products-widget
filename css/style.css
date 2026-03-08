@@ -4071,23 +4071,6 @@ button.sel-btn .sel-btn-icon {
     display: none !important;
 }
 
-.bulk-product-row.bulk-not-found {
-    opacity: 0.5;
-}
-
-.bulk-product-row.bulk-not-found td {
-    color: var(--color-text-muted);
-}
-
-.bulk-not-found-badge {
-    display: inline-block;
-    font-size: var(--font-size-xs);
-    color: var(--color-text-muted);
-    background: var(--color-border);
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-weight: 500;
-}
 
 /* Empty State */
 .bulk-empty-state {
