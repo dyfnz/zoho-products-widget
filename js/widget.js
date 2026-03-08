@@ -3706,7 +3706,18 @@ const bulkState = {
     fileRows: [],
     parsedSkus: [],
     fileName: null,
+    // Phase 3
+    parsedFileData: null,
+    selectionMode: null,
+    hiddenColumns: new Set(),
+    hiddenRows: new Set(),
+    previewZoom: 55,
+    userManuallyZoomed: false,
+    userHasResized: false,
+    activeHiddenRowsDropdown: null,
 };
+
+const BULK_PREVIEW_MAX_ROWS = 50;
 
 function setSearchMode(mode) {
     if (mode === state.searchMode) return;
@@ -3730,6 +3741,7 @@ function setSearchMode(mode) {
         if (!bulkState.initialized) {
             bulkState.initialized = true;
             bulkInitDropZone();
+            document.addEventListener('click', bulkHandleDropdownOutsideClick);
         }
         // Update distributor badge
         const badge = document.getElementById('bulkDistributorBadge');
@@ -3839,6 +3851,13 @@ function bulkHandleFileSelect(event) {
                         option.textContent = name;
                         el.appendChild(option);
                     });
+                    el.classList.add('visible');
+                    const label = document.getElementById('bulkSheetSelectLabel');
+                    if (label) label.classList.add('visible');
+                } else {
+                    el.classList.remove('visible');
+                    const label = document.getElementById('bulkSheetSelectLabel');
+                    if (label) label.classList.remove('visible');
                 }
             }
 
@@ -3891,11 +3910,22 @@ function bulkLoadSheetData(sheetIndex) {
     if (rows.length === 0) {
         console.warn('[BulkSearch] Empty sheet:', sheetName);
         bulkState.fileRows = [];
+        bulkHideSpreadsheetPreview();
         return;
     }
 
     bulkState.fileRows = rows;
     console.log(`[BulkSearch] Loaded ${rows.length} rows from sheet: ${sheetName}`);
+
+    // Phase 3: Enable mappings panel and render preview
+    const mappingsPanel = document.getElementById('bulkMappingsPanel');
+    if (mappingsPanel) mappingsPanel.classList.remove('disabled');
+
+    const headerRow = parseInt(document.getElementById('bulkHeaderRowInput')?.value) - 1 || 0;
+    bulkUpdateColumnSelectionDropdown(headerRow);
+    bulkState.userManuallyZoomed = false;
+    bulkState.previewZoom = 55;
+    bulkRenderSpreadsheetPreview();
 }
 
 /**
@@ -3911,6 +3941,7 @@ function bulkParsePastedSKUs() {
 
     if (!text) {
         bulkState.parsedSkus = [];
+        bulkUpdateParsedPreview();
         console.log('[BulkSearch] Parsed 0 SKUs from paste (empty input)');
         return;
     }
@@ -3932,4 +3963,976 @@ function bulkParsePastedSKUs() {
     // Deduplicate
     bulkState.parsedSkus = [...new Set(skus)];
     console.log(`[BulkSearch] Parsed ${bulkState.parsedSkus.length} SKUs from paste`);
+    bulkUpdateParsedPreview();
+}
+
+// =====================================================
+// BULK SEARCH — Phase 3: Spreadsheet Preview & Column Mapping
+// =====================================================
+
+function bulkEscapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function bulkConvertSpacesToHash(value) {
+    if (!value || typeof value !== 'string') return value;
+    // Arrow uses spaces natively — don't convert
+    if (state.currentDistributor === 'arrow') return value.trim();
+    return value.trim().replace(/\s+/g, '#');
+}
+
+function bulkShowToast(id, message, containerId) {
+    const existing = document.getElementById(id);
+    if (existing) existing.remove();
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.id = id;
+    toast.className = 'selection-flash';
+    toast.textContent = message;
+    toast.style.cssText = 'position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:100;padding:4px 12px;border-radius:4px;font-size:12px;font-weight:600;background:var(--color-accent);color:white;pointer-events:none;';
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 1500);
+}
+
+function bulkShowHideWarning(message) {
+    bulkShowToast('bulkHideWarning', message, 'bulkPreviewSectionContainer');
+}
+
+// =====================================================
+// BULK SEARCH — Phase 3c: Preview Zoom, Column Mapping & Render
+// =====================================================
+
+function bulkUpdatePreviewZoom() {
+    const wrapper = document.getElementById('bulkPreviewTableWrapper');
+    const zoomLabel = document.getElementById('bulkZoomLevel');
+
+    wrapper.style.transform = `scale(${bulkState.previewZoom / 100})`;
+    wrapper.style.transformOrigin = 'top left';
+    zoomLabel.textContent = `${bulkState.previewZoom}%`;
+}
+
+function bulkZoomPreview(direction) {
+    const minZoom = 25;
+    const maxZoom = 150;
+    const step = 5;
+
+    bulkState.previewZoom += direction * step;
+    bulkState.previewZoom = Math.max(minZoom, Math.min(maxZoom, bulkState.previewZoom));
+    bulkState.userManuallyZoomed = true;
+    bulkUpdatePreviewZoom();
+}
+
+function bulkAutoFitPreview() {
+    if (bulkState.userManuallyZoomed) return; // User took control, don't auto-fit
+
+    const wrapper = document.getElementById('bulkPreviewTableWrapper');
+    const table = document.getElementById('bulkPreviewTable');
+    const panel = wrapper.parentElement; // The scrollable container
+
+    if (!table || !wrapper || !panel) return;
+
+    // Temporarily reset zoom to measure natural table width
+    wrapper.style.transform = 'scale(1)';
+    const naturalTableWidth = table.offsetWidth;
+    const panelWidth = panel.clientWidth - 10; // Small padding buffer
+
+    if (naturalTableWidth <= 0 || panelWidth <= 0) {
+        // Restore default zoom
+        wrapper.style.transform = `scale(${bulkState.previewZoom / 100})`;
+        return;
+    }
+
+    // Calculate zoom that fits table width to panel width
+    const fitZoom = Math.floor((panelWidth / naturalTableWidth) * 100);
+
+    // Only auto-fit if content would have whitespace (fitZoom > current default)
+    // and cap at 100% — don't blow up past natural size
+    if (fitZoom > bulkState.previewZoom) {
+        bulkState.previewZoom = Math.min(fitZoom, 100);
+    }
+
+    bulkUpdatePreviewZoom();
+
+    // After fitting width, check if we should shrink the outer panel height.
+    requestAnimationFrame(() => {
+        if (bulkState.userHasResized) return; // User manually resized, respect their choice
+
+        const previewEl = document.getElementById('bulkSpreadsheetPreview');
+        if (!previewEl) return;
+
+        // Measure the actual rendered height of the scaled table
+        const scaledTableRect = table.getBoundingClientRect();
+        const scaledTableHeight = scaledTableRect.height;
+
+        // Measure the fixed chrome (header, toolbar, legend) — everything except previewContainer
+        const header = previewEl.querySelector('.preview-header');
+        const toolbar = previewEl.querySelector('.selection-toolbar');
+        const legend = previewEl.querySelector('.preview-legend');
+        const chromeHeight =
+            (header ? header.offsetHeight : 0) +
+            (toolbar ? toolbar.offsetHeight : 0) +
+            (legend ? legend.offsetHeight : 0);
+
+        // Total needed = chrome + scaled table + padding for comfort
+        const PADDING = 16;
+        const MIN_HEIGHT = 120;
+        const neededHeight = chromeHeight + scaledTableHeight + PADDING;
+
+        const currentHeight = previewEl.offsetHeight;
+
+        // Only SHRINK — never grow beyond the current height (bulkAutoFitPreviewHeight handles expansion)
+        if (neededHeight < currentHeight - 10) {
+            const newHeight = Math.max(Math.ceil(neededHeight), MIN_HEIGHT);
+            previewEl.style.height = newHeight + 'px';
+            console.log(`[BulkAutoFit] Shrunk panel: content needs ${Math.ceil(neededHeight)}px, was ${currentHeight}px, now ${newHeight}px`);
+        }
+    });
+}
+
+function bulkAutoFitPreviewHeight() {
+    if (bulkState.userHasResized) return; // User manually resized, don't auto-fit
+
+    const headerRowInput = document.getElementById('bulkHeaderRowInput');
+    const lastRowInput = document.getElementById('bulkLastRowInput');
+
+    // Only auto-fit when BOTH header AND last row are set
+    if (!headerRowInput.value || !lastRowInput.value) return;
+
+    const headerRowIdx = parseInt(headerRowInput.value) - 1 || 0;
+    const lastRowIdx = parseInt(lastRowInput.value) - 1;
+
+    // Calculate visible rows (excluding hidden ones)
+    let visibleRowCount = 0;
+    for (let r = headerRowIdx; r <= lastRowIdx; r++) {
+        if (!bulkState.hiddenRows.has(r)) visibleRowCount++;
+    }
+
+    // Add 1 for hidden rows indicator if any rows are hidden
+    const hiddenIndicatorRows = bulkState.hiddenRows.size > 0 ? 1 : 0;
+    const totalDisplayRows = visibleRowCount + hiddenIndicatorRows;
+
+    // Constants for height calculation (fixed chrome heights)
+    const HEADER_HEIGHT = 26;
+    const TOOLBAR_HEIGHT = 20;
+    const LEGEND_HEIGHT = 22;
+    const TABLE_HEADER_HEIGHT = 18;
+    const ROW_HEIGHT = 18;
+    const SCROLL_PADDING = 12;
+
+    // Calculate content height at current zoom
+    const zoomFactor = bulkState.previewZoom / 100;
+    const scaledTableHeight = (totalDisplayRows * ROW_HEIGHT + TABLE_HEADER_HEIGHT) * zoomFactor;
+
+    // Total height = fixed chrome + scaled table content
+    const calculatedHeight = HEADER_HEIGHT + TOOLBAR_HEIGHT + scaledTableHeight + LEGEND_HEIGHT + SCROLL_PADDING;
+
+    // Only EXPAND if needed, never shrink below default (350px)
+    const DEFAULT_HEIGHT = 350;
+    const MAX_HEIGHT = 600;
+    const finalHeight = Math.min(MAX_HEIGHT, Math.max(DEFAULT_HEIGHT, Math.ceil(calculatedHeight)));
+
+    const previewEl = document.getElementById('bulkSpreadsheetPreview');
+    const currentHeight = previewEl.offsetHeight;
+
+    // Only change if we need to expand
+    if (finalHeight > currentHeight) {
+        previewEl.style.height = `${finalHeight}px`;
+        console.log(`[BulkAutoFit] Expanded: ${totalDisplayRows} rows at ${bulkState.previewZoom}% zoom -> ${finalHeight}px (was ${currentHeight}px)`);
+    } else {
+        console.log(`[BulkAutoFit] No change needed: ${totalDisplayRows} rows fit in ${currentHeight}px`);
+    }
+}
+
+function bulkResetColumnDropdowns() {
+    document.getElementById('bulkColumnSelect').innerHTML = '<option value="">Select column...</option>';
+    document.getElementById('bulkQtyColumnSelect').innerHTML = '<option value="">None</option>';
+    document.getElementById('bulkResellerPriceColumnSelect').innerHTML = '<option value="">None</option>';
+    document.getElementById('bulkVpnColumnSelect').innerHTML = '<option value="">None</option>';
+    document.getElementById('bulkMsrpColumnSelect').innerHTML = '<option value="">None</option>';
+}
+
+function bulkAppendAutoSelectOption(selectEl, colLetter, headerText, selectId) {
+    const option = document.createElement('option');
+    option.value = colLetter;
+    option.textContent = headerText;
+    selectEl.appendChild(option);
+}
+
+function bulkUpdateColumnSelectionDropdown(headerRowIndex) {
+    if (!bulkState.fileRows || bulkState.fileRows.length === 0) return;
+
+    const headers = bulkState.fileRows[headerRowIndex] || [];
+
+    const columnSelect = document.getElementById('bulkColumnSelect');
+    const qtyColumnSelect = document.getElementById('bulkQtyColumnSelect');
+    const resellerPriceColumnSelect = document.getElementById('bulkResellerPriceColumnSelect');
+    const vpnColumnSelect = document.getElementById('bulkVpnColumnSelect');
+    const msrpColumnSelect = document.getElementById('bulkMsrpColumnSelect');
+
+    // Reset all dropdowns
+    bulkResetColumnDropdowns();
+
+    headers.forEach((header, index) => {
+        const colLetter = index < 26 ? String.fromCharCode(65 + index) : 'Col' + (index + 1);
+        const headerText = `${colLetter}: ${header || '(empty)'}`;
+        const headerLower = String(header).toLowerCase();
+
+        // MPN column — auto-select on match
+        const mpnOption = document.createElement('option');
+        mpnOption.value = index;
+        mpnOption.textContent = headerText;
+        if (['item number', 'mpn', 'part number', 'mfg part', 'manufacturer part', 'sku'].some(v => headerLower.includes(v))) {
+            mpnOption.selected = true;
+        }
+        columnSelect.appendChild(mpnOption);
+
+        // QTY column — auto-select on match
+        const qtyOption = document.createElement('option');
+        qtyOption.value = index;
+        qtyOption.textContent = headerText;
+        if (['qty', 'quantity'].some(v => headerLower.includes(v))) {
+            qtyOption.selected = true;
+        }
+        qtyColumnSelect.appendChild(qtyOption);
+
+        // Reseller Price column — auto-select on match
+        const priceOption = document.createElement('option');
+        priceOption.value = index;
+        priceOption.textContent = headerText;
+        if (['price', 'reseller', 'cost', 'dealer price', 'our price', 'unit price'].some(v => headerLower.includes(v))) {
+            priceOption.selected = true;
+        }
+        resellerPriceColumnSelect.appendChild(priceOption);
+
+        // VPN column — auto-select on match
+        const vpnOption = document.createElement('option');
+        vpnOption.value = index;
+        vpnOption.textContent = headerText;
+        if (['vpn', 'vendor part', 'ingram part'].some(v => headerLower.includes(v))) {
+            vpnOption.selected = true;
+        }
+        vpnColumnSelect.appendChild(vpnOption);
+
+        // MSRP column — auto-select on match
+        const msrpOption = document.createElement('option');
+        msrpOption.value = index;
+        msrpOption.textContent = headerText;
+        if (['msrp', 'list price', 'retail price', 'suggested retail'].some(v => headerLower.includes(v))) {
+            msrpOption.selected = true;
+        }
+        msrpColumnSelect.appendChild(msrpOption);
+    });
+}
+
+function bulkRenderSpreadsheetPreview() {
+    if (!bulkState.fileRows || bulkState.fileRows.length === 0) {
+        bulkHideSpreadsheetPreview();
+        return;
+    }
+
+    const previewEl = document.getElementById('bulkSpreadsheetPreview');
+    const previewInfo = document.getElementById('bulkPreviewInfo');
+    const thead = document.getElementById('bulkPreviewTableHead');
+    const tbody = document.getElementById('bulkPreviewTableBody');
+    const headerRowInput = document.getElementById('bulkHeaderRowInput');
+    const lastRowInput = document.getElementById('bulkLastRowInput');
+
+    const headerRowIdx = parseInt(headerRowInput.value) - 1 || 0;
+    const lastRowIdx = lastRowInput.value
+        ? parseInt(lastRowInput.value) - 1
+        : null;
+    const totalRows = bulkState.fileRows.length;
+
+    // Determine the row range to display:
+    // - Start from header row (include it for context)
+    // - End at last row if specified, otherwise cap at BULK_PREVIEW_MAX_ROWS from header
+    const startRow = headerRowIdx;
+    const endRow =
+        lastRowIdx !== null
+            ? Math.min(lastRowIdx + 1, totalRows) // +1 to include last row
+            : Math.min(headerRowIdx + BULK_PREVIEW_MAX_ROWS, totalRows);
+    const displayRowCount = endRow - startRow;
+
+    // Build column-to-class map for per-group highlighting
+    const colClassMap = new Map();
+    const mpnColVal = document.getElementById('bulkColumnSelect').value;
+    const qtyColVal = document.getElementById('bulkQtyColumnSelect').value;
+    const priceColVal = document.getElementById('bulkResellerPriceColumnSelect').value;
+    const vpnColVal = document.getElementById('bulkVpnColumnSelect').value;
+    const msrpColVal = document.getElementById('bulkMsrpColumnSelect').value;
+    if (mpnColVal !== '') colClassMap.set(parseInt(mpnColVal), 'mapped-mpn');
+    if (vpnColVal !== '') colClassMap.set(parseInt(vpnColVal), 'mapped-vpn');
+    if (msrpColVal !== '') colClassMap.set(parseInt(msrpColVal), 'mapped-pricing');
+    if (priceColVal !== '') colClassMap.set(parseInt(priceColVal), 'mapped-pricing');
+    if (qtyColVal !== '') colClassMap.set(parseInt(qtyColVal), 'mapped-pricing');
+
+    // Show the preview row container and add visible class
+    const previewRow = document.getElementById('bulkPreviewRow');
+    if (previewRow) previewRow.style.display = '';
+    previewEl.classList.add('visible');
+
+    // Count visible vs hidden for info display
+    const hiddenRowCount = [...bulkState.hiddenRows].filter(r => r > headerRowIdx && (lastRowIdx === null || r < lastRowIdx)).length;
+    const hiddenColCount = bulkState.hiddenColumns.size;
+    let rangeInfo =
+        lastRowIdx !== null
+            ? `Rows ${startRow + 1}-${endRow} (${displayRowCount} rows)`
+            : `Rows ${startRow + 1}-${endRow} of ${totalRows}`;
+    if (hiddenRowCount > 0 || hiddenColCount > 0) {
+        rangeInfo += ` | Hidden: ${hiddenRowCount > 0 ? hiddenRowCount + ' rows' : ''}${hiddenRowCount > 0 && hiddenColCount > 0 ? ', ' : ''}${hiddenColCount > 0 ? hiddenColCount + ' cols' : ''}`;
+    }
+    previewInfo.textContent = rangeInfo;
+
+    // Determine column count (max columns across displayed rows)
+    let maxCols = 0;
+    for (let i = startRow; i < endRow; i++) {
+        if (bulkState.fileRows[i] && bulkState.fileRows[i].length > maxCols) {
+            maxCols = bulkState.fileRows[i].length;
+        }
+    }
+
+    // Build table header with hidden column support
+    let theadHtml = '<tr><th class="row-header">#</th>';
+    for (let c = 0; c < maxCols; c++) {
+        const colLetter =
+            c < 26
+                ? String.fromCharCode(65 + c)
+                : 'A' + String.fromCharCode(65 + c - 26);
+        const mappedClass = colClassMap.has(c) ? ` ${colClassMap.get(c)}` : '';
+        const isHidden = bulkState.hiddenColumns.has(c);
+
+        if (isHidden) {
+            // Hidden column - show narrow "..." indicator
+            theadHtml += `<th class="hidden-col" onclick="bulkUnhideColumn(${c})" data-col="${c}" title="Click to unhide column ${colLetter}">...</th>`;
+        } else {
+            theadHtml += `<th class="${mappedClass}" onclick="bulkHandleColumnClick(${c})" data-col="${c}">${colLetter}</th>`;
+        }
+    }
+    theadHtml += '</tr>';
+    thead.innerHTML = theadHtml;
+
+    // Build table body with hidden row support
+    let tbodyHtml = '';
+    let consecutiveHiddenIndices = [];
+
+    for (let r = startRow; r < endRow; r++) {
+        const row = bulkState.fileRows[r] || [];
+        const isHeaderRow = r === headerRowIdx;
+        const isLastRow = lastRowIdx !== null && r === lastRowIdx;
+        const isHiddenRow = bulkState.hiddenRows.has(r) && !isHeaderRow && !isLastRow;
+
+        // Handle hidden rows - collect consecutive hidden row indices
+        if (isHiddenRow) {
+            consecutiveHiddenIndices.push(r);
+            continue;
+        }
+
+        // Output hidden rows indicator if we had consecutive hidden rows
+        if (consecutiveHiddenIndices.length > 0) {
+            tbodyHtml += bulkBuildHiddenRowsHtml(consecutiveHiddenIndices, maxCols + 1);
+            consecutiveHiddenIndices = [];
+        }
+
+        let rowClass = '';
+        if (isHeaderRow) rowClass = 'header-row';
+        else if (isLastRow) rowClass = 'last-row';
+
+        tbodyHtml += `<tr class="${rowClass}" onclick="bulkHandleRowClick(${r})" data-row="${r}">`;
+        tbodyHtml += `<td class="row-header">${r + 1}</td>`;
+
+        for (let c = 0; c < maxCols; c++) {
+            const cellValue = row[c] !== undefined ? String(row[c]) : '';
+            const isHiddenCol = bulkState.hiddenColumns.has(c);
+
+            if (isHiddenCol) {
+                // Hidden column cell
+                tbodyHtml += `<td class="hidden-col" onclick="event.stopPropagation(); bulkUnhideColumn(${c})" title="Click to unhide">...</td>`;
+            } else {
+                const displayValue =
+                    cellValue.length > 20
+                        ? cellValue.substring(0, 20) + '...'
+                        : cellValue;
+                const mappedClass = colClassMap.has(c) ? ` ${colClassMap.get(c)}` : '';
+                tbodyHtml += `<td class="${mappedClass}" title="${bulkEscapeHtml(cellValue)}">${bulkEscapeHtml(displayValue)}</td>`;
+            }
+        }
+        tbodyHtml += '</tr>';
+    }
+
+    // Handle trailing hidden rows
+    if (consecutiveHiddenIndices.length > 0) {
+        tbodyHtml += bulkBuildHiddenRowsHtml(consecutiveHiddenIndices, maxCols + 1);
+    }
+
+    tbody.innerHTML = tbodyHtml;
+
+    // Scroll preview to top on render
+    const previewContainer = document.getElementById('bulkPreviewContainer');
+    if (previewContainer) {
+        previewContainer.scrollTop = 0;
+        previewContainer.scrollLeft = 0;
+    }
+
+    // Update zoom display
+    bulkUpdatePreviewZoom();
+    // Auto-fit zoom to panel width after render
+    bulkAutoFitPreview();
+    // Auto-fit height when both header and last row are set
+    bulkAutoFitPreviewHeight();
+}
+
+function bulkHideSpreadsheetPreview() {
+    const previewRow = document.getElementById('bulkPreviewRow');
+    if (previewRow) previewRow.style.display = 'none';
+    document.getElementById('bulkSpreadsheetPreview').classList.remove('visible');
+    // Clear selection mode and reset hide state when hiding preview
+    bulkClearSelectionMode();
+    bulkState.hiddenColumns.clear();
+    bulkState.hiddenRows.clear();
+    bulkState.userHasResized = false;
+}
+
+function bulkBuildHiddenRowsHtml(indices, colSpan) {
+    const count = indices.length;
+    const indicesJson = JSON.stringify(indices);
+    return `<tr class="hidden-rows-indicator"><td colspan="${colSpan}" data-indices='${indicesJson}' onclick="bulkToggleHiddenRowsDropdown(event, JSON.parse(this.dataset.indices))">... ${count} hidden row${count > 1 ? 's' : ''} (click to manage) ...</td></tr>`;
+}
+
+// =====================================================
+// BULK SEARCH — Phase 3c: Selection Mode, Toolbar, Mapping & Parsed Preview
+// =====================================================
+
+function bulkToggleSelectionMode(mode) {
+    const previewTable = document.getElementById('bulkPreviewTable');
+    const allBtns = document.getElementById('bulkSelectionToolbar').querySelectorAll('.sel-btn');
+
+    // If clicking the same mode, deactivate
+    if (bulkState.selectionMode === mode) {
+        bulkState.selectionMode = null;
+        allBtns.forEach(btn => btn.classList.remove('active'));
+        previewTable.classList.remove('mode-row', 'mode-col', 'mode-hide-col', 'mode-hide-row');
+        return;
+    }
+
+    // Activate new mode
+    bulkState.selectionMode = mode;
+    allBtns.forEach(btn => btn.classList.remove('active'));
+    document.getElementById('bulkSelectionToolbar').querySelector(`[data-mode="${mode}"]`).classList.add('active');
+
+    // Set table class for hover styling
+    previewTable.classList.remove('mode-row', 'mode-col', 'mode-hide-col', 'mode-hide-row');
+    if (mode === 'headerRow' || mode === 'lastRow') {
+        previewTable.classList.add('mode-row');
+    } else if (mode === 'hideCol') {
+        previewTable.classList.add('mode-hide-col');
+    } else if (mode === 'hideRow') {
+        previewTable.classList.add('mode-hide-row');
+    } else {
+        previewTable.classList.add('mode-col');
+    }
+}
+
+function bulkClearSelectionMode() {
+    bulkState.selectionMode = null;
+    const previewTable = document.getElementById('bulkPreviewTable');
+    const allBtns = document.getElementById('bulkSelectionToolbar').querySelectorAll('.sel-btn');
+
+    allBtns.forEach(btn => btn.classList.remove('active'));
+    previewTable.classList.remove('mode-row', 'mode-col', 'mode-hide-col', 'mode-hide-row');
+}
+
+function bulkHandleRowClick(rowIndex) {
+    if (!bulkState.selectionMode) return;
+
+    // Handle hide row mode
+    if (bulkState.selectionMode === 'hideRow') {
+        bulkHandleHideRowClick(rowIndex);
+        return;
+    }
+
+    if (bulkState.selectionMode !== 'headerRow' && bulkState.selectionMode !== 'lastRow') return;
+
+    const currentMode = bulkState.selectionMode; // Save before clearing
+    const input = currentMode === 'headerRow'
+        ? document.getElementById('bulkHeaderRowInput')
+        : document.getElementById('bulkLastRowInput');
+
+    // Set the value (1-based for display)
+    input.value = rowIndex + 1;
+
+    // Flash the input to show it changed
+    input.classList.add('selection-flash');
+    setTimeout(() => input.classList.remove('selection-flash'), 500);
+
+    // Update the dropdown options if header row changed
+    if (currentMode === 'headerRow') {
+        bulkUpdateColumnSelectionDropdown(rowIndex);
+    }
+
+    // Reset userHasResized when header/last row changes
+    bulkState.userHasResized = false;
+
+    // Clear mode and re-render
+    bulkClearSelectionMode();
+    bulkOnRowInputChange();
+
+    console.log(`[BulkSearch] Set ${currentMode} to row ${rowIndex + 1}`);
+}
+
+function bulkHandleHideRowClick(rowIndex) {
+    const headerRowInput = document.getElementById('bulkHeaderRowInput');
+    const lastRowInput = document.getElementById('bulkLastRowInput');
+    const headerRowIdx = parseInt(headerRowInput.value) - 1 || 0;
+    const lastRowIdx = lastRowInput.value ? parseInt(lastRowInput.value) - 1 : null;
+
+    // Can't hide header or last row
+    if (rowIndex === headerRowIdx) {
+        bulkShowHideWarning('Cannot hide the header row');
+        return;
+    }
+    if (lastRowIdx !== null && rowIndex === lastRowIdx) {
+        bulkShowHideWarning('Cannot hide the last row');
+        return;
+    }
+    // Can only hide rows between header and last
+    if (rowIndex < headerRowIdx || (lastRowIdx !== null && rowIndex > lastRowIdx)) {
+        bulkShowHideWarning('Can only hide rows between header and last row');
+        return;
+    }
+
+    // Toggle hidden state
+    if (bulkState.hiddenRows.has(rowIndex)) {
+        bulkState.hiddenRows.delete(rowIndex);
+        console.log(`[BulkSearch] Unhid row ${rowIndex + 1}`);
+    } else {
+        bulkState.hiddenRows.add(rowIndex);
+        console.log(`[BulkSearch] Hid row ${rowIndex + 1}`);
+    }
+
+    // Re-render (don't clear mode - allow multiple selections)
+    bulkRenderSpreadsheetPreview();
+}
+
+function bulkHandleColumnClick(colIndex) {
+    if (!bulkState.selectionMode) return;
+
+    // Handle hide column mode
+    if (bulkState.selectionMode === 'hideCol') {
+        bulkHandleHideColumnClick(colIndex);
+        return;
+    }
+
+    if (
+        bulkState.selectionMode !== 'mpnCol' &&
+        bulkState.selectionMode !== 'qtyCol' &&
+        bulkState.selectionMode !== 'priceCol' &&
+        bulkState.selectionMode !== 'vpnCol' &&
+        bulkState.selectionMode !== 'msrpCol'
+    ) return;
+
+    const currentMode = bulkState.selectionMode; // Save before clearing
+    const MODE_TO_SELECT = {
+        mpnCol: 'bulkColumnSelect',
+        qtyCol: 'bulkQtyColumnSelect',
+        vpnCol: 'bulkVpnColumnSelect',
+        msrpCol: 'bulkMsrpColumnSelect',
+        priceCol: 'bulkResellerPriceColumnSelect'
+    };
+    const selectId = MODE_TO_SELECT[currentMode];
+    const select = document.getElementById(selectId);
+
+    // Toggle: if clicking the already-mapped column, unset it
+    if (select.value === String(colIndex)) {
+        select.value = '';
+        select.classList.add('selection-flash');
+        setTimeout(() => select.classList.remove('selection-flash'), 500);
+        bulkClearSelectionMode();
+        bulkOnMappingChange();
+        console.log(`[BulkSearch] Unset ${currentMode} (was column ${colIndex})`);
+        return;
+    }
+
+    // Guard: VPN column cannot be the same as MPN column
+    if (currentMode === 'vpnCol') {
+        const mpnCol = document.getElementById('bulkColumnSelect').value;
+        if (mpnCol !== '' && String(colIndex) === String(mpnCol)) {
+            bulkShowHideWarning('VPN column cannot be the same as MPN column');
+            bulkClearSelectionMode();
+            return;
+        }
+    }
+
+    // Guard: MPN column cannot be the same as VPN column
+    if (currentMode === 'mpnCol') {
+        const vpnCol = document.getElementById('bulkVpnColumnSelect').value;
+        if (vpnCol !== '' && String(colIndex) === String(vpnCol)) {
+            bulkShowHideWarning('MPN column cannot be the same as VPN column');
+            bulkClearSelectionMode();
+            return;
+        }
+    }
+
+    // Set the value
+    select.value = colIndex;
+
+    // Flash the select to show it changed
+    select.classList.add('selection-flash');
+    setTimeout(() => select.classList.remove('selection-flash'), 500);
+
+    // Clear mode and re-render
+    bulkClearSelectionMode();
+    bulkOnMappingChange();
+
+    console.log(`[BulkSearch] Set ${currentMode} to column ${colIndex}`);
+}
+
+function bulkHandleHideColumnClick(colIndex) {
+    // Check if this is a mapped column
+    const guards = [
+        ['bulkColumnSelect', 'MPN'],
+        ['bulkQtyColumnSelect', 'QTY'],
+        ['bulkResellerPriceColumnSelect', 'Price'],
+        ['bulkVpnColumnSelect', 'VPN'],
+        ['bulkMsrpColumnSelect', 'MSRP']
+    ];
+    for (const [id, label] of guards) {
+        const val = document.getElementById(id).value;
+        if (val !== '' && parseInt(val) === colIndex) {
+            bulkShowHideWarning('Cannot hide ' + label + ' column');
+            return;
+        }
+    }
+
+    // Toggle hidden state
+    if (bulkState.hiddenColumns.has(colIndex)) {
+        bulkState.hiddenColumns.delete(colIndex);
+        console.log(`[BulkSearch] Unhid column ${colIndex}`);
+    } else {
+        bulkState.hiddenColumns.add(colIndex);
+        console.log(`[BulkSearch] Hid column ${colIndex}`);
+    }
+
+    // Re-render (don't clear mode - allow multiple selections)
+    bulkRenderSpreadsheetPreview();
+}
+
+function bulkUnhideColumn(colIndex) {
+    bulkState.hiddenColumns.delete(colIndex);
+    bulkRenderSpreadsheetPreview();
+    console.log(`[BulkSearch] Unhid column ${colIndex}`);
+}
+
+function bulkUnhideRow(rowIndex) {
+    bulkState.hiddenRows.delete(rowIndex);
+    bulkCloseHiddenRowsDropdown();
+    bulkRenderSpreadsheetPreview();
+    console.log(`[BulkSearch] Unhid row ${rowIndex + 1}`);
+}
+
+function bulkUnhideAllRows() {
+    bulkState.hiddenRows.clear();
+    bulkCloseHiddenRowsDropdown();
+    bulkRenderSpreadsheetPreview();
+    console.log('[BulkSearch] Unhid all rows');
+}
+
+function bulkToggleHiddenRowsDropdown(event, hiddenRowIndices) {
+    event.stopPropagation();
+
+    // Close existing dropdown if any
+    if (bulkState.activeHiddenRowsDropdown) {
+        bulkCloseHiddenRowsDropdown();
+        return;
+    }
+
+    // Create dropdown
+    const dropdown = document.createElement('div');
+    dropdown.className = 'hidden-rows-dropdown';
+
+    // Add individual row items
+    hiddenRowIndices.forEach(rowIdx => {
+        const item = document.createElement('div');
+        item.className = 'hidden-row-item';
+        item.innerHTML = `
+            <span class="row-label">Row ${rowIdx + 1}</span>
+            <button class="unhide-row-btn" onclick="event.stopPropagation(); bulkUnhideRow(${rowIdx})">Unhide</button>
+        `;
+        dropdown.appendChild(item);
+    });
+
+    // Add "Unhide All" button
+    const unhideAllBtn = document.createElement('button');
+    unhideAllBtn.className = 'unhide-all-btn';
+    unhideAllBtn.textContent = `Unhide All (${hiddenRowIndices.length})`;
+    unhideAllBtn.onclick = (e) => {
+        e.stopPropagation();
+        bulkUnhideAllRows();
+    };
+    dropdown.appendChild(unhideAllBtn);
+
+    // Position dropdown relative to clicked cell
+    const cell = event.currentTarget;
+    const rect = cell.getBoundingClientRect();
+
+    dropdown.style.position = 'fixed';
+    dropdown.style.top = `${rect.bottom + 4}px`;
+    dropdown.style.left = `${rect.left + rect.width / 2}px`;
+    dropdown.style.transform = 'translateX(-50%)';
+
+    document.body.appendChild(dropdown);
+    bulkState.activeHiddenRowsDropdown = dropdown;
+
+    // Close on outside click (delayed to avoid immediate close)
+    setTimeout(() => {
+        document.addEventListener('click', bulkHandleDropdownOutsideClick);
+    }, 0);
+}
+
+function bulkCloseHiddenRowsDropdown() {
+    if (bulkState.activeHiddenRowsDropdown) {
+        bulkState.activeHiddenRowsDropdown.remove();
+        bulkState.activeHiddenRowsDropdown = null;
+    }
+    document.removeEventListener('click', bulkHandleDropdownOutsideClick);
+}
+
+function bulkHandleDropdownOutsideClick(event) {
+    if (bulkState.activeHiddenRowsDropdown && !bulkState.activeHiddenRowsDropdown.contains(event.target)) {
+        bulkCloseHiddenRowsDropdown();
+    }
+}
+
+// =====================================================
+// BULK SEARCH — Phase 3c: Mapping Change Handlers
+// =====================================================
+
+function bulkOnRowInputChange() {
+    // Reset userHasResized when header/last row changes (re-enable auto-fit)
+    bulkState.userHasResized = false;
+
+    if (bulkState.fileRows && bulkState.fileRows.length > 0) {
+        bulkRenderSpreadsheetPreview();
+    }
+}
+
+function bulkOnMappingChange() {
+    if (bulkState.fileRows && bulkState.fileRows.length > 0) {
+        bulkRenderSpreadsheetPreview();
+    }
+    bulkUpdateParsedPreview();
+}
+
+function bulkResetColumnMappings() {
+    // Reset header/last row inputs
+    document.getElementById('bulkHeaderRowInput').value = '1';
+    document.getElementById('bulkLastRowInput').value = '';
+
+    // Reset all column dropdowns
+    bulkResetColumnDropdowns();
+
+    // Clear any active selection mode
+    bulkClearSelectionMode();
+
+    // Clear hidden columns and rows
+    bulkState.hiddenColumns.clear();
+    bulkState.hiddenRows.clear();
+
+    // Re-run column auto-detect if file is loaded
+    if (bulkState.fileRows && bulkState.fileRows.length > 0) {
+        bulkUpdateColumnSelectionDropdown(0);
+    }
+
+    // Re-render preview with fresh mappings
+    bulkRenderSpreadsheetPreview();
+    bulkUpdateParsedPreview();
+
+    console.log('[BulkSearch] Reset all column mappings');
+}
+
+// =====================================================
+// BULK SEARCH — Phase 3c: Apply Column Selection & Parsed Preview
+// =====================================================
+
+function bulkApplyColumnSelection() {
+    const columnSelect = document.getElementById('bulkColumnSelect');
+    const headerRowInput = document.getElementById('bulkHeaderRowInput');
+    const lastRowInput = document.getElementById('bulkLastRowInput');
+    const qtyColumnSelect = document.getElementById('bulkQtyColumnSelect');
+    const resellerPriceColumnSelect = document.getElementById('bulkResellerPriceColumnSelect');
+    const vpnColumnSelect = document.getElementById('bulkVpnColumnSelect');
+    const msrpColumnSelect = document.getElementById('bulkMsrpColumnSelect');
+
+    const selectedColumn = parseInt(columnSelect.value);
+    const headerRow = parseInt(headerRowInput.value) - 1 || 0;
+    const lastRow = lastRowInput.value ? parseInt(lastRowInput.value) : null;
+    const qtyColumn = qtyColumnSelect.value !== '' ? parseInt(qtyColumnSelect.value) : null;
+    const resellerPriceColumn = resellerPriceColumnSelect.value !== '' ? parseInt(resellerPriceColumnSelect.value) : null;
+    const vpnColumn = vpnColumnSelect.value !== '' ? parseInt(vpnColumnSelect.value) : null;
+    const msrpColumn = msrpColumnSelect.value !== '' ? parseInt(msrpColumnSelect.value) : null;
+
+    if (isNaN(selectedColumn) || !bulkState.fileRows) {
+        alert('Please select an MPN column');
+        return;
+    }
+
+    // Determine end row (exclusive)
+    const startRow = headerRow + 1;
+    const endRow = lastRow
+        ? Math.min(lastRow, bulkState.fileRows.length)
+        : bulkState.fileRows.length;
+
+    // Extract data from selected columns, starting after header row up to last row
+    const dataRows = bulkState.fileRows.slice(startRow, endRow);
+
+    // Build parsed data with MPN, qty, and reseller price
+    const parsedData = [];
+    const seenMpns = new Set();
+
+    dataRows.forEach((row, rowIndex) => {
+        // Skip hidden rows
+        const absoluteRowIndex = startRow + rowIndex;
+        if (bulkState.hiddenRows.has(absoluteRowIndex)) return;
+
+        const mpnRaw = row[selectedColumn];
+        if (!mpnRaw || !String(mpnRaw).trim()) return; // Skip empty rows
+
+        const mpn = bulkConvertSpacesToHash(mpnRaw).toUpperCase();
+        if (seenMpns.has(mpn)) return; // Skip duplicates
+        seenMpns.add(mpn);
+
+        // Get QTY from column if selected
+        let qty = 1;
+        if (qtyColumn !== null && row[qtyColumn]) {
+            const parsedQty = parseInt(row[qtyColumn]);
+            if (!isNaN(parsedQty) && parsedQty >= 1 && parsedQty <= 9999) {
+                qty = parsedQty;
+            }
+        }
+
+        // Get Reseller Price from column if selected
+        let resellerPrice = null;
+        if (resellerPriceColumn !== null && row[resellerPriceColumn]) {
+            const priceStr = String(row[resellerPriceColumn]).replace(/[$,]/g, '');
+            const parsedPrice = parseFloat(priceStr);
+            if (!isNaN(parsedPrice) && parsedPrice >= 0) {
+                resellerPrice = parsedPrice;
+            }
+        }
+
+        // Extract VPN from VPN column if set
+        let vpn = null;
+        if (vpnColumn !== null && row[vpnColumn] !== undefined && row[vpnColumn] !== null) {
+            const rawVpn = String(row[vpnColumn]).trim();
+            if (rawVpn) vpn = rawVpn;
+        }
+
+        // Extract MSRP from MSRP column if set
+        let msrp = null;
+        if (msrpColumn !== null && row[msrpColumn]) {
+            const msrpStr = String(row[msrpColumn]).replace(/[$,]/g, '');
+            const parsedMsrp = parseFloat(msrpStr);
+            if (!isNaN(parsedMsrp) && parsedMsrp >= 0) {
+                msrp = parsedMsrp;
+            }
+        }
+
+        parsedData.push({ mpn, vpn, qty, resellerPrice, msrp });
+    });
+
+    if (parsedData.length === 0) {
+        alert('No MPNs found in selected column');
+        return;
+    }
+
+    // Store parsed data with metadata for product generation
+    bulkState.parsedFileData = parsedData;
+
+    // Update parsedSkus for display (just the MPNs) — merge with paste SKUs, deduplicated
+    const newMpns = parsedData.map(d => d.mpn);
+    bulkState.parsedSkus = [...new Set([...bulkState.parsedSkus, ...newMpns])];
+    bulkUpdateParsedPreview();
+
+    // Show parsed row
+    const parsedRow = document.getElementById('bulkParsedRow');
+    if (parsedRow) parsedRow.style.display = '';
+
+    // Count hidden rows in range for logging
+    const hiddenInRange = [...bulkState.hiddenRows].filter(r => r >= startRow && r < endRow).length;
+    console.log(
+        `[BulkSearch] Parsed ${parsedData.length} MPNs from rows ${startRow + 1} to ${endRow}` +
+        (hiddenInRange > 0 ? ` (${hiddenInRange} hidden rows excluded)` : '') +
+        (vpnColumn !== null ? ', with VPN column' : '') +
+        (msrpColumn !== null ? ', with MSRP column' : '') +
+        (qtyColumn !== null ? ', with QTY column' : '') +
+        (resellerPriceColumn !== null ? ', with Reseller Price column' : '')
+    );
+}
+
+function bulkUpdateParsedPreview() {
+    const editableEl = document.getElementById('bulkParsedSkusEditable');
+    const countEl = document.getElementById('bulkParsedCount');
+
+    if (!editableEl || !countEl) return;
+
+    countEl.textContent = `${bulkState.parsedSkus.length} SKUs`;
+
+    // Display as comma-separated values in editable textarea
+    if (bulkState.parsedSkus.length === 0) {
+        editableEl.value = '';
+        editableEl.placeholder = 'No MPNs parsed yet - values will appear here comma-separated';
+    } else {
+        editableEl.value = bulkState.parsedSkus.join(', ');
+    }
+
+    // Show parsed row if there are SKUs to show
+    if (bulkState.parsedSkus.length > 0) {
+        const parsedRow = document.getElementById('bulkParsedRow');
+        if (parsedRow) parsedRow.style.display = '';
+    }
+}
+
+function bulkUpdateParsedFromEdit() {
+    const editableEl = document.getElementById('bulkParsedSkusEditable');
+    if (!editableEl) return;
+
+    const text = editableEl.value.trim();
+
+    if (!text) {
+        bulkState.parsedSkus = [];
+        bulkState.parsedFileData = null; // Clear file data when manually editing
+    } else {
+        // Parse comma-separated values, dedupe and clean
+        // Arrow MPNs contain spaces (e.g. "JL085A ABA") so don't split on spaces for Arrow
+        const splitPattern = state.currentDistributor === 'arrow'
+            ? /[,\t\n]+/
+            : /[,\s\t\n]+/;
+        bulkState.parsedSkus = [
+            ...new Set(
+                text
+                    .split(splitPattern)
+                    .map(s => s.trim().toUpperCase())
+                    .filter(s => s.length > 0)
+            )
+        ];
+        // Manual edits break the link to file data (qty/price will default)
+        // Only clear if user actually changed the content
+        if (bulkState.parsedFileData) {
+            const fileDataMpns = new Set(bulkState.parsedFileData.map(d => d.mpn));
+            // Check if sets are different
+            if (
+                bulkState.parsedSkus.length !== bulkState.parsedFileData.length ||
+                !bulkState.parsedSkus.every(mpn => fileDataMpns.has(mpn))
+            ) {
+                bulkState.parsedFileData = null;
+                console.log('[BulkSearch] Manual edit detected, file data cleared - qty/price will default');
+            }
+        }
+    }
+
+    // Update count only (don't rewrite the textarea while editing)
+    const countEl = document.getElementById('bulkParsedCount');
+    if (countEl) countEl.textContent = `${bulkState.parsedSkus.length} SKUs`;
 }
