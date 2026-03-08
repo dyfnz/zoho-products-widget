@@ -689,6 +689,54 @@
                         <div class="bulk-loading-spinner" id="bulkLoadingSpinner">
                             Processing file...
                         </div>
+
+                        <!-- Phase 5: Bulk Results Panel -->
+                        <div class="bulk-results-panel" id="bulkResultsPanel" style="display: none;">
+                            <div class="bulk-results-header">
+                                <div class="bulk-results-title">
+                                    <span class="bulk-results-title-text">Results</span>
+                                    <span class="bulk-results-count" id="bulkResultsCount">0 products</span>
+                                </div>
+                                <div class="bulk-mfr-badges" id="bulkMfrBadges"></div>
+                            </div>
+
+                            <div class="bulk-results-toolbar">
+                                <div class="bulk-results-toolbar-left">
+                                    <label class="bulk-results-select-all">
+                                        <input type="checkbox" id="bulkSelectAll" onchange="bulkToggleSelectAll()">
+                                        <span>Select All</span>
+                                    </label>
+                                </div>
+                                <button class="bulk-add-to-queue-btn" id="bulkAddToQueueBtn" onclick="bulkAddSelectedToQueue()" disabled>
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                        <path d="M12 5v14M5 12h14" />
+                                    </svg>
+                                    Add to Queue
+                                </button>
+                            </div>
+
+                            <div class="bulk-table-container" id="bulkTableContainer">
+                                <table class="bulk-data-table">
+                                    <thead>
+                                        <tr>
+                                            <th class="bulk-col-checkbox"></th>
+                                            <th class="bulk-col-part">Part Number</th>
+                                            <th class="bulk-col-desc">Description</th>
+                                            <th class="bulk-col-price" id="bulkProductsPriceHeader">MSRP</th>
+                                            <th class="bulk-col-action"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="bulkProductsBody"></tbody>
+                                </table>
+                                <div class="bulk-empty-state" id="bulkEmptyState">
+                                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <circle cx="11" cy="11" r="8"></circle>
+                                        <path d="M21 21l-4.35-4.35"></path>
+                                    </svg>
+                                    <p>Load products above to see results</p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

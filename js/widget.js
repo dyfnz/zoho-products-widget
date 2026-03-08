@@ -3718,6 +3718,10 @@ const bulkState = {
     products: [],
     unmatchedMpns: [],
     isLoading: false,
+    // Phase 5
+    selectedProductIndices: new Set(),
+    collapsedGroups: new Set(),
+    pricingMode: 'msrp',
 };
 
 const BULK_PREVIEW_MAX_ROWS = 50;
@@ -5150,7 +5154,8 @@ async function bulkLoadProducts() {
 
         console.log(`[BulkSearch] Loaded ${bulkState.products.length} products, ${bulkState.unmatchedMpns.length} unmatched`);
 
-        // NOTE: Phase 5 will add result rendering — for now results are stored in bulkState.products
+        // Phase 5: Render results
+        bulkDisplayResults();
 
     } catch (err) {
         console.error('[BulkSearch] RPC error:', err);
@@ -5222,6 +5227,12 @@ function bulkClearSearch() {
     bulkState.userManuallyZoomed = false;
     bulkState.userHasResized = false;
     bulkState.activeHiddenRowsDropdown = null;
+    bulkState.selectedProductIndices.clear();
+    bulkState.collapsedGroups.clear();
+
+    // Hide results panel
+    const resultsPanel = document.getElementById('bulkResultsPanel');
+    if (resultsPanel) resultsPanel.style.display = 'none';
 
     // Clear paste area
     const pasteArea = document.getElementById('bulkPasteArea');
@@ -5266,4 +5277,201 @@ function bulkClearSearch() {
     bulkUpdateParsedPreview();
 
     console.log('[BulkSearch] Cleared all bulk search state');
+}
+
+// =====================================================
+// BULK SEARCH — Phase 5: Results Rendering
+// =====================================================
+
+function bulkDisplayResults() {
+    const tbody = document.getElementById('bulkProductsBody');
+    const countEl = document.getElementById('bulkResultsCount');
+    const badgesEl = document.getElementById('bulkMfrBadges');
+    const emptyState = document.getElementById('bulkEmptyState');
+    const resultsPanel = document.getElementById('bulkResultsPanel');
+
+    const priceHeader = document.getElementById('bulkProductsPriceHeader');
+    if (priceHeader) {
+        priceHeader.textContent = bulkState.pricingMode === 'reseller' ? 'Reseller Price' : 'MSRP';
+    }
+
+    if (bulkState.products.length === 0) {
+        tbody.innerHTML = '';
+        countEl.textContent = '0 products';
+        badgesEl.innerHTML = '';
+        emptyState.style.display = 'flex';
+        resultsPanel.style.display = 'none';
+        return;
+    }
+
+    emptyState.style.display = 'none';
+    resultsPanel.style.display = '';
+    countEl.textContent = `${bulkState.products.length} product${bulkState.products.length !== 1 ? 's' : ''}`;
+
+    // Group by manufacturer
+    const grouped = {};
+    bulkState.products.forEach((p) => {
+        const mfr = p.manufacturer || 'Unknown';
+        if (!grouped[mfr]) grouped[mfr] = [];
+        grouped[mfr].push(p);
+    });
+
+    // Render manufacturer badges
+    const mfrList = Object.keys(grouped).sort();
+    badgesEl.innerHTML = mfrList
+        .map(mfr => `<span class="bulk-mfr-badge">${mfr}</span>`)
+        .join('');
+
+    // Render table with collapsible groups
+    let html = '';
+    mfrList.forEach(mfr => {
+        const products = grouped[mfr];
+        const isCollapsed = bulkState.collapsedGroups.has(mfr);
+
+        // Manufacturer group divider
+        html += `<tr><td class="bulk-mfr-group-divider ${isCollapsed ? 'bulk-collapsed' : ''}" data-mfr="${mfr}" onclick="bulkToggleGroup('${mfr.replace(/'/g, "\\'")}')">` +
+            `<svg class="bulk-collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>` +
+            `${mfr} <span class="bulk-mfr-group-count">${products.length} product${products.length !== 1 ? 's' : ''}</span>` +
+            `</td></tr>`;
+
+        // Product rows
+        products.forEach(p => {
+            const globalIdx = bulkState.products.indexOf(p);
+            const isSelected = bulkState.selectedProductIndices.has(globalIdx);
+            const hiddenClass = isCollapsed ? 'bulk-hidden' : '';
+            const escapedMfr = mfr.replace(/"/g, '&quot;');
+
+            if (p.not_found) {
+                html += `<tr class="bulk-product-row bulk-not-found ${hiddenClass}" data-index="${globalIdx}" data-mfr="${escapedMfr}">` +
+                    `<td class="bulk-col-checkbox"></td>` +
+                    `<td class="bulk-col-part">${p.mpn || ''}</td>` +
+                    `<td class="bulk-col-desc"><span class="bulk-not-found-badge">Not Found</span></td>` +
+                    `<td class="bulk-col-price">&mdash;</td>` +
+                    `<td class="bulk-col-action"></td></tr>`;
+            } else {
+                const price = bulkState.pricingMode === 'reseller' && p.resellerPrice != null ? p.resellerPrice : p.msrp;
+                html += `<tr class="bulk-product-row ${isSelected ? 'bulk-selected' : ''} ${hiddenClass}" data-index="${globalIdx}" data-mfr="${escapedMfr}">` +
+                    `<td class="bulk-col-checkbox"><input type="checkbox" ${isSelected ? 'checked' : ''} onchange="bulkToggleProductSelection(${globalIdx})"></td>` +
+                    `<td class="bulk-col-part">${p.mpn || ''}</td>` +
+                    `<td class="bulk-col-desc" title="${(p.description || '').replace(/"/g, '&quot;')}">${p.description || ''}</td>` +
+                    `<td class="bulk-col-price">${bulkFormatPrice(price)}</td>` +
+                    `<td class="bulk-col-action"><button class="bulk-info-btn" onclick="bulkShowProductInfo(${globalIdx})">i</button></td></tr>`;
+            }
+        });
+    });
+
+    tbody.innerHTML = html;
+    bulkUpdateResultsSelectionUI();
+}
+
+function bulkToggleGroup(mfr) {
+    if (bulkState.collapsedGroups.has(mfr)) {
+        bulkState.collapsedGroups.delete(mfr);
+    } else {
+        bulkState.collapsedGroups.add(mfr);
+    }
+
+    const divider = document.querySelector(`.bulk-mfr-group-divider[data-mfr="${mfr}"]`);
+    const rows = document.querySelectorAll(`.bulk-product-row[data-mfr="${mfr}"]`);
+
+    if (bulkState.collapsedGroups.has(mfr)) {
+        if (divider) divider.classList.add('bulk-collapsed');
+        rows.forEach(row => row.classList.add('bulk-hidden'));
+    } else {
+        if (divider) divider.classList.remove('bulk-collapsed');
+        rows.forEach(row => row.classList.remove('bulk-hidden'));
+    }
+}
+
+function bulkToggleProductSelection(index) {
+    if (bulkState.selectedProductIndices.has(index)) {
+        bulkState.selectedProductIndices.delete(index);
+    } else {
+        bulkState.selectedProductIndices.add(index);
+    }
+
+    const row = document.querySelector(`.bulk-product-row[data-index="${index}"]`);
+    if (row) {
+        row.classList.toggle('bulk-selected', bulkState.selectedProductIndices.has(index));
+    }
+
+    bulkUpdateResultsSelectionUI();
+}
+
+function bulkToggleSelectAll() {
+    const checkbox = document.getElementById('bulkSelectAll');
+
+    if (checkbox.checked) {
+        bulkState.products.forEach((p, i) => {
+            if (!p.not_found) bulkState.selectedProductIndices.add(i);
+        });
+    } else {
+        bulkState.selectedProductIndices.clear();
+    }
+
+    bulkDisplayResults();
+}
+
+function bulkUpdateResultsSelectionUI() {
+    const addBtn = document.getElementById('bulkAddToQueueBtn');
+    const selectAllCheckbox = document.getElementById('bulkSelectAll');
+    const selectableCount = bulkState.products.filter(p => !p.not_found).length;
+
+    if (addBtn) addBtn.disabled = bulkState.selectedProductIndices.size === 0;
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = bulkState.selectedProductIndices.size === selectableCount && selectableCount > 0;
+        selectAllCheckbox.indeterminate = bulkState.selectedProductIndices.size > 0 && bulkState.selectedProductIndices.size < selectableCount;
+    }
+}
+
+function bulkAddSelectedToQueue() {
+    const selected = [...bulkState.selectedProductIndices].map(i => bulkState.products[i]).filter(Boolean);
+
+    let added = 0;
+    let skipped = 0;
+    selected.forEach(p => {
+        if (!state.queuedProducts.find(q => q.mpn === p.mpn || q.vendorPartNumber === p.mpn)) {
+            state.queuedProducts.push({ ...p, vendorPartNumber: p.mpn });
+            added++;
+        } else {
+            skipped++;
+        }
+    });
+
+    bulkState.selectedProductIndices.clear();
+    bulkDisplayResults();
+    renderQueueItems();
+
+    if (skipped > 0 && added === 0) {
+        bulkShowToast('bulkQueueToast', 'All items already in queue', 'bulkResultsPanel');
+    } else if (skipped > 0) {
+        bulkShowToast('bulkQueueToast', `Added ${added} item${added !== 1 ? 's' : ''}, ${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped`, 'bulkResultsPanel');
+    } else if (added > 0) {
+        bulkShowToast('bulkQueueToast', `Added ${added} item${added !== 1 ? 's' : ''} to queue`, 'bulkResultsPanel');
+    }
+
+    console.log(`[BulkSearch] Added ${added} to queue, ${skipped} duplicates skipped`);
+}
+
+function bulkShowProductInfo(index) {
+    const product = bulkState.products[index];
+    if (product && !product.not_found) {
+        // Enrich with fields showProductDetails expects
+        const enriched = {
+            ...product,
+            vendorPartNumber: product.mpn,
+            _source: state.currentDistributor === 'tdsynnex' ? 'tdsynnex' : (state.currentDistributor === 'arrow' ? 'arrow' : 'ingram'),
+        };
+        // Temporarily place product into state.currentProducts so showProductDetails can find it
+        const tempIndex = state.currentProducts.length;
+        state.currentProducts.push(enriched);
+        showProductDetails(tempIndex);
+    }
+}
+
+function bulkFormatPrice(value) {
+    if (value === null || value === undefined || value === '') return '\u2014';
+    const num = parseFloat(value);
+    if (isNaN(num)) return '\u2014';
+    return '$' + num.toFixed(2);
 }
