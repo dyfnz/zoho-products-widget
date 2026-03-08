@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://live.zwidgets.com/js-sdk/1.2/ZohoEmbededAppSDK.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -504,7 +505,77 @@
                     </div>
                 </div>
                 <div class="bulk-search-content" id="bulkSearchContent" style="display: none;">
-                    <p style="padding: 20px; color: var(--color-text-muted);">Bulk search workspace — content will be added in Phase 2+</p>
+                    <!-- Bulk Search Panel (Phase 2) -->
+                    <div class="bulk-search-panel">
+                        <div class="bulk-panel-header">
+                            <div class="bulk-panel-title">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                    <polyline points="14 2 14 8 20 8"/>
+                                    <line x1="16" y1="13" x2="8" y2="13"/>
+                                    <line x1="16" y1="17" x2="8" y2="17"/>
+                                    <polyline points="10 9 9 9 8 9"/>
+                                </svg>
+                                Bulk SKU Lookup
+                            </div>
+                            <span class="bulk-info-badge" id="bulkDistributorBadge"></span>
+                        </div>
+
+                        <div class="input-zones-container">
+                            <!-- Column 1: File Drop Zone -->
+                            <div class="drop-zone-wrapper">
+                                <div class="drop-zone-panel">
+                                    <div class="drop-zone-panel-title">Distributor Quotes</div>
+                                    <div class="drop-zone" id="bulkDropZone" onclick="document.getElementById('bulkFileInput').click()">
+                                        <div class="drop-zone-icon">
+                                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                                <polyline points="17 8 12 3 7 8"/>
+                                                <line x1="12" y1="3" x2="12" y2="15"/>
+                                            </svg>
+                                        </div>
+                                        <div class="drop-zone-content">
+                                            <div class="drop-zone-title">Drop file here</div>
+                                            <div class="drop-zone-subtitle">or click to browse</div>
+                                        </div>
+                                        <div class="drop-zone-formats">
+                                            <div class="format-icon" title="Excel files (.xlsx, .xls)">
+                                                <svg width="20" height="24" viewBox="0 0 20 24" fill="none">
+                                                    <rect x="0.5" y="0.5" width="19" height="23" rx="2" stroke="currentColor" stroke-opacity="0.3"/>
+                                                    <text x="10" y="15" text-anchor="middle" fill="currentColor" font-size="7" font-weight="600" opacity="0.5">XLS</text>
+                                                </svg>
+                                            </div>
+                                            <div class="format-icon" title="CSV files (.csv)">
+                                                <svg width="20" height="24" viewBox="0 0 20 24" fill="none">
+                                                    <rect x="0.5" y="0.5" width="19" height="23" rx="2" stroke="currentColor" stroke-opacity="0.3"/>
+                                                    <text x="10" y="15" text-anchor="middle" fill="currentColor" font-size="7" font-weight="600" opacity="0.5">CSV</text>
+                                                </svg>
+                                            </div>
+                                        </div>
+                                        <div class="drop-zone-status" id="bulkDropZoneStatus"></div>
+                                    </div>
+                                    <input type="file" id="bulkFileInput" class="file-input-hidden" accept=".xlsx,.xls,.csv" onchange="bulkHandleFileSelect(event)">
+                                </div>
+                            </div>
+
+                            <!-- Column 2: Column Mappings (Phase 3 stub) -->
+                            <div class="mappings-panel disabled" id="bulkMappingsPanel">
+                                <div class="mappings-panel-title">Column Mappings</div>
+                                <p style="padding: 12px; color: var(--color-text-muted); font-size: var(--font-size-xs); text-align: center;">Upload a file to configure column mappings</p>
+                            </div>
+
+                            <!-- Column 3: Paste MPNs -->
+                            <div class="paste-section">
+                                <label class="paste-label" for="bulkPasteArea">Paste MPNs</label>
+                                <textarea class="paste-textarea" id="bulkPasteArea" placeholder="Paste part numbers here&#10;One per line or comma-separated" oninput="bulkParsePastedSKUs()"></textarea>
+                            </div>
+                        </div>
+
+                        <!-- Loading spinner for file parse -->
+                        <div class="bulk-loading-spinner" id="bulkLoadingSpinner">
+                            Processing file...
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

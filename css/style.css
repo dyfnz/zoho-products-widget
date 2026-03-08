@@ -2696,3 +2696,294 @@ button svg {
 }
 
 /* .single-search-panel — visibility wrapper for single-search mode (no special styles needed) */
+
+/* =====================================================
+   BULK SEARCH — File Upload & Drop Zone (Phase 2)
+   ===================================================== */
+
+/* Outer card */
+.bulk-search-panel {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    padding: var(--space-3);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--color-accent);
+}
+
+/* Panel header row */
+.bulk-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-2);
+}
+
+.bulk-panel-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--font-size-sm);
+    font-weight: 700;
+    color: var(--color-text);
+}
+
+.bulk-panel-title svg {
+    color: var(--color-accent);
+}
+
+.bulk-info-badge {
+    font-size: var(--font-size-2xs);
+    color: var(--color-text-muted);
+    background: var(--color-border-light);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+}
+
+/* TOP ROW: 3 equal columns (Drop | Mappings | Paste) */
+.input-zones-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+    min-height: 100px;
+}
+
+/* Responsive: stack columns when narrow */
+@media (max-width: 720px) {
+    .input-zones-container {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Column 1: Drop Zone wrapper */
+.drop-zone-wrapper {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+/* Drop zone panel — matches paste section styling */
+.drop-zone-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: var(--space-2);
+    background: var(--color-border-light);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+}
+
+.drop-zone-panel-title {
+    font-size: var(--font-size-2xs);
+    font-weight: 700;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: var(--space-1);
+}
+
+/* Drop zone interactive area */
+.drop-zone {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
+    padding: var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    text-align: center;
+}
+
+.drop-zone:hover,
+.drop-zone.dragover {
+    border-color: var(--color-accent);
+    background: var(--color-surface);
+}
+
+.drop-zone.dragover {
+    border-width: 2px;
+    box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.12);
+}
+
+.drop-zone.has-file {
+    border-color: var(--color-success);
+}
+
+.drop-zone-icon {
+    width: 24px;
+    height: 24px;
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+}
+
+.drop-zone:hover .drop-zone-icon,
+.drop-zone.dragover .drop-zone-icon {
+    color: var(--color-accent);
+}
+
+.drop-zone-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.drop-zone-title {
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.drop-zone-subtitle {
+    font-size: var(--font-size-2xs);
+    color: var(--color-text-muted);
+}
+
+/* File format icons */
+.drop-zone-formats {
+    display: flex;
+    gap: var(--space-3);
+    margin-top: var(--space-1);
+}
+
+.format-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-md);
+    transition: transform var(--transition-fast);
+    cursor: pointer;
+}
+
+.format-icon:hover {
+    transform: scale(1.08);
+}
+
+.format-icon svg {
+    width: 44px;
+    height: 44px;
+}
+
+/* Filename status — shown when file is loaded */
+.drop-zone-status {
+    font-size: var(--font-size-2xs);
+    font-weight: 600;
+    color: var(--color-success);
+    display: none;
+    max-width: 100%;
+    overflow-wrap: break-word;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.3;
+}
+
+.drop-zone.has-file .drop-zone-status {
+    display: block;
+}
+
+/* Hidden file input */
+.file-input-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+}
+
+/* Column 2: Mappings Panel — stub, grayed out for Phase 3 */
+.mappings-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-2);
+    background: var(--color-border-light);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+    opacity: 0.45;
+    pointer-events: none;
+    position: relative;
+}
+
+.mappings-panel-title {
+    font-size: var(--font-size-2xs);
+    font-weight: 700;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 2px;
+}
+
+/* Column 3: Paste Section */
+.paste-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: var(--space-2);
+    background: var(--color-border-light);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+}
+
+.paste-label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--font-size-2xs);
+    font-weight: 700;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: var(--space-1);
+}
+
+.paste-textarea {
+    flex: 1;
+    width: 100%;
+    min-height: 50px;
+    padding: var(--space-1);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    color: var(--color-text);
+    background: var(--color-surface);
+    resize: none;
+    transition: all var(--transition-fast);
+}
+
+.paste-textarea:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.12);
+}
+
+.paste-textarea::placeholder {
+    color: var(--color-text-muted);
+    font-family: var(--font-family);
+    font-size: var(--font-size-2xs);
+}
+
+/* Bulk loading spinner — hidden by default */
+.bulk-loading-spinner {
+    display: none;
+    text-align: center;
+    padding: var(--space-3);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+}
+
+.bulk-loading-spinner.visible {
+    display: block;
+}

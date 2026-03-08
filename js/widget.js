@@ -3701,8 +3701,11 @@ function showStatus(message, type) {
 // =====================================================
 
 const bulkState = {
-    // Phase 2+: file data, column mappings, parsed MPNs, results, etc.
     initialized: false,
+    workbook: null,
+    fileRows: [],
+    parsedSkus: [],
+    fileName: null,
 };
 
 function setSearchMode(mode) {
@@ -3723,6 +3726,17 @@ function setSearchMode(mode) {
     } else {
         singlePanel.style.display = 'none';
         bulkPanel.style.display = '';
+        // Lazy init drop zone on first bulk activation
+        if (!bulkState.initialized) {
+            bulkState.initialized = true;
+            bulkInitDropZone();
+        }
+        // Update distributor badge
+        const badge = document.getElementById('bulkDistributorBadge');
+        if (badge) {
+            const dist = DISTRIBUTORS[state.currentDistributor];
+            badge.textContent = dist ? dist.name : '';
+        }
     }
 }
 
@@ -3743,4 +3757,179 @@ function handleBulkBypassClick() {
     } else {
         bulkBypassTimer = setTimeout(() => { bulkBypassClicks = 0; }, 600);
     }
+}
+
+// =====================================================
+// BULK SEARCH — FILE & PASTE HANDLING (Phase 2d)
+// =====================================================
+
+/**
+ * Initialize drag/drop event listeners on the bulk drop zone.
+ * Called once lazily when bulk mode is first activated.
+ */
+function bulkInitDropZone() {
+    const dropZone = document.getElementById('bulkDropZone');
+    if (!dropZone) return;
+
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        dropZone.classList.add('dragover');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            const fileInput = document.getElementById('bulkFileInput');
+            if (fileInput) {
+                fileInput.files = files;
+                bulkHandleFileSelect({ target: fileInput });
+            }
+        }
+    });
+
+    console.log('[BulkSearch] Drop zone initialized');
+}
+
+/**
+ * Handle file selection for bulk search (file input or drag/drop).
+ * Reads the file with SheetJS and stores the workbook in bulkState.
+ */
+function bulkHandleFileSelect(event) {
+    const file = event.target.files ? event.target.files[0] : null;
+    if (!file) return;
+
+    const dropZone = document.getElementById('bulkDropZone');
+    const statusEl = document.getElementById('bulkDropZoneStatus');
+    const spinner = document.getElementById('bulkLoadingSpinner');
+
+    if (statusEl) {
+        statusEl.textContent = `Processing ${file.name}...`;
+        statusEl.style.color = 'var(--color-warning)';
+    }
+
+    // Show loading spinner
+    if (spinner) spinner.classList.add('visible');
+
+    const reader = new FileReader();
+
+    reader.onload = function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+
+            bulkState.workbook = workbook;
+            bulkState.fileName = file.name;
+
+            // Sheet selector (Phase 3 elements — guard since they don't exist yet)
+            const el = document.getElementById('bulkSheetSelect');
+            if (el) {
+                if (workbook.SheetNames.length > 1) {
+                    el.innerHTML = '';
+                    workbook.SheetNames.forEach((name, index) => {
+                        const option = document.createElement('option');
+                        option.value = index;
+                        option.textContent = name;
+                        el.appendChild(option);
+                    });
+                }
+            }
+
+            // Load first sheet by default
+            bulkLoadSheetData(0);
+
+            // Update drop zone UI on success
+            if (dropZone) dropZone.classList.add('has-file');
+            if (statusEl) {
+                statusEl.textContent = `${file.name} loaded`;
+                statusEl.style.color = 'var(--color-success)';
+            }
+
+            console.log(`[BulkSearch] Loaded ${workbook.SheetNames.length} sheet(s) from ${file.name}`);
+        } catch (err) {
+            console.error('[BulkSearch] Parse error:', err);
+            if (statusEl) {
+                statusEl.textContent = `Error: ${err.message}`;
+                statusEl.style.color = 'var(--color-error)';
+            }
+        } finally {
+            // Hide spinner regardless of outcome
+            if (spinner) spinner.classList.remove('visible');
+        }
+    };
+
+    reader.onerror = function() {
+        if (statusEl) {
+            statusEl.textContent = 'Error reading file';
+            statusEl.style.color = 'var(--color-error)';
+        }
+        if (spinner) spinner.classList.remove('visible');
+    };
+
+    reader.readAsArrayBuffer(file);
+}
+
+/**
+ * Load data from a specific sheet in the bulk workbook.
+ * Stores raw 2D array in bulkState.fileRows.
+ */
+function bulkLoadSheetData(sheetIndex) {
+    if (!bulkState.workbook) return;
+
+    const sheetName = bulkState.workbook.SheetNames[sheetIndex];
+    const worksheet = bulkState.workbook.Sheets[sheetName];
+
+    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+
+    if (rows.length === 0) {
+        console.warn('[BulkSearch] Empty sheet:', sheetName);
+        bulkState.fileRows = [];
+        return;
+    }
+
+    bulkState.fileRows = rows;
+    console.log(`[BulkSearch] Loaded ${rows.length} rows from sheet: ${sheetName}`);
+}
+
+/**
+ * Parse SKUs from the bulk paste textarea.
+ * Deduplicates and normalizes (spaces→# for non-Arrow distributors).
+ * Stores result in bulkState.parsedSkus.
+ */
+function bulkParsePastedSKUs() {
+    const textarea = document.getElementById('bulkPasteArea');
+    if (!textarea) return;
+
+    const text = textarea.value.trim();
+
+    if (!text) {
+        bulkState.parsedSkus = [];
+        console.log('[BulkSearch] Parsed 0 SKUs from paste (empty input)');
+        return;
+    }
+
+    const skus = text
+        .split(/\r?\n/)
+        .filter(line => line.trim().length > 0)
+        .flatMap(line => {
+            // For Arrow, keep spaces as-is; for others, convert spaces to #
+            const normalized = state.currentDistributor === 'arrow'
+                ? line.trim()
+                : line.trim().replace(/\s+/g, '#');
+            // Split on comma or tab (separators within a line)
+            return normalized.split(/[,\t]+/);
+        })
+        .map(s => s.trim().toUpperCase())
+        .filter(s => s.length > 0);
+
+    // Deduplicate
+    bulkState.parsedSkus = [...new Set(skus)];
+    console.log(`[BulkSearch] Parsed ${bulkState.parsedSkus.length} SKUs from paste`);
 }
