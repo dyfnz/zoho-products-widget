@@ -2108,7 +2108,7 @@ function renderQueueItems() {
         // Group products by manufacturer
         const groups = {};
         state.queuedProducts.forEach(product => {
-            const mfr = product.vendorName || state.manufacturer || 'Unknown';
+            const mfr = product.vendorName || product.manufacturer || state.manufacturer || 'Unknown';
             if (!groups[mfr]) {
                 groups[mfr] = [];
             }
