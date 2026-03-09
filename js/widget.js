@@ -3814,12 +3814,26 @@ function setSearchMode(mode) {
     // Close product details panel when switching modes
     hideProductDetails();
 
+    // Queue panel (#rightPanel) lives inside .single-search-panel > .panels-row.
+    // To keep it visible in bulk mode, we hide single-mode children selectively
+    // instead of hiding the entire .single-search-panel.
+    const contentWrapper = document.querySelector('.content-wrapper');
+
     if (mode === 'single') {
+        // Restore single-search-panel: show always-visible children, leave conditionally-hidden ones alone
+        singlePanel.querySelectorAll('#filterStatus, .left-panel').forEach(el => el.style.display = '');
         singlePanel.style.display = '';
         bulkPanel.style.display = 'none';
+        // Restore normal layout
+        contentWrapper.classList.remove('bulk-mode-active');
+        singlePanel.classList.remove('queue-only');
     } else {
-        singlePanel.style.display = 'none';
+        // Hide single-mode content but keep queue (.right-panel) visible
+        singlePanel.querySelectorAll('#filterStatus, .left-panel').forEach(el => el.style.display = 'none');
         bulkPanel.style.display = '';
+        // Activate flex row layout so bulk content + queue sit side by side
+        contentWrapper.classList.add('bulk-mode-active');
+        singlePanel.classList.add('queue-only');
         // Lazy init drop zone on first bulk activation
         if (!bulkState.initialized) {
             bulkState.initialized = true;

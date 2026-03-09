@@ -2821,6 +2821,36 @@ button svg {
     color: var(--color-text-inverse);
 }
 
+/* Bulk mode: flex row so bulk content + queue panel sit side by side */
+.content-wrapper.bulk-mode-active {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+}
+
+/* Product details panel spans full width below bulk content + queue */
+.content-wrapper.bulk-mode-active .details-panel {
+    order: 3;
+    width: 100%;
+}
+
+.content-wrapper.bulk-mode-active .bulk-search-panel-container {
+    flex: 1;
+    min-width: 0;
+    order: 1; /* Bulk content on the left */
+}
+
+/* When single-search-panel is in queue-only mode, collapse to just the queue width */
+.single-search-panel.queue-only {
+    width: auto;
+    flex-shrink: 0;
+    order: 2; /* Queue appears on the right side */
+}
+
+.single-search-panel.queue-only .panels-row {
+    margin-bottom: 0;
+}
+
 .bulk-search-panel-container {
     padding: var(--space-4);
 }
