@@ -1317,6 +1317,43 @@ button svg {
     border-bottom: 1px solid var(--color-border);
 }
 
+.queue-options-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.pricing-toggle {
+    display: flex;
+    gap: 2px;
+    font-size: var(--font-size-2xs);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 1px;
+}
+
+.pricing-toggle-btn {
+    padding: 2px 6px;
+    background: transparent;
+    border: none;
+    border-radius: 2px;
+    font-size: var(--font-size-2xs);
+    font-weight: 600;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.pricing-toggle-btn:hover {
+    color: var(--color-text-secondary);
+}
+
+.pricing-toggle-btn.active {
+    background: var(--color-accent);
+    color: var(--color-text-inverse);
+}
+
 .toggle-label {
     display: flex;
     align-items: center;
@@ -1393,6 +1430,7 @@ button svg {
     margin-bottom: 4px;
     cursor: grab;
     transition: all var(--transition-fast);
+    position: relative;
 }
 
 .queue-item:hover {
@@ -1418,6 +1456,31 @@ button svg {
 .queue-item-drag svg {
     width: 9px;
     height: 9px;
+}
+
+.queue-item-qty {
+    width: 38px;
+    padding: 2px 4px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-size: var(--font-size-2xs);
+    text-align: center;
+    flex-shrink: 0;
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+.queue-item-qty:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.2);
+}
+
+.queue-item-qty::-webkit-inner-spin-button,
+.queue-item-qty::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
 }
 
 .queue-item-info {
@@ -1496,6 +1559,70 @@ button svg {
     color: var(--color-text-inverse);
 }
 
+/* Queue Item Tooltip */
+.queue-item-tooltip {
+    display: none;
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--color-primary-dark);
+    color: var(--color-text-inverse);
+    padding: var(--space-2);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-2xs);
+    white-space: normal;
+    width: max-content;
+    max-width: 280px;
+    z-index: 100;
+    box-shadow: var(--shadow-lg);
+    margin-bottom: 6px;
+    pointer-events: none;
+}
+
+.queue-item-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: var(--color-primary-dark);
+}
+
+.queue-item:hover .queue-item-tooltip {
+    display: block;
+}
+
+.tooltip-desc {
+    font-weight: 500;
+    margin-bottom: 6px;
+    line-height: 1.4;
+}
+
+.tooltip-prices {
+    display: flex;
+    gap: var(--space-3);
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    padding-top: 6px;
+}
+
+.tooltip-price-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.tooltip-price-label {
+    font-size: var(--font-size-2xs);
+    opacity: 0.6;
+    text-transform: uppercase;
+}
+
+.tooltip-price-value {
+    font-weight: 700;
+    color: var(--color-success-light);
+}
+
 /* Manufacturer Group Divider */
 .queue-mfr-group {
     padding: 4px 6px;
@@ -1525,6 +1652,40 @@ button svg {
     opacity: 0.6;
     transform: scale(1.02);
     box-shadow: var(--shadow-md);
+}
+
+.queue-totals {
+    display: flex;
+    justify-content: space-between;
+    padding: var(--space-3) 16px;
+    background: var(--color-primary-light);
+    color: var(--color-text-inverse);
+    font-size: var(--font-size-xs);
+    border-top: 1px solid var(--color-border);
+}
+
+.queue-totals-item {
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+}
+
+.queue-totals-label {
+    font-size: var(--font-size-2xs);
+    font-weight: 500;
+    opacity: 0.7;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 2px;
+}
+
+.queue-totals-value {
+    font-size: var(--font-size-sm);
+    font-weight: 700;
+}
+
+.queue-totals-value.price {
+    color: var(--color-success-light);
 }
 
 .queue-footer {

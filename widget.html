@@ -248,10 +248,16 @@
 
                         <!-- Group Toggle -->
                         <div class="queue-options" id="queueOptions" style="display: none;">
-                            <label class="toggle-label">
-                                <input type="checkbox" id="groupByMfr" onchange="toggleGroupByManufacturer()">
-                                <span class="toggle-text">Group by Manufacturer</span>
-                            </label>
+                            <div class="queue-options-row">
+                                <label class="toggle-label">
+                                    <input type="checkbox" id="groupByMfr" onchange="toggleGroupByManufacturer()">
+                                    <span class="toggle-text">Group by Manufacturer</span>
+                                </label>
+                                <div class="pricing-toggle" id="pricingToggle">
+                                    <button class="pricing-toggle-btn" data-price="msrp" onclick="setPricingMode('msrp')">MSRP</button>
+                                    <button class="pricing-toggle-btn active" data-price="reseller" onclick="setPricingMode('reseller')">Reseller</button>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="queue-empty" id="queueEmpty">
@@ -271,6 +277,17 @@
                                 Drag to reorder
                             </div>
                             <ul id="queueItems"></ul>
+                        </div>
+
+                        <div class="queue-totals" id="queueTotals" style="display: none;">
+                            <div class="queue-totals-item">
+                                <span class="queue-totals-label">Total QTY</span>
+                                <span class="queue-totals-value" id="totalQty">0</span>
+                            </div>
+                            <div class="queue-totals-item">
+                                <span class="queue-totals-label" id="totalPriceLabel">Total Reseller</span>
+                                <span class="queue-totals-value price" id="totalPrice">$0.00</span>
+                            </div>
                         </div>
 
                         <div class="queue-footer" id="queueFooter" style="display: none;">

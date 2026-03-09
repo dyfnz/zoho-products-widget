@@ -67,6 +67,7 @@ const state = {
     selectedProducts: new Map(),
     queuedProducts: [],
     groupByManufacturer: true,
+    pricingMode: 'reseller',
     isAuthenticated: false,
     pendingResponseId: null,
     parentContext: null,
@@ -514,6 +515,13 @@ function toggleGroupByManufacturer() {
     const checkbox = document.getElementById('groupByMfr');
     state.groupByManufacturer = checkbox ? checkbox.checked : false;
     renderQueueItems();
+}
+
+function setPricingMode(mode) {
+    state.pricingMode = mode;
+    document.querySelectorAll('.pricing-toggle-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.price === mode));
+    updateQueueUI();
+    updateQueueTotals();
 }
 
 // =====================================================
@@ -1991,6 +1999,18 @@ function addSelectedToQueue() {
     }
 }
 
+function updateQueueItemQty(mpn, value) {
+    const product = state.queuedProducts.find(p =>
+        (p.ingramPartNumber || p.vendorPartNumber) === mpn
+    );
+    if (!product) return;
+    let qty = parseInt(value, 10);
+    if (isNaN(qty) || qty < 1) qty = 1;
+    if (qty > 9999) qty = 9999;
+    product.qty = qty;
+    try { if (typeof updateQueueTotals === 'function') updateQueueTotals(); } catch (e) { /* Task 4 */ }
+}
+
 function removeFromQueue(partNumber) {
     state.queuedProducts = state.queuedProducts.filter(p =>
         (p.ingramPartNumber || p.vendorPartNumber) !== partNumber
@@ -2027,6 +2047,27 @@ function clearQueue() {
     showStatus('Queue cleared', 'info');
 }
 
+function updateQueueTotals() {
+    const totalQtyEl = document.getElementById('totalQty');
+    const totalPriceEl = document.getElementById('totalPrice');
+    const totalPriceLabelEl = document.getElementById('totalPriceLabel');
+    if (!totalQtyEl || !totalPriceEl) return;
+
+    const totalQty = state.queuedProducts.reduce((sum, item) => sum + (item.qty || 1), 0);
+
+    const totalPrice = state.queuedProducts.reduce((sum, item) => {
+        const qty = item.qty || 1;
+        const msrp = item.pricingData?.pricing?.retailPrice || item.retailPrice || item.msrp || 0;
+        const resellerPrice = item.resellerPrice || item.pricingData?.pricing?.customerPrice || null;
+        const price = (state.pricingMode === 'reseller' && resellerPrice !== null) ? resellerPrice : msrp;
+        return sum + (qty * price);
+    }, 0);
+
+    totalQtyEl.textContent = totalQty.toLocaleString();
+    totalPriceEl.textContent = '$' + totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    totalPriceLabelEl.textContent = state.pricingMode === 'reseller' ? 'Total Reseller' : 'Total MSRP';
+}
+
 function updateQueueUI() {
     const queueCount = state.queuedProducts.length;
 
@@ -2037,6 +2078,7 @@ function updateQueueUI() {
     const queueFooter = document.getElementById('queueFooter');
     const clearQueueBtn = document.getElementById('clearQueueBtn');
     const queueOptions = document.getElementById('queueOptions');
+    const queueTotals = document.getElementById('queueTotals');
 
     if (queueCount === 0) {
         queueEmpty.style.display = 'flex';
@@ -2044,14 +2086,17 @@ function updateQueueUI() {
         queueFooter.style.display = 'none';
         clearQueueBtn.style.display = 'none';
         if (queueOptions) queueOptions.style.display = 'none';
+        if (queueTotals) queueTotals.style.display = 'none';
     } else {
         queueEmpty.style.display = 'none';
         queueList.style.display = 'block';
         queueFooter.style.display = 'block';
         clearQueueBtn.style.display = 'block';
         if (queueOptions) queueOptions.style.display = 'block';
+        if (queueTotals) queueTotals.style.display = 'flex';
 
         renderQueueItems();
+        updateQueueTotals();
     }
 }
 
@@ -2095,9 +2140,11 @@ function renderQueueItems() {
 
 function createQueueItemElement(product, index) {
     const partNumber = product.ingramPartNumber || product.vendorPartNumber;
-    const msrp = product.pricingData?.pricing?.retailPrice || product.retailPrice;
-    const msrpDisplay = msrp
-        ? `$${msrp.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    const msrp = product.pricingData?.pricing?.retailPrice || product.retailPrice || product.msrp;
+    const resellerPrice = product.resellerPrice || product.pricingData?.pricing?.customerPrice || null;
+    const displayPrice = (state.pricingMode === 'reseller' && resellerPrice !== null) ? resellerPrice : msrp;
+    const msrpDisplay = displayPrice
+        ? `$${displayPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         : '-';
 
     const li = document.createElement('li');
@@ -2106,14 +2153,39 @@ function createQueueItemElement(product, index) {
     li.dataset.partNumber = partNumber;
     li.dataset.index = index;
 
+    // Tooltip data
+    const description = product.description || product.descriptionLine || '';
+    const tooltipMsrp = msrp
+        ? `$${Number(msrp).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : '-';
+    const tooltipReseller = resellerPrice
+        ? `$${Number(resellerPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : 'N/A';
+
     // Minimal: drag handle, part number, price, remove button
     li.innerHTML = `
+        <div class="queue-item-tooltip">
+            <div class="tooltip-desc">${description}</div>
+            <div class="tooltip-prices">
+                <div class="tooltip-price-item">
+                    <span class="tooltip-price-label">MSRP</span>
+                    <span class="tooltip-price-value">${tooltipMsrp}</span>
+                </div>
+                <div class="tooltip-price-item">
+                    <span class="tooltip-price-label">Reseller</span>
+                    <span class="tooltip-price-value">${tooltipReseller}</span>
+                </div>
+            </div>
+        </div>
         <div class="queue-item-drag">
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/>
                 <circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>
             </svg>
         </div>
+        <input type="number" class="queue-item-qty" value="${product.qty || 1}" min="1" max="9999"
+               onchange="updateQueueItemQty('${partNumber.replace(/'/g, "\\'")}', this.value)"
+               onclick="event.stopPropagation()">
         <div class="queue-item-info">
             <div class="queue-item-part">${product.vendorPartNumber || '-'}</div>
         </div>
@@ -3738,6 +3810,9 @@ function setSearchMode(mode) {
     modeBtns.forEach(btn => {
         btn.classList.toggle('active', btn.dataset.mode === mode);
     });
+
+    // Close product details panel when switching modes
+    hideProductDetails();
 
     if (mode === 'single') {
         singlePanel.style.display = '';
