@@ -3948,22 +3948,27 @@ function setSearchMode(mode) {
     updateQueueUI();
 }
 
-// Admin bypass: triple-click the clock icon in Coming Soon to unlock bulk content
+// Admin bypass: triple-click the Bulk mode button to unlock bulk mode
 let bulkBypassClicks = 0;
 let bulkBypassTimer = null;
 
-function handleBulkBypassClick() {
+function handleBulkModeClick() {
+    if (state.bulkAdminBypass) {
+        // Already unlocked — switch to bulk mode normally
+        setSearchMode('bulk');
+        return;
+    }
+
     bulkBypassClicks++;
     clearTimeout(bulkBypassTimer);
 
     if (bulkBypassClicks >= 3) {
         state.bulkAdminBypass = true;
-        document.getElementById('bulkComingSoon').style.display = 'none';
-        document.getElementById('bulkSearchContent').style.display = '';
         bulkBypassClicks = 0;
-        console.log('[BulkSearch] Admin bypass activated');
+        console.log('[BulkSearch] Admin bypass activated via Bulk button');
+        setSearchMode('bulk');
     } else {
-        bulkBypassTimer = setTimeout(() => { bulkBypassClicks = 0; }, 600);
+        bulkBypassTimer = setTimeout(() => { bulkBypassClicks = 0; }, 1000);
     }
 }
 

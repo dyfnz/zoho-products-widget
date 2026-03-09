@@ -26,7 +26,7 @@
             <!-- Mode Toggle -->
             <div class="mode-toggle">
                 <button class="mode-btn active" data-mode="single" onclick="setSearchMode('single')">Single</button>
-                <button class="mode-btn" data-mode="bulk" onclick="setSearchMode('bulk')">Bulk</button>
+                <button class="mode-btn" data-mode="bulk" onclick="handleBulkModeClick()">Bulk</button>
             </div>
             <div class="distributor-tabs">
                 <button class="tab-btn active" data-distributor="ingram" onclick="selectDistributor('ingram')">
@@ -511,17 +511,7 @@
             </div><!-- /.single-search-panel -->
             <!-- Bulk Search Panel (Phase 1 - Coming Soon) -->
             <div class="bulk-search-panel-container" style="display: none;">
-                <div class="bulk-coming-soon" id="bulkComingSoon">
-                    <div class="coming-soon-content">
-                        <svg onclick="handleBulkBypassClick()" style="cursor: default;" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <circle cx="12" cy="12" r="10"/>
-                            <path d="M12 8v4l3 3"/>
-                        </svg>
-                        <h3>Bulk Search</h3>
-                        <p>Coming Soon</p>
-                    </div>
-                </div>
-                <div class="bulk-search-content" id="bulkSearchContent" style="display: none;">
+                <div class="bulk-search-content" id="bulkSearchContent">
                     <!-- Bulk Search Panel (Phase 2) -->
                     <div class="bulk-search-panel">
                         <div class="bulk-panel-header">
