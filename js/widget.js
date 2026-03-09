@@ -3007,8 +3007,8 @@ async function submitQueue() {
                 Manufacturer: normalizedMfr,
                 TDSynnex_SKU: product.tdSynnexSkuNumber || '',
                 MSRP: msrp,
-                // Customer_Price MUST be per-unit cost — Zoho multiplies by Quantity internally
-                Customer_Price: pricingData?.pricing?.customerPrice || product.contractPrice || product.unitCost || null,
+                // Customer_Price MUST match what the queue displays as reseller price — no transformation
+                Customer_Price: product.resellerPrice || pricingData?.pricing?.customerPrice || product.contractPrice || product.unitCost || null,
                 Category_Level_1: product.category || state.category || '',
                 Category_Level_2: product.subCategory || state.subcategory || '',
                 Category_Level_3: product.cat3 || state.cat3 || '',
@@ -3032,8 +3032,8 @@ async function submitQueue() {
                 Arrow_Category: product.category || state.category || '',
                 Arrow_Subcategory: product.subCategory || state.subcategory || '',
                 MSRP: msrp,
-                // Customer_Price MUST be per-unit cost — Zoho multiplies by Quantity internally
-                Customer_Price: pricingData?.pricing?.customerPrice || product.unitCost || null,
+                // Customer_Price MUST match what the queue displays as reseller price — no transformation
+                Customer_Price: product.resellerPrice || pricingData?.pricing?.customerPrice || product.unitCost || null,
                 Description: product.description || '',
                 Last_Sync_Source: 'Arrow',
                 Quantity: product.qty || 1
@@ -3047,8 +3047,8 @@ async function submitQueue() {
             Manufacturer: normalizedMfr,
             Ingram_Micro_SKU: product.ingramPartNumber || '',
             MSRP: msrp,
-            // Customer_Price MUST be per-unit cost — Zoho multiplies by Quantity internally
-            Customer_Price: pricingData?.pricing?.customerPrice || null,
+            // Customer_Price MUST match what the queue displays as reseller price — no transformation
+            Customer_Price: product.resellerPrice || pricingData?.pricing?.customerPrice || null,
             Category: product.category || state.category || '',
             Subcategory: product.subCategory || state.subcategory || '',
             UPC: pricingData?.upc || product.upcCode || '',
