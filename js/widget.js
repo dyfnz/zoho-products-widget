@@ -2135,8 +2135,8 @@ function renderQueueItems() {
             groups[mfr].push(product);
         });
 
-        // Render grouped
-        Object.keys(groups).sort().forEach(mfr => {
+        // Render grouped (preserve insertion order, not alphabetical)
+        Object.keys(groups).forEach(mfr => {
             // Add manufacturer header (draggable)
             const header = document.createElement('div');
             header.className = 'queue-mfr-group';
@@ -3007,6 +3007,7 @@ async function submitQueue() {
                 Manufacturer: normalizedMfr,
                 TDSynnex_SKU: product.tdSynnexSkuNumber || '',
                 MSRP: msrp,
+                // Customer_Price MUST be per-unit cost — Zoho multiplies by Quantity internally
                 Customer_Price: pricingData?.pricing?.customerPrice || product.contractPrice || product.unitCost || null,
                 Category_Level_1: product.category || state.category || '',
                 Category_Level_2: product.subCategory || state.subcategory || '',
@@ -3031,6 +3032,7 @@ async function submitQueue() {
                 Arrow_Category: product.category || state.category || '',
                 Arrow_Subcategory: product.subCategory || state.subcategory || '',
                 MSRP: msrp,
+                // Customer_Price MUST be per-unit cost — Zoho multiplies by Quantity internally
                 Customer_Price: pricingData?.pricing?.customerPrice || product.unitCost || null,
                 Description: product.description || '',
                 Last_Sync_Source: 'Arrow',
@@ -3045,6 +3047,7 @@ async function submitQueue() {
             Manufacturer: normalizedMfr,
             Ingram_Micro_SKU: product.ingramPartNumber || '',
             MSRP: msrp,
+            // Customer_Price MUST be per-unit cost — Zoho multiplies by Quantity internally
             Customer_Price: pricingData?.pricing?.customerPrice || null,
             Category: product.category || state.category || '',
             Subcategory: product.subCategory || state.subcategory || '',
@@ -5337,6 +5340,19 @@ async function bulkLoadProducts() {
             });
         }
 
+        // Restore original spreadsheet order (RPC results may arrive in any order)
+        if (bulkState.parsedFileData && bulkState.parsedFileData.length > 0) {
+            const orderMap = new Map();
+            bulkState.parsedFileData.forEach((item, index) => {
+                orderMap.set(item.mpn.trim().toUpperCase(), index);
+            });
+            bulkState.products.sort((a, b) => {
+                const orderA = orderMap.get((a.mpn || '').toUpperCase());
+                const orderB = orderMap.get((b.mpn || '').toUpperCase());
+                return (orderA !== undefined ? orderA : 999999) - (orderB !== undefined ? orderB : 999999);
+            });
+        }
+
         // Identify unmatched MPNs
         const matchedMpns = new Set(bulkState.products.map(p => p.mpn.toUpperCase()));
         bulkState.unmatchedMpns = uniqueMpns.filter(m => !matchedMpns.has(m));
@@ -5513,8 +5529,8 @@ function bulkDisplayResults() {
         grouped[mfr].push(p);
     });
 
-    // Render manufacturer badges
-    const mfrList = Object.keys(grouped).sort();
+    // Render manufacturer badges (ordered by first appearance in spreadsheet)
+    const mfrList = Object.keys(grouped);
     badgesEl.innerHTML = mfrList
         .map(mfr => `<span class="bulk-mfr-badge">${mfr}</span>`)
         .join('');
@@ -5616,7 +5632,7 @@ function bulkUpdateResultsSelectionUI() {
 }
 
 function bulkAddSelectedToQueue() {
-    const selected = [...bulkState.selectedProductIndices].map(i => bulkState.products[i]).filter(Boolean);
+    const selected = [...bulkState.selectedProductIndices].sort((a, b) => a - b).map(i => bulkState.products[i]).filter(Boolean);
 
     let added = 0;
     let skipped = 0;
