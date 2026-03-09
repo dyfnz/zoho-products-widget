@@ -486,7 +486,7 @@ function reorderByGroups() {
     const newOrder = [];
     mfrOrder.forEach(mfr => {
         state.queuedProducts
-            .filter(p => (p.vendorName || state.manufacturer || 'Unknown') === mfr)
+            .filter(p => (p.vendorName || p.manufacturer || 'Unknown') === mfr)
             .forEach(p => newOrder.push(p));
     });
 
@@ -2108,7 +2108,7 @@ function renderQueueItems() {
         // Group products by manufacturer
         const groups = {};
         state.queuedProducts.forEach(product => {
-            const mfr = product.vendorName || product.manufacturer || state.manufacturer || 'Unknown';
+            const mfr = product.vendorName || product.manufacturer || 'Unknown';
             if (!groups[mfr]) {
                 groups[mfr] = [];
             }
@@ -2834,7 +2834,7 @@ async function submitQueue() {
     // Step 1: Extract unique manufacturers from queued products
     const uniqueManufacturers = new Map();
     for (const product of state.queuedProducts) {
-        const mfr = product.vendorName || state.manufacturer;
+        const mfr = product.vendorName || product.manufacturer;
         const distributor = product._source === 'tdsynnex' ? 'tdsynnex' : product._source === 'arrow' ? 'arrow' : 'ingram';
         if (mfr && !uniqueManufacturers.has(mfr)) {
             uniqueManufacturers.set(mfr, distributor);
@@ -2910,7 +2910,7 @@ async function submitQueue() {
     const formattedProducts = state.queuedProducts.map(product => {
         const pricingData = product.pricingData || state.pricingData?.[product.ingramPartNumber] || {};
         const msrp = pricingData?.pricing?.retailPrice || product.retailPrice || null;
-        const originalMfr = product.vendorName || state.manufacturer;
+        const originalMfr = product.vendorName || product.manufacturer;
         const normalizedMfr = normalizedMap.get(originalMfr) || originalMfr;
 
         // Defensive check: Track products with missing manufacturer
