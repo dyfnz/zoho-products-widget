@@ -2958,6 +2958,13 @@ async function submitQueue() {
                 if (!mapped.resellerPrice && raw) {
                     mapped.resellerPrice = parseFloat(raw.contract_price || raw.reseller_price || raw.customer_price || raw.unit_cost) || null;
                 }
+                // Overlay spreadsheet MSRP so it flows through to Zoho
+                if (product.msrp !== null && product.msrp !== undefined) {
+                    mapped.retailPrice = product.msrp;
+                    if (mapped.pricingData && mapped.pricingData.pricing) {
+                        mapped.pricingData.pricing.retailPrice = product.msrp;
+                    }
+                }
                 return mapped;
             } else {
                 // Fallback: build minimal shape from bulk fields
