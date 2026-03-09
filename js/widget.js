@@ -5539,7 +5539,7 @@ function bulkAddSelectedToQueue() {
 
     bulkState.selectedProductIndices.clear();
     bulkDisplayResults();
-    renderQueueItems();
+    updateQueueUI();
 
     if (skipped > 0 && added === 0) {
         bulkShowToast('bulkQueueToast', 'All items already in queue', 'bulkResultsPanel');
