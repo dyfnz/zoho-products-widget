@@ -2925,9 +2925,62 @@ async function submitQueue() {
     // Step 5: Format products with normalized manufacturers
     showStatus('Preparing products for submission...', 'loading');
 
+    // Normalize bulk products to single-mode shape for formatting
+    let productsToFormat = getActiveQueue();
+    if (state.searchMode === 'bulk') {
+        productsToFormat = productsToFormat.map(product => {
+            const raw = product._rawRpcRow;
+            const dist = product._source || state.currentDistributor;
+
+            if (raw) {
+                // Use existing mappers to get single-mode shape
+                let mapped;
+                switch (dist) {
+                    case 'tdsynnex': mapped = mapTDSynnexProduct(raw); break;
+                    case 'arrow': mapped = mapArrowProduct(raw); break;
+                    default: mapped = {
+                        ingramPartNumber: raw.ingram_part_number || '',
+                        vendorPartNumber: raw.vendor_part_number || raw.manufacturer_part_number || '',
+                        vendorName: raw.manufacturer || raw.vendor_name || '',
+                        description: raw.description_line_1 || raw.description || '',
+                        category: raw.category || '',
+                        subCategory: raw.subcategory || '',
+                        retailPrice: parseFloat(raw.retail_price) || 0,
+                        pricingData: { pricing: { retailPrice: parseFloat(raw.retail_price) || 0, customerPrice: parseFloat(raw.customer_price) || null } },
+                        upcCode: raw.upc || '',
+                        productType: raw.im_product_type || '',
+                        _source: 'ingram'
+                    };
+                }
+                mapped.qty = product.qty || 1;
+                mapped.resellerPrice = product.resellerPrice || null;
+                // For mapped products, ensure resellerPrice is accessible for the formatter
+                if (!mapped.resellerPrice && raw) {
+                    mapped.resellerPrice = parseFloat(raw.contract_price || raw.reseller_price || raw.customer_price || raw.unit_cost) || null;
+                }
+                return mapped;
+            } else {
+                // Fallback: build minimal shape from bulk fields
+                return {
+                    vendorPartNumber: product.mpn || product.vendorPartNumber || '',
+                    vendorName: product.manufacturer || '',
+                    description: product.description || '',
+                    retailPrice: product.msrp || 0,
+                    pricingData: { pricing: { retailPrice: product.msrp, customerPrice: product.resellerPrice } },
+                    resellerPrice: product.resellerPrice || null,
+                    _source: product._source || state.currentDistributor,
+                    qty: product.qty || 1,
+                    ...(dist === 'ingram' && { ingramPartNumber: product.vpn || '' }),
+                    ...(dist === 'tdsynnex' && { tdSynnexSkuNumber: product.vpn || '', distributorPartNumber: product.vpn || '' }),
+                    ...(dist === 'arrow' && { distributorPartNumber: product.vpn || '' }),
+                };
+            }
+        });
+    }
+
     const productsWithMissingMfr = [];
 
-    const formattedProducts = getActiveQueue().map(product => {
+    const formattedProducts = productsToFormat.map(product => {
         const pricingData = product.pricingData || state.pricingData?.[product.ingramPartNumber] || {};
         const msrp = pricingData?.pricing?.retailPrice || product.retailPrice || null;
         const originalMfr = product.vendorName || product.manufacturer;
@@ -2954,7 +3007,7 @@ async function submitQueue() {
                 Manufacturer: normalizedMfr,
                 TDSynnex_SKU: product.tdSynnexSkuNumber || '',
                 MSRP: msrp,
-                Customer_Price: pricingData?.pricing?.customerPrice || product.contract_price || product.unit_cost || null,
+                Customer_Price: pricingData?.pricing?.customerPrice || product.contractPrice || product.unitCost || null,
                 Category_Level_1: product.category || state.category || '',
                 Category_Level_2: product.subCategory || state.subcategory || '',
                 Category_Level_3: product.cat3 || state.cat3 || '',
@@ -2963,7 +3016,7 @@ async function submitQueue() {
                 Last_Sync_Source: 'TD SYNNEX',
                 UNSPSC_Commodity: product.commodityName || '',
                 Kit_or_Standalone: product.kitStandaloneFlag === 'K' ? 'Yes' : 'No',
-                Quantity: 1
+                Quantity: product.qty || 1
             };
         }
 
@@ -2981,7 +3034,7 @@ async function submitQueue() {
                 Customer_Price: pricingData?.pricing?.customerPrice || product.unitCost || null,
                 Description: product.description || '',
                 Last_Sync_Source: 'Arrow',
-                Quantity: 1
+                Quantity: product.qty || 1
             };
         }
 
@@ -3000,7 +3053,7 @@ async function submitQueue() {
             Last_Sync_Source: 'Ingram Micro',
             IM_Product_Type: product.productType || '',
             Kit_or_Standalone: pricingData?.bundlePartIndicator ? 'Yes' : 'No',
-            Quantity: 1
+            Quantity: product.qty || 1
         };
     });
 
@@ -5130,6 +5183,7 @@ function bulkMapRpcRowToProduct(row, distributor) {
                 msrp: parseFloat(row.retail_price) || 0,
                 resellerPrice: parseFloat(row.customer_price) || 0,
                 category: row.category || '',
+                _source: 'ingram',
             };
         case 'tdsynnex':
             return {
@@ -5140,6 +5194,7 @@ function bulkMapRpcRowToProduct(row, distributor) {
                 msrp: parseFloat(row.msrp) || 0,
                 resellerPrice: parseFloat(row.contract_price) || 0,
                 category: row.category_description || '',
+                _source: 'tdsynnex',
             };
         case 'arrow':
             return {
@@ -5150,9 +5205,10 @@ function bulkMapRpcRowToProduct(row, distributor) {
                 msrp: parseFloat(row.unit_msrp) || 0,
                 resellerPrice: parseFloat(row.unit_cost) || 0,
                 category: row.item_category_name || '',
+                _source: 'arrow',
             };
         default:
-            return { mpn: '', manufacturer: '', description: '', msrp: 0, resellerPrice: 0 };
+            return { mpn: '', manufacturer: '', description: '', msrp: 0, resellerPrice: 0, _source: 'ingram' };
     }
 }
 
@@ -5566,7 +5622,9 @@ function bulkAddSelectedToQueue() {
     let skipped = 0;
     selected.forEach(p => {
         if (!bulkState.queuedProducts.find(q => q.mpn === p.mpn || q.vendorPartNumber === p.mpn)) {
-            bulkState.queuedProducts.push({ ...p, vendorPartNumber: p.mpn });
+            const mpnKey = (p.mpn || '').toUpperCase();
+            const rawRow = bulkState.rawRpcRows.get(mpnKey);
+            bulkState.queuedProducts.push({ ...p, vendorPartNumber: p.mpn, _rawRpcRow: rawRow || null });
             added++;
         } else {
             skipped++;
