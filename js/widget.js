@@ -67,7 +67,7 @@ const state = {
     selectedProducts: new Map(),
     queuedProducts: [],
     groupByManufacturer: true,
-    pricingMode: 'reseller',
+    pricingMode: 'msrp',
     isAuthenticated: false,
     pendingResponseId: null,
     parentContext: null,
@@ -413,11 +413,11 @@ function handleDrop(e) {
         // Reorder by manufacturer groups
         reorderByGroups();
     } else {
-        // Reorder state.queuedProducts based on new DOM order
+        // Reorder queue based on new DOM order
         const newOrder = [];
         document.querySelectorAll('.queue-item').forEach(item => {
             const partNumber = item.dataset.partNumber;
-            const product = state.queuedProducts.find(p =>
+            const product = getActiveQueue().find(p =>
                 (p.ingramPartNumber || p.vendorPartNumber) === partNumber
             );
             if (product) {
@@ -425,8 +425,8 @@ function handleDrop(e) {
             }
         });
 
-        state.queuedProducts = newOrder;
-        console.log('[Queue] Reordered:', state.queuedProducts.map(p => p.vendorPartNumber));
+        setActiveQueue(newOrder);
+        console.log('[Queue] Reordered:', getActiveQueue().map(p => p.vendorPartNumber));
     }
 }
 
@@ -485,12 +485,12 @@ function reorderByGroups() {
     // Reorder queuedProducts based on manufacturer order
     const newOrder = [];
     mfrOrder.forEach(mfr => {
-        state.queuedProducts
+        getActiveQueue()
             .filter(p => (p.vendorName || p.manufacturer || 'Unknown') === mfr)
             .forEach(p => newOrder.push(p));
     });
 
-    state.queuedProducts = newOrder;
+    setActiveQueue(newOrder);
     console.log('[Queue] Reordered by groups:', mfrOrder);
 }
 
@@ -518,7 +518,11 @@ function toggleGroupByManufacturer() {
 }
 
 function setPricingMode(mode) {
-    state.pricingMode = mode;
+    if (state.searchMode === 'bulk') {
+        bulkState.pricingMode = mode;
+    } else {
+        state.pricingMode = mode;
+    }
     document.querySelectorAll('.pricing-toggle-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.price === mode));
     updateQueueUI();
     updateQueueTotals();
@@ -2000,7 +2004,7 @@ function addSelectedToQueue() {
 }
 
 function updateQueueItemQty(mpn, value) {
-    const product = state.queuedProducts.find(p =>
+    const product = getActiveQueue().find(p =>
         (p.ingramPartNumber || p.vendorPartNumber) === mpn
     );
     if (!product) return;
@@ -2012,9 +2016,9 @@ function updateQueueItemQty(mpn, value) {
 }
 
 function removeFromQueue(partNumber) {
-    state.queuedProducts = state.queuedProducts.filter(p =>
+    setActiveQueue(getActiveQueue().filter(p =>
         (p.ingramPartNumber || p.vendorPartNumber) !== partNumber
-    );
+    ));
     updateQueueUI();
 
     // Re-enable checkbox in products table if visible
@@ -2034,7 +2038,7 @@ function removeFromQueue(partNumber) {
 }
 
 function clearQueue() {
-    state.queuedProducts = [];
+    setActiveQueue([]);
     updateQueueUI();
 
     // Re-enable all disabled checkboxes
@@ -2047,29 +2051,45 @@ function clearQueue() {
     showStatus('Queue cleared', 'info');
 }
 
+function getActiveQueue() {
+    return state.searchMode === 'bulk' ? bulkState.queuedProducts : state.queuedProducts;
+}
+
+function setActiveQueue(newArray) {
+    if (state.searchMode === 'bulk') {
+        bulkState.queuedProducts = newArray;
+    } else {
+        state.queuedProducts = newArray;
+    }
+}
+
+function getActivePricingMode() {
+    return state.searchMode === 'bulk' ? bulkState.pricingMode : state.pricingMode;
+}
+
 function updateQueueTotals() {
     const totalQtyEl = document.getElementById('totalQty');
     const totalPriceEl = document.getElementById('totalPrice');
     const totalPriceLabelEl = document.getElementById('totalPriceLabel');
     if (!totalQtyEl || !totalPriceEl) return;
 
-    const totalQty = state.queuedProducts.reduce((sum, item) => sum + (item.qty || 1), 0);
+    const totalQty = getActiveQueue().reduce((sum, item) => sum + (item.qty || 1), 0);
 
-    const totalPrice = state.queuedProducts.reduce((sum, item) => {
+    const totalPrice = getActiveQueue().reduce((sum, item) => {
         const qty = item.qty || 1;
         const msrp = item.pricingData?.pricing?.retailPrice || item.retailPrice || item.msrp || 0;
         const resellerPrice = item.resellerPrice || item.pricingData?.pricing?.customerPrice || null;
-        const price = (state.pricingMode === 'reseller' && resellerPrice !== null) ? resellerPrice : msrp;
+        const price = (getActivePricingMode() === 'reseller' && resellerPrice !== null) ? resellerPrice : msrp;
         return sum + (qty * price);
     }, 0);
 
     totalQtyEl.textContent = totalQty.toLocaleString();
     totalPriceEl.textContent = '$' + totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    totalPriceLabelEl.textContent = state.pricingMode === 'reseller' ? 'Total Reseller' : 'Total MSRP';
+    totalPriceLabelEl.textContent = getActivePricingMode() === 'reseller' ? 'Total Reseller' : 'Total MSRP';
 }
 
 function updateQueueUI() {
-    const queueCount = state.queuedProducts.length;
+    const queueCount = getActiveQueue().length;
 
     document.getElementById('queueCount').textContent = queueCount;
 
@@ -2107,7 +2127,7 @@ function renderQueueItems() {
     if (state.groupByManufacturer) {
         // Group products by manufacturer
         const groups = {};
-        state.queuedProducts.forEach(product => {
+        getActiveQueue().forEach(product => {
             const mfr = product.vendorName || product.manufacturer || 'Unknown';
             if (!groups[mfr]) {
                 groups[mfr] = [];
@@ -2132,7 +2152,7 @@ function renderQueueItems() {
         });
     } else {
         // Render flat list
-        state.queuedProducts.forEach((product, index) => {
+        getActiveQueue().forEach((product, index) => {
             queueItems.appendChild(createQueueItemElement(product, index));
         });
     }
@@ -2142,7 +2162,7 @@ function createQueueItemElement(product, index) {
     const partNumber = product.ingramPartNumber || product.vendorPartNumber;
     const msrp = product.pricingData?.pricing?.retailPrice || product.retailPrice || product.msrp;
     const resellerPrice = product.resellerPrice || product.pricingData?.pricing?.customerPrice || null;
-    const displayPrice = (state.pricingMode === 'reseller' && resellerPrice !== null) ? resellerPrice : msrp;
+    const displayPrice = (getActivePricingMode() === 'reseller' && resellerPrice !== null) ? resellerPrice : msrp;
     const msrpDisplay = displayPrice
         ? `$${displayPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         : '-';
@@ -2823,17 +2843,17 @@ function initMfrMappingsResize() {
 async function submitQueue() {
     console.log('[SubmitQueue] Function called');
 
-    if (state.queuedProducts.length === 0) {
+    if (getActiveQueue().length === 0) {
         showStatus('No products in queue', 'error');
         return;
     }
 
     showStatus('Checking manufacturer mappings...', 'loading');
-    console.log(`[SubmitQueue] Processing ${state.queuedProducts.length} products`);
+    console.log(`[SubmitQueue] Processing ${getActiveQueue().length} products`);
 
     // Step 1: Extract unique manufacturers from queued products
     const uniqueManufacturers = new Map();
-    for (const product of state.queuedProducts) {
+    for (const product of getActiveQueue()) {
         const mfr = product.vendorName || product.manufacturer;
         const distributor = product._source === 'tdsynnex' ? 'tdsynnex' : product._source === 'arrow' ? 'arrow' : 'ingram';
         if (mfr && !uniqueManufacturers.has(mfr)) {
@@ -2907,7 +2927,7 @@ async function submitQueue() {
 
     const productsWithMissingMfr = [];
 
-    const formattedProducts = state.queuedProducts.map(product => {
+    const formattedProducts = getActiveQueue().map(product => {
         const pricingData = product.pricingData || state.pricingData?.[product.ingramPartNumber] || {};
         const msrp = pricingData?.pricing?.retailPrice || product.retailPrice || null;
         const originalMfr = product.vendorName || product.manufacturer;
@@ -3607,6 +3627,7 @@ function cancelSelection() {
 
     state.selectedProducts.clear();
     state.queuedProducts = [];
+    bulkState.queuedProducts = [];
     updateSelectedCount();
     updateQueueUI();
 }
@@ -3794,7 +3815,9 @@ const bulkState = {
     // Phase 5
     selectedProductIndices: new Set(),
     collapsedGroups: new Set(),
-    pricingMode: 'msrp',
+    pricingMode: 'reseller',
+    // Phase 6 — isolated queue
+    queuedProducts: [],
 };
 
 const BULK_PREVIEW_MAX_ROWS = 50;
@@ -3847,6 +3870,19 @@ function setSearchMode(mode) {
             badge.textContent = dist ? dist.name : '';
         }
     }
+
+    // Sync pricing toggle to active mode's pricing state
+    const activePricing = getActivePricingMode();
+    document.querySelectorAll('.pricing-toggle-btn').forEach(btn =>
+        btn.classList.toggle('active', btn.dataset.price === activePricing)
+    );
+    // Hide pricing toggle in single mode (MSRP only)
+    const pricingToggle = document.getElementById('pricingToggle');
+    if (pricingToggle) {
+        pricingToggle.style.display = (mode === 'single') ? 'none' : '';
+    }
+    // Re-render queue for active mode
+    updateQueueUI();
 }
 
 // Admin bypass: triple-click the clock icon in Coming Soon to unlock bulk content
@@ -5529,8 +5565,8 @@ function bulkAddSelectedToQueue() {
     let added = 0;
     let skipped = 0;
     selected.forEach(p => {
-        if (!state.queuedProducts.find(q => q.mpn === p.mpn || q.vendorPartNumber === p.mpn)) {
-            state.queuedProducts.push({ ...p, vendorPartNumber: p.mpn });
+        if (!bulkState.queuedProducts.find(q => q.mpn === p.mpn || q.vendorPartNumber === p.mpn)) {
+            bulkState.queuedProducts.push({ ...p, vendorPartNumber: p.mpn });
             added++;
         } else {
             skipped++;
