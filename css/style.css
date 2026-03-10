@@ -4232,7 +4232,7 @@ button.sel-btn .sel-btn-icon {
 
 .bulk-col-price {
     text-align: right;
-    padding-right: 2px;
+    padding-right: 0;
     font-weight: 600;
     color: var(--color-success);
     white-space: nowrap;
