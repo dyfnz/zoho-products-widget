@@ -714,6 +714,15 @@
                                         <span>Select All</span>
                                     </label>
                                     <button id="bulkMsrpReEditBtn" class="bulk-msrp-reedit-btn" onclick="bulkShowMsrpComparisonPanel()" style="display:none;">Edit MSRP Choices</button>
+                                    <div class="tooltip-wrapper bulk-mfr-mappings-tooltip-wrapper">
+                                        <button type="button" class="mfr-mappings-btn" id="bulkMfrMappingsBtn"
+                                                onclick="toggleMfrMappingsPanel()">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+                                            </svg>
+                                        </button>
+                                        <div class="tooltip">View manufacturer name mappings between distributors</div>
+                                    </div>
                                 </div>
                                 <button class="bulk-add-to-queue-btn" id="bulkAddToQueueBtn" onclick="bulkAddSelectedToQueue()" disabled>
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">

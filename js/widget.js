@@ -329,6 +329,26 @@ function initMfrMappingsTooltip() {
     btn.addEventListener('mouseleave', () => {
         tooltip.classList.remove('visible');
     });
+
+    // Also init bulk mode tooltip
+    const bulkWrapper = document.querySelector('.bulk-mfr-mappings-tooltip-wrapper');
+    if (bulkWrapper) {
+        const bulkBtnEl = bulkWrapper.querySelector('.mfr-mappings-btn');
+        const bulkTooltip = bulkWrapper.querySelector('.tooltip');
+
+        if (bulkBtnEl && bulkTooltip) {
+            bulkBtnEl.addEventListener('mouseenter', (e) => {
+                const rect = bulkBtnEl.getBoundingClientRect();
+                bulkTooltip.style.left = (rect.left + rect.width/2 - 110) + 'px';
+                bulkTooltip.style.top = (rect.bottom + 8) + 'px';
+                bulkTooltip.classList.add('visible');
+            });
+
+            bulkBtnEl.addEventListener('mouseleave', () => {
+                bulkTooltip.classList.remove('visible');
+            });
+        }
+    }
 }
 
 // =====================================================
@@ -2749,7 +2769,8 @@ async function loadManufacturerMappings() {
  */
 function toggleMfrMappingsPanel() {
     const panel = document.getElementById('mfrMappingsPanel');
-    const btn = document.getElementById('mfrMappingsBtn');
+    const singleBtn = document.getElementById('mfrMappingsBtn');
+    const bulkBtn = document.getElementById('bulkMfrMappingsBtn');
 
     if (!panel) return;
 
@@ -2757,11 +2778,17 @@ function toggleMfrMappingsPanel() {
 
     if (isVisible) {
         panel.style.display = 'none';
-        btn?.classList.remove('active');
+        singleBtn?.classList.remove('active');
+        bulkBtn?.classList.remove('active');
     } else {
         renderMfrMappingsTable();
         panel.style.display = 'block';
-        btn?.classList.add('active');
+        // Activate the correct button based on current mode
+        if (state.searchMode === 'bulk') {
+            bulkBtn?.classList.add('active');
+        } else {
+            singleBtn?.classList.add('active');
+        }
     }
 }
 
@@ -3910,6 +3937,12 @@ function setSearchMode(mode) {
 
     // Close product details panel when switching modes
     hideProductDetails();
+
+    // Close manufacturer mappings panel and deactivate both buttons
+    const mfrPanel = document.getElementById('mfrMappingsPanel');
+    if (mfrPanel) mfrPanel.style.display = 'none';
+    document.getElementById('mfrMappingsBtn')?.classList.remove('active');
+    document.getElementById('bulkMfrMappingsBtn')?.classList.remove('active');
 
     // Queue panel (#rightPanel) lives inside .single-search-panel > .panels-row.
     // To keep it visible in bulk mode, we hide single-mode children selectively
