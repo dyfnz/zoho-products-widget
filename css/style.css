@@ -4230,9 +4230,9 @@ button.sel-btn .sel-btn-icon {
     color: var(--color-text-secondary);
 }
 
-.bulk-col-price {
+.bulk-data-table td.bulk-col-price {
     text-align: right;
-    padding-right: 0;
+    padding: 4px 0;
     font-weight: 600;
     color: var(--color-success);
     white-space: nowrap;
