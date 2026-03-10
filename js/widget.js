@@ -2768,7 +2768,8 @@ async function loadManufacturerMappings() {
  * Toggle the manufacturer mappings panel visibility
  */
 function toggleMfrMappingsPanel() {
-    const panel = document.getElementById('mfrMappingsPanel');
+    const isBulk = state.searchMode === 'bulk';
+    const panel = document.getElementById(isBulk ? 'bulkMfrMappingsPanel' : 'mfrMappingsPanel');
     const singleBtn = document.getElementById('mfrMappingsBtn');
     const bulkBtn = document.getElementById('bulkMfrMappingsBtn');
 
@@ -2781,10 +2782,9 @@ function toggleMfrMappingsPanel() {
         singleBtn?.classList.remove('active');
         bulkBtn?.classList.remove('active');
     } else {
-        renderMfrMappingsTable();
+        renderMfrMappingsTable(isBulk);
         panel.style.display = 'block';
-        // Activate the correct button based on current mode
-        if (state.searchMode === 'bulk') {
+        if (isBulk) {
             bulkBtn?.classList.add('active');
         } else {
             singleBtn?.classList.add('active');
@@ -2795,9 +2795,9 @@ function toggleMfrMappingsPanel() {
 /**
  * Render the manufacturer mappings table
  */
-function renderMfrMappingsTable() {
-    const tbody = document.getElementById('mfrMappingsTableBody');
-    const countSpan = document.getElementById('mfrMappingsCount');
+function renderMfrMappingsTable(isBulk) {
+    const tbody = document.getElementById(isBulk ? 'bulkMfrMappingsTableBody' : 'mfrMappingsTableBody');
+    const countSpan = document.getElementById(isBulk ? 'bulkMfrMappingsCount' : 'mfrMappingsCount');
 
     if (!tbody) return;
 
@@ -2872,6 +2872,40 @@ function initMfrMappingsResize() {
             document.body.style.userSelect = '';
         }
     });
+
+    // Also init bulk mappings resize
+    const bulkResizeHandle = document.getElementById('bulkMfrMappingsResize');
+    const bulkContainer = document.getElementById('bulkMfrMappingsTableContainer');
+
+    if (bulkResizeHandle && bulkContainer) {
+        let isBulkResizing = false;
+        let bulkStartY = 0;
+        let bulkStartHeight = 0;
+
+        bulkResizeHandle.addEventListener('mousedown', (e) => {
+            isBulkResizing = true;
+            bulkStartY = e.clientY;
+            bulkStartHeight = bulkContainer.offsetHeight;
+            document.body.style.cursor = 'ns-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isBulkResizing) return;
+            const deltaY = e.clientY - bulkStartY;
+            const newHeight = Math.max(80, Math.min(400, bulkStartHeight + deltaY));
+            bulkContainer.style.maxHeight = newHeight + 'px';
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isBulkResizing) {
+                isBulkResizing = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            }
+        });
+    }
 }
 
 async function submitQueue() {
@@ -3941,6 +3975,8 @@ function setSearchMode(mode) {
     // Close manufacturer mappings panel and deactivate both buttons
     const mfrPanel = document.getElementById('mfrMappingsPanel');
     if (mfrPanel) mfrPanel.style.display = 'none';
+    const bulkMfrPanel = document.getElementById('bulkMfrMappingsPanel');
+    if (bulkMfrPanel) bulkMfrPanel.style.display = 'none';
     document.getElementById('mfrMappingsBtn')?.classList.remove('active');
     document.getElementById('bulkMfrMappingsBtn')?.classList.remove('active');
 

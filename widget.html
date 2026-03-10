@@ -617,6 +617,44 @@
                             </div>
                         </div>
 
+                        <!-- Bulk Manufacturer Name Mappings Panel (view-only) -->
+                        <div id="bulkMfrMappingsPanel" class="mfr-mappings-panel" style="display: none;">
+                            <div class="mfr-mappings-header">
+                                <div class="mfr-mappings-header-left">
+                                    <h3>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+                                        </svg>
+                                        Manufacturer Name Mappings
+                                    </h3>
+                                    <span id="bulkMfrMappingsCount" class="mfr-mappings-count">0</span>
+                                </div>
+                                <button class="mfr-mappings-close" onclick="toggleMfrMappingsPanel()" title="Close">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M18 6 6 18M6 6l12 12"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <div class="mfr-mappings-table-container" id="bulkMfrMappingsTableContainer">
+                                <table class="mfr-mappings-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Common Name</th>
+                                            <th>Ingram Micro</th>
+                                            <th>TD Synnex</th>
+                                            <th>Arrow</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="bulkMfrMappingsTableBody">
+                                        <!-- Populated by JavaScript -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="mfr-mappings-resize" id="bulkMfrMappingsResize">
+                                <div class="mfr-mappings-resize-grip"></div>
+                            </div>
+                        </div>
+
                         <!-- Spreadsheet Preview (Phase 3) -->
                         <div class="preview-row" id="bulkPreviewRow" style="display: none;">
                             <div class="preview-section-container" id="bulkPreviewSectionContainer">
