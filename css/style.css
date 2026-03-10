@@ -1518,22 +1518,30 @@ button svg {
     order: 0;
 }
 
-.right-panel.narrow .queue-item-price {
+.right-panel.narrow .queue-item-msrp-indicator {
     order: 2;
+    margin-top: 2px;
+}
+
+.right-panel.narrow .queue-item-price {
+    order: 3;
     margin-left: 13px;
     margin-top: 2px;
 }
 
 .right-panel.narrow .queue-item-remove {
-    order: 3;
+    order: 4;
     margin-top: 2px;
 }
 
-/* MSRP indicators inside queue price — indicator follows price text */
-.queue-item-price .bulk-msrp-indicator,
-.queue-item-price .bulk-msrp-dot {
-    margin-right: 0;
-    margin-left: 2px;
+/* MSRP indicator container — own column before price */
+.queue-item-msrp-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    padding: 0 2px;
+    flex-shrink: 0;
 }
 
 .queue-item-remove {

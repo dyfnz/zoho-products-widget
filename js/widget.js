@@ -2209,11 +2209,14 @@ function createQueueItemElement(product, index) {
         <div class="queue-item-info">
             <div class="queue-item-part">${product.vendorPartNumber || '-'}</div>
         </div>
-        <div class="queue-item-price">${msrpDisplay}${state.searchMode === 'bulk' && product._msrpAdjusted
-            ? (getActivePricingMode() === 'msrp'
-                ? `<span class="bulk-msrp-indicator bulk-msrp-${product._msrpDirection}">${product._msrpDirection === 'down' ? '▼' : '▲'}</span>`
-                : `<span class="bulk-msrp-dot bulk-msrp-${product._msrpDirection}">●</span>`)
-            : ''}</div>
+        ${state.searchMode === 'bulk'
+            ? `<span class="queue-item-msrp-indicator">${product._msrpAdjusted
+                ? (getActivePricingMode() === 'msrp'
+                    ? `<span class="bulk-msrp-indicator bulk-msrp-${product._msrpDirection}">${product._msrpDirection === 'down' ? '▼' : '▲'}</span>`
+                    : `<span class="bulk-msrp-dot bulk-msrp-${product._msrpDirection}">●</span>`)
+                : ''}</span>`
+            : ''}
+        <div class="queue-item-price">${msrpDisplay}</div>
         <button class="queue-item-remove" onclick="removeFromQueue('${partNumber}')" title="Remove">
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M18 6 6 18M6 6l12 12"/>
