@@ -4443,14 +4443,14 @@ button.sel-btn .sel-btn-icon {
 .bulk-msrp-comparison-table th:nth-child(1) { width: 13%; text-align: left; padding: 4px 2px 4px 6px; }
 .bulk-msrp-comparison-table td:nth-child(1) { width: 13%; text-align: left; white-space: nowrap; }
 /* Column 2: Description */
-.bulk-msrp-comparison-table th:nth-child(2) { width: 30%; text-align: left; padding: 4px 2px 4px 6px; }
-.bulk-msrp-comparison-table td:nth-child(2) { width: 30%; text-align: left; padding: 4px 2px 4px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bulk-msrp-comparison-table th:nth-child(2) { width: 36%; text-align: left; padding: 4px 2px 4px 6px; }
+.bulk-msrp-comparison-table td:nth-child(2) { width: 36%; text-align: left; padding: 4px 2px 4px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Column 3: Quoted MSRP */
-.bulk-msrp-comparison-table th:nth-child(3) { width: 15%; text-align: center; padding: 4px 2px; }
-.bulk-msrp-comparison-table td:nth-child(3) { width: 15%; text-align: right; }
+.bulk-msrp-comparison-table th:nth-child(3) { width: 12%; text-align: center; padding: 4px 2px; }
+.bulk-msrp-comparison-table td:nth-child(3) { width: 12%; text-align: right; padding: 4px 2px; }
 /* Column 4: Current MSRP */
-.bulk-msrp-comparison-table th:nth-child(4) { width: 15%; text-align: center; padding: 4px 2px; }
-.bulk-msrp-comparison-table td:nth-child(4) { width: 15%; text-align: right; }
+.bulk-msrp-comparison-table th:nth-child(4) { width: 12%; text-align: center; padding: 4px 2px; }
+.bulk-msrp-comparison-table td:nth-child(4) { width: 12%; text-align: right; padding: 4px 2px; }
 /* Column 5: Change */
 .bulk-msrp-comparison-table th:nth-child(5) { width: 14%; text-align: center; padding: 4px 2px; }
 .bulk-msrp-comparison-table td:nth-child(5) { width: 14%; text-align: right; overflow: visible; }
