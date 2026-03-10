@@ -5634,7 +5634,8 @@ function bulkDisplayResults() {
                 `<td class="bulk-col-checkbox"><input type="checkbox" ${isSelected ? 'checked' : ''} onchange="bulkToggleProductSelection(${globalIdx})"></td>` +
                 `<td class="bulk-col-part">${p.mpn || ''}</td>` +
                 `<td class="bulk-col-desc" title="${(p.description || '').replace(/"/g, '&quot;')}">${p.description || ''}</td>` +
-                `<td class="bulk-col-price">${bulkFormatPrice(price)}${msrpIndicator}</td>` +
+                `<td class="bulk-col-price">${bulkFormatPrice(price)}</td>` +
+                `<td class="bulk-col-indicator">${msrpIndicator}</td>` +
                 `<td class="bulk-col-action"><button class="bulk-info-btn" onclick="bulkShowProductInfo(${globalIdx})">i</button></td></tr>`;
         });
     });
