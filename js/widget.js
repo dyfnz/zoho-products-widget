@@ -2209,7 +2209,11 @@ function createQueueItemElement(product, index) {
         <div class="queue-item-info">
             <div class="queue-item-part">${product.vendorPartNumber || '-'}</div>
         </div>
-        <div class="queue-item-price">${msrpDisplay}</div>
+        <div class="queue-item-price">${msrpDisplay}${state.searchMode === 'bulk' && product._msrpAdjusted
+            ? (getActivePricingMode() === 'msrp'
+                ? `<span class="bulk-msrp-indicator bulk-msrp-${product._msrpDirection}">${product._msrpDirection === 'down' ? '▼' : '▲'}</span>`
+                : `<span class="bulk-msrp-dot bulk-msrp-${product._msrpDirection}">●</span>`)
+            : ''}</div>
         <button class="queue-item-remove" onclick="removeFromQueue('${partNumber}')" title="Remove">
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M18 6 6 18M6 6l12 12"/>
@@ -5489,8 +5493,10 @@ function bulkClearSearch() {
     bulkState.msrpChoices = new Map();
     bulkState.resultsPricingMode = 'reseller';
 
-    // Hide MSRP comparison panel
+    // Hide MSRP comparison panel and re-edit button
     bulkHideMsrpComparisonPanel();
+    const reEditBtn = document.getElementById('bulkMsrpReEditBtn');
+    if (reEditBtn) reEditBtn.style.display = 'none';
 
     // Hide results panel
     const resultsPanel = document.getElementById('bulkResultsPanel');
@@ -5552,17 +5558,18 @@ function bulkDisplayResults() {
     const emptyState = document.getElementById('bulkEmptyState');
     const resultsPanel = document.getElementById('bulkResultsPanel');
 
-    const priceHeader = document.getElementById('bulkProductsPriceHeader');
-    if (priceHeader) {
-        priceHeader.textContent = bulkState.resultsPricingMode === 'reseller' ? 'Reseller Price' : 'MSRP';
-    }
-
-    // Show/sync results pricing toggle
+    // Sync results pricing toggle active state
     const resultsToggle = document.getElementById('bulkResultsPricingToggle');
     if (resultsToggle) {
         resultsToggle.querySelectorAll('.pricing-toggle-btn').forEach(btn => {
             btn.classList.toggle('active', btn.getAttribute('data-price') === bulkState.resultsPricingMode);
         });
+    }
+
+    // Show/hide re-edit MSRP button
+    const reEditBtn = document.getElementById('bulkMsrpReEditBtn');
+    if (reEditBtn) {
+        reEditBtn.style.display = bulkState.msrpMismatches.length > 0 ? '' : 'none';
     }
 
     if (bulkState.products.length === 0) {
@@ -5571,13 +5578,12 @@ function bulkDisplayResults() {
         badgesEl.innerHTML = '';
         emptyState.style.display = 'flex';
         resultsPanel.style.display = 'none';
-        if (resultsToggle) resultsToggle.style.display = 'none';
+        if (reEditBtn) reEditBtn.style.display = 'none';
         return;
     }
 
     emptyState.style.display = 'none';
     resultsPanel.style.display = '';
-    if (resultsToggle) resultsToggle.style.display = '';
     const foundCount = bulkState.products.filter(p => !p.not_found).length;
     countEl.textContent = `${foundCount} product${foundCount !== 1 ? 's' : ''}`;
 
@@ -5623,12 +5629,12 @@ function bulkDisplayResults() {
                 ? (bulkState.resultsPricingMode === 'msrp'
                     ? `<span class="bulk-msrp-indicator bulk-msrp-${p._msrpDirection}">${p._msrpDirection === 'down' ? '▼' : '▲'}</span>`
                     : `<span class="bulk-msrp-dot bulk-msrp-${p._msrpDirection}">●</span>`)
-                : `<span class="bulk-msrp-indicator"></span>`;
+                : '';
             html += `<tr class="bulk-product-row ${isSelected ? 'bulk-selected' : ''} ${hiddenClass}" data-index="${globalIdx}" data-mfr="${escapedMfr}">` +
                 `<td class="bulk-col-checkbox"><input type="checkbox" ${isSelected ? 'checked' : ''} onchange="bulkToggleProductSelection(${globalIdx})"></td>` +
                 `<td class="bulk-col-part">${p.mpn || ''}</td>` +
                 `<td class="bulk-col-desc" title="${(p.description || '').replace(/"/g, '&quot;')}">${p.description || ''}</td>` +
-                `<td class="bulk-col-price">${msrpIndicator}${bulkFormatPrice(price)}</td>` +
+                `<td class="bulk-col-price">${bulkFormatPrice(price)}${msrpIndicator}</td>` +
                 `<td class="bulk-col-action"><button class="bulk-info-btn" onclick="bulkShowProductInfo(${globalIdx})">i</button></td></tr>`;
         });
     });
@@ -5783,7 +5789,7 @@ function bulkFormatPrice(value) {
     if (value === null || value === undefined || value === '') return '\u2014';
     const num = parseFloat(value);
     if (isNaN(num)) return '\u2014';
-    return '$' + num.toFixed(2);
+    return '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // =====================================================
@@ -5909,12 +5915,12 @@ function bulkApplyMsrpChoices() {
 
             if (choice === 'current') {
                 p.msrp = p._dbMsrp;
+                p._msrpAdjusted = true;
+                p._msrpDirection = (p._dbMsrp < p._fileMsrp) ? 'down' : 'up';
             } else {
                 p.msrp = p._fileMsrp;
+                p._msrpAdjusted = false;
             }
-
-            p._msrpAdjusted = true;
-            p._msrpDirection = (p._dbMsrp < p._fileMsrp) ? 'down' : 'up';
         }
     });
 
@@ -5924,6 +5930,12 @@ function bulkApplyMsrpChoices() {
 
     bulkHideMsrpComparisonPanel();
     bulkDisplayResults();
+
+    // Show re-edit button if mismatches exist
+    const reEditBtn = document.getElementById('bulkMsrpReEditBtn');
+    if (reEditBtn) {
+        reEditBtn.style.display = bulkState.msrpMismatches.length > 0 ? '' : 'none';
+    }
 }
 
 /**

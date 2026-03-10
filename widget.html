@@ -713,10 +713,7 @@
                                         <input type="checkbox" id="bulkSelectAll" onchange="bulkToggleSelectAll()">
                                         <span>Select All</span>
                                     </label>
-                                    <div class="bulk-results-pricing-toggle" id="bulkResultsPricingToggle" style="display:none;">
-                                        <button class="pricing-toggle-btn active" data-price="reseller" onclick="bulkSetResultsPricingMode('reseller')">Reseller</button>
-                                        <button class="pricing-toggle-btn" data-price="msrp" onclick="bulkSetResultsPricingMode('msrp')">MSRP</button>
-                                    </div>
+                                    <button id="bulkMsrpReEditBtn" class="bulk-msrp-reedit-btn" onclick="bulkShowMsrpComparisonPanel()" style="display:none;">Edit MSRP Choices</button>
                                 </div>
                                 <button class="bulk-add-to-queue-btn" id="bulkAddToQueueBtn" onclick="bulkAddSelectedToQueue()" disabled>
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -733,7 +730,12 @@
                                             <th class="bulk-col-checkbox"></th>
                                             <th class="bulk-col-part">Part Number</th>
                                             <th class="bulk-col-desc">Description</th>
-                                            <th class="bulk-col-price" id="bulkProductsPriceHeader">MSRP</th>
+                                            <th class="bulk-col-price">
+                                                <div class="bulk-results-pricing-toggle" id="bulkResultsPricingToggle">
+                                                    <button class="pricing-toggle-btn active" data-price="reseller" onclick="bulkSetResultsPricingMode('reseller')">Reseller</button>
+                                                    <button class="pricing-toggle-btn" data-price="msrp" onclick="bulkSetResultsPricingMode('msrp')">MSRP</button>
+                                                </div>
+                                            </th>
                                             <th class="bulk-col-action"></th>
                                         </tr>
                                     </thead>
@@ -765,8 +767,8 @@
                                         <tr>
                                             <th>Part Number</th>
                                             <th>Description</th>
-                                            <th>Quoted MSRP</th>
-                                            <th>Current MSRP</th>
+                                            <th>Quoted<br>MSRP</th>
+                                            <th>Current<br>MSRP</th>
                                             <th>Change</th>
                                             <th>Use</th>
                                         </tr>
