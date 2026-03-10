@@ -713,6 +713,10 @@
                                         <input type="checkbox" id="bulkSelectAll" onchange="bulkToggleSelectAll()">
                                         <span>Select All</span>
                                     </label>
+                                    <div class="bulk-results-pricing-toggle" id="bulkResultsPricingToggle" style="display:none;">
+                                        <button class="pricing-toggle-btn active" data-price="reseller" onclick="bulkSetResultsPricingMode('reseller')">Reseller</button>
+                                        <button class="pricing-toggle-btn" data-price="msrp" onclick="bulkSetResultsPricingMode('msrp')">MSRP</button>
+                                    </div>
                                 </div>
                                 <button class="bulk-add-to-queue-btn" id="bulkAddToQueueBtn" onclick="bulkAddSelectedToQueue()" disabled>
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -744,6 +748,37 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Phase 7b: MSRP Comparison Panel -->
+                        <div id="bulkMsrpComparisonPanel" class="bulk-msrp-comparison-panel" style="display:none;">
+                            <div class="bulk-msrp-comparison-header">
+                                <h4>MSRP Price Changes Detected</h4>
+                                <p class="bulk-msrp-comparison-subtitle">Some products have different MSRPs than your quote. Lower prices are pre-selected for better margins.</p>
+                            </div>
+                            <div class="bulk-msrp-comparison-actions-top">
+                                <button onclick="bulkMsrpChooseAll('quote')" class="bulk-msrp-bulk-btn">Use All Quoted</button>
+                                <button onclick="bulkMsrpChooseAll('current')" class="bulk-msrp-bulk-btn">Use All Current</button>
+                            </div>
+                            <div class="bulk-msrp-comparison-table-wrapper">
+                                <table class="bulk-msrp-comparison-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Part Number</th>
+                                            <th>Description</th>
+                                            <th>Quoted MSRP</th>
+                                            <th>Current MSRP</th>
+                                            <th>Change</th>
+                                            <th>Use</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="bulkMsrpComparisonBody"></tbody>
+                                </table>
+                            </div>
+                            <div class="bulk-msrp-comparison-actions-bottom">
+                                <button onclick="bulkApplyMsrpChoices()" class="bulk-msrp-apply-btn">Apply &amp; Continue</button>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </div>

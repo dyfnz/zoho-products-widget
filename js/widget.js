@@ -523,7 +523,7 @@ function setPricingMode(mode) {
     } else {
         state.pricingMode = mode;
     }
-    document.querySelectorAll('.pricing-toggle-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.price === mode));
+    document.querySelectorAll('#pricingToggle .pricing-toggle-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.price === mode));
     updateQueueUI();
     updateQueueTotals();
 }
@@ -3881,6 +3881,10 @@ const bulkState = {
     pricingMode: 'reseller',
     // Phase 6 — isolated queue
     queuedProducts: [],
+    // Phase 7b — MSRP comparison
+    msrpMismatches: [],
+    msrpChoices: new Map(),
+    resultsPricingMode: 'reseller',
 };
 
 const BULK_PREVIEW_MAX_ROWS = 50;
@@ -5347,10 +5351,31 @@ async function bulkLoadProducts() {
                 if (fd) {
                     if (fd.qty) p.qty = fd.qty;
                     if (fd.resellerPrice) p.resellerPrice = fd.resellerPrice;
-                    if (fd.msrp !== null && fd.msrp !== undefined) p.msrp = fd.msrp;
+                    if (fd.msrp !== null && fd.msrp !== undefined) {
+                        p._dbMsrp = p.msrp;      // Save database MSRP
+                        p._fileMsrp = fd.msrp;    // Save spreadsheet MSRP
+                        p.msrp = fd.msrp;         // Overlay (will be corrected by comparison UI if needed)
+                    }
                 }
             });
         }
+
+        // Phase 7b: Detect MSRP mismatches
+        bulkState.msrpMismatches = [];
+        bulkState.msrpChoices = new Map();
+        bulkState.products.forEach(p => {
+            if (p._dbMsrp != null && p._dbMsrp !== 0 && p._fileMsrp != null && p._fileMsrp !== 0 && p._dbMsrp !== p._fileMsrp) {
+                bulkState.msrpMismatches.push({
+                    mpn: p.mpn,
+                    description: p.description,
+                    fileMsrp: p._fileMsrp,
+                    dbMsrp: p._dbMsrp,
+                    difference: p._dbMsrp - p._fileMsrp
+                });
+                // Smart default: pre-select the LOWER price (higher margin)
+                bulkState.msrpChoices.set(p.mpn.toUpperCase(), p._dbMsrp <= p._fileMsrp ? 'current' : 'quote');
+            }
+        });
 
         // Restore original spreadsheet order (RPC results may arrive in any order)
         if (bulkState.parsedFileData && bulkState.parsedFileData.length > 0) {
@@ -5376,8 +5401,16 @@ async function bulkLoadProducts() {
 
         console.log(`[BulkSearch] Loaded ${bulkState.products.length} products, ${bulkState.unmatchedMpns.length} unmatched`);
 
-        // Phase 5: Render results
-        bulkDisplayResults();
+        // Phase 5/7b: Render results (pause for MSRP comparison if mismatches exist)
+        if (bulkState.msrpMismatches.length > 0) {
+            // Default results toggle to MSRP when mismatches exist and any default chose 'current' (DB price)
+            const hasCurrentDefaults = Array.from(bulkState.msrpChoices.values()).some(v => v === 'current');
+            bulkState.resultsPricingMode = hasCurrentDefaults ? 'msrp' : 'reseller';
+            bulkShowMsrpComparisonPanel();
+        } else {
+            bulkState.resultsPricingMode = 'reseller';
+            bulkDisplayResults();
+        }
 
     } catch (err) {
         console.error('[BulkSearch] RPC error:', err);
@@ -5452,6 +5485,12 @@ function bulkClearSearch() {
     bulkState.selectedProductIndices.clear();
     bulkState.collapsedGroups.clear();
     bulkState.rawRpcRows.clear();
+    bulkState.msrpMismatches = [];
+    bulkState.msrpChoices = new Map();
+    bulkState.resultsPricingMode = 'reseller';
+
+    // Hide MSRP comparison panel
+    bulkHideMsrpComparisonPanel();
 
     // Hide results panel
     const resultsPanel = document.getElementById('bulkResultsPanel');
@@ -5515,7 +5554,15 @@ function bulkDisplayResults() {
 
     const priceHeader = document.getElementById('bulkProductsPriceHeader');
     if (priceHeader) {
-        priceHeader.textContent = bulkState.pricingMode === 'reseller' ? 'Reseller Price' : 'MSRP';
+        priceHeader.textContent = bulkState.resultsPricingMode === 'reseller' ? 'Reseller Price' : 'MSRP';
+    }
+
+    // Show/sync results pricing toggle
+    const resultsToggle = document.getElementById('bulkResultsPricingToggle');
+    if (resultsToggle) {
+        resultsToggle.querySelectorAll('.pricing-toggle-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.getAttribute('data-price') === bulkState.resultsPricingMode);
+        });
     }
 
     if (bulkState.products.length === 0) {
@@ -5524,11 +5571,13 @@ function bulkDisplayResults() {
         badgesEl.innerHTML = '';
         emptyState.style.display = 'flex';
         resultsPanel.style.display = 'none';
+        if (resultsToggle) resultsToggle.style.display = 'none';
         return;
     }
 
     emptyState.style.display = 'none';
     resultsPanel.style.display = '';
+    if (resultsToggle) resultsToggle.style.display = '';
     const foundCount = bulkState.products.filter(p => !p.not_found).length;
     countEl.textContent = `${foundCount} product${foundCount !== 1 ? 's' : ''}`;
 
@@ -5569,12 +5618,17 @@ function bulkDisplayResults() {
             // Skip not-found products — they already show in the error message above Load Products
             if (p.not_found) return;
 
-            const price = bulkState.pricingMode === 'reseller' && p.resellerPrice != null ? p.resellerPrice : p.msrp;
+            const price = bulkState.resultsPricingMode === 'reseller' && p.resellerPrice != null ? p.resellerPrice : p.msrp;
+            const msrpIndicator = p._msrpAdjusted
+                ? (bulkState.resultsPricingMode === 'msrp'
+                    ? `<span class="bulk-msrp-indicator bulk-msrp-${p._msrpDirection}">${p._msrpDirection === 'down' ? '▼' : '▲'}</span>`
+                    : `<span class="bulk-msrp-dot bulk-msrp-${p._msrpDirection}">●</span>`)
+                : `<span class="bulk-msrp-indicator"></span>`;
             html += `<tr class="bulk-product-row ${isSelected ? 'bulk-selected' : ''} ${hiddenClass}" data-index="${globalIdx}" data-mfr="${escapedMfr}">` +
                 `<td class="bulk-col-checkbox"><input type="checkbox" ${isSelected ? 'checked' : ''} onchange="bulkToggleProductSelection(${globalIdx})"></td>` +
                 `<td class="bulk-col-part">${p.mpn || ''}</td>` +
                 `<td class="bulk-col-desc" title="${(p.description || '').replace(/"/g, '&quot;')}">${p.description || ''}</td>` +
-                `<td class="bulk-col-price">${bulkFormatPrice(price)}</td>` +
+                `<td class="bulk-col-price">${msrpIndicator}${bulkFormatPrice(price)}</td>` +
                 `<td class="bulk-col-action"><button class="bulk-info-btn" onclick="bulkShowProductInfo(${globalIdx})">i</button></td></tr>`;
         });
     });
@@ -5730,4 +5784,152 @@ function bulkFormatPrice(value) {
     const num = parseFloat(value);
     if (isNaN(num)) return '\u2014';
     return '$' + num.toFixed(2);
+}
+
+// =====================================================
+// BULK SEARCH — Results Pricing Toggle
+// =====================================================
+
+function bulkSetResultsPricingMode(mode) {
+    bulkState.resultsPricingMode = mode;
+
+    // Update only the results toggle button states (not the queue toggle)
+    const toggle = document.getElementById('bulkResultsPricingToggle');
+    if (toggle) {
+        toggle.querySelectorAll('.pricing-toggle-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.getAttribute('data-price') === mode);
+        });
+    }
+
+    // Re-render results with new pricing mode
+    bulkDisplayResults();
+}
+
+// =====================================================
+// Phase 7b Step 3: MSRP Comparison Panel
+// =====================================================
+
+/**
+ * Populates and shows the MSRP comparison panel.
+ * Called from bulkLoadProducts() when mismatches are detected.
+ */
+function bulkShowMsrpComparisonPanel() {
+    const panel = document.getElementById('bulkMsrpComparisonPanel');
+    const tbody = document.getElementById('bulkMsrpComparisonBody');
+    if (!panel || !tbody) return;
+
+    tbody.innerHTML = '';
+
+    bulkState.msrpMismatches.forEach(item => {
+        const mpnKey = item.mpn.toUpperCase();
+        const choice = bulkState.msrpChoices.get(mpnKey) || 'quote';
+        const diff = item.difference; // dbMsrp - fileMsrp
+        const isDecrease = diff < 0; // current DB price is lower
+        const absDiff = Math.abs(diff);
+
+        const changeArrow = isDecrease ? '\u25BC' : '\u25B2';
+        const changeClass = isDecrease ? 'bulk-msrp-change-down' : 'bulk-msrp-change-up';
+        const rowClass = choice === 'current' ? 'bulk-msrp-row-selected-current' : 'bulk-msrp-row-selected-quote';
+
+        // Truncate description
+        const desc = (item.description || '').length > 50
+            ? item.description.substring(0, 47) + '...'
+            : (item.description || '');
+
+        const tr = document.createElement('tr');
+        tr.id = 'bulkMsrpRow_' + mpnKey;
+        tr.className = rowClass;
+        tr.innerHTML = `
+            <td title="${item.mpn}">${item.mpn}</td>
+            <td title="${item.description || ''}">${desc}</td>
+            <td>${bulkFormatPrice(item.fileMsrp)}</td>
+            <td>${bulkFormatPrice(item.dbMsrp)}</td>
+            <td class="${changeClass}">${changeArrow} ${bulkFormatPrice(absDiff).replace('$', '$\u200B')}</td>
+            <td>
+                <div class="bulk-msrp-radio-group">
+                    <label><input type="radio" name="bulkMsrpChoice_${mpnKey}" value="quote"
+                        ${choice === 'quote' ? 'checked' : ''}
+                        onchange="bulkMsrpToggleChoice('${mpnKey}', 'quote')">Q</label>
+                    <label><input type="radio" name="bulkMsrpChoice_${mpnKey}" value="current"
+                        ${choice === 'current' ? 'checked' : ''}
+                        onchange="bulkMsrpToggleChoice('${mpnKey}', 'current')">C</label>
+                </div>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    // Hide results panel while comparison is active
+    const resultsPanel = document.getElementById('bulkResultsPanel');
+    if (resultsPanel) resultsPanel.style.display = 'none';
+
+    panel.style.display = 'flex';
+}
+
+/**
+ * Sets all MSRP choices to 'quote' or 'current'.
+ */
+function bulkMsrpChooseAll(choice) {
+    bulkState.msrpMismatches.forEach(item => {
+        const mpnKey = item.mpn.toUpperCase();
+        bulkState.msrpChoices.set(mpnKey, choice);
+
+        // Update radio button
+        const radio = document.querySelector(`input[name="bulkMsrpChoice_${mpnKey}"][value="${choice}"]`);
+        if (radio) radio.checked = true;
+
+        // Update row styling
+        const row = document.getElementById('bulkMsrpRow_' + mpnKey);
+        if (row) {
+            row.className = choice === 'current' ? 'bulk-msrp-row-selected-current' : 'bulk-msrp-row-selected-quote';
+        }
+    });
+}
+
+/**
+ * Handles individual radio button change.
+ */
+function bulkMsrpToggleChoice(mpnKey, choice) {
+    bulkState.msrpChoices.set(mpnKey, choice);
+
+    const row = document.getElementById('bulkMsrpRow_' + mpnKey);
+    if (row) {
+        row.className = choice === 'current' ? 'bulk-msrp-row-selected-current' : 'bulk-msrp-row-selected-quote';
+    }
+}
+
+/**
+ * Applies MSRP choices to bulkState.products and proceeds to results.
+ */
+function bulkApplyMsrpChoices() {
+    bulkState.products.forEach(p => {
+        if (p._dbMsrp != null && p._fileMsrp != null && p._dbMsrp !== p._fileMsrp) {
+            const mpnKey = p.mpn.toUpperCase();
+            const choice = bulkState.msrpChoices.get(mpnKey) || 'quote';
+
+            if (choice === 'current') {
+                p.msrp = p._dbMsrp;
+            } else {
+                p.msrp = p._fileMsrp;
+            }
+
+            p._msrpAdjusted = true;
+            p._msrpDirection = (p._dbMsrp < p._fileMsrp) ? 'down' : 'up';
+        }
+    });
+
+    // Set results pricing toggle default based on choices
+    const hasCurrentChoice = Array.from(bulkState.msrpChoices.values()).some(v => v === 'current');
+    bulkState.resultsPricingMode = hasCurrentChoice ? 'msrp' : 'reseller';
+
+    bulkHideMsrpComparisonPanel();
+    bulkDisplayResults();
+}
+
+/**
+ * Hides the MSRP comparison panel.
+ */
+function bulkHideMsrpComparisonPanel() {
+    const panel = document.getElementById('bulkMsrpComparisonPanel');
+    if (panel) panel.style.display = 'none';
 }
