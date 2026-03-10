@@ -5850,7 +5850,7 @@ function bulkShowMsrpComparisonPanel() {
             <td title="${item.description || ''}">${desc}</td>
             <td>${bulkFormatPrice(item.fileMsrp)}</td>
             <td>${bulkFormatPrice(item.dbMsrp)}</td>
-            <td class="${changeClass}">${changeArrow} ${bulkFormatPrice(absDiff).replace('$', '$\u200B')}</td>
+            <td class="${changeClass}">${bulkFormatPrice(absDiff).replace('$', '$\u200B')} ${changeArrow}</td>
             <td>
                 <div class="bulk-msrp-radio-group">
                     <label><input type="radio" name="bulkMsrpChoice_${mpnKey}" value="quote"
