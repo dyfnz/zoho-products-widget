@@ -619,9 +619,14 @@
                             </div>
 
                             <!-- Column 3: Paste MPNs -->
-                            <div class="paste-section">
-                                <label class="paste-label" for="bulkPasteArea">Paste MPNs <span class="bulk-paste-distributor-badge" id="bulkPasteDistributorBadge"></span></label>
-                                <textarea class="paste-textarea" id="bulkPasteArea" placeholder="Paste part numbers here&#10;One per line or comma-separated" oninput="bulkParsePastedSKUs()"></textarea>
+                            <div class="paste-zone-wrapper">
+                                <div class="paste-zone-header">
+                                    <span>Paste MPNs</span>
+                                    <span class="bulk-paste-distributor-badge" id="bulkPasteDistributorBadge"></span>
+                                </div>
+                                <div class="paste-section">
+                                    <textarea class="paste-textarea" id="bulkPasteArea" placeholder="Paste part numbers here&#10;One per line or comma-separated" oninput="bulkParsePastedSKUs()"></textarea>
+                                </div>
                             </div>
                         </div>
 

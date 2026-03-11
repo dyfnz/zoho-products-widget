@@ -3178,6 +3178,25 @@ button svg {
     margin-bottom: 2px;
 }
 
+/* Column 3: Paste Zone wrapper */
+.paste-zone-wrapper {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.paste-zone-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: var(--font-size-2xs);
+    font-weight: 700;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: var(--space-1);
+}
+
 /* Column 3: Paste Section */
 .paste-section {
     flex: 1;
@@ -3188,18 +3207,6 @@ button svg {
     background: var(--color-border-light);
     border-radius: var(--radius-md);
     border: 1px solid var(--color-border);
-}
-
-.paste-label {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
-    font-size: var(--font-size-2xs);
-    font-weight: 700;
-    color: var(--color-text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    margin-bottom: var(--space-1);
 }
 
 .paste-textarea {
@@ -3931,7 +3938,7 @@ button.sel-btn .sel-btn-icon {
 .parsed-preview {
     background: var(--color-border-light);
     border-radius: var(--radius-sm);
-    padding: var(--space-2);
+    padding: var(--space-2) var(--space-2) var(--space-1);
     margin-bottom: var(--space-2);
 }
 

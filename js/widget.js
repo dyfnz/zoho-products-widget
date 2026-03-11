@@ -3967,6 +3967,7 @@ const bulkState = {
     userManuallyZoomed: false,
     userHasResized: false,
     activeHiddenRowsDropdown: null,
+    lastDataColumn: 0, // 0-based index of last column with actual data
     products: [],
     unmatchedMpns: [],
     isLoading: false,
@@ -4343,6 +4344,25 @@ function bulkZoomPreview(direction) {
     bulkUpdatePreviewZoom();
 }
 
+/**
+ * Determine the last column (0-based) that contains actual data
+ * across the visible row range (header through last row).
+ */
+function bulkGetLastDataColumn(rows, startRow, endRow) {
+    let maxCol = 0;
+    for (let r = startRow; r < endRow && r < rows.length; r++) {
+        const row = rows[r];
+        if (!row) continue;
+        for (let c = row.length - 1; c >= 0; c--) {
+            if (row[c] !== undefined && row[c] !== null && String(row[c]).trim() !== '') {
+                if (c > maxCol) maxCol = c;
+                break;
+            }
+        }
+    }
+    return maxCol;
+}
+
 function bulkAutoFitPreview() {
     if (bulkState.userHasResized) return; // User manually resized, don't auto-fit
 
@@ -4364,10 +4384,12 @@ function bulkAutoFitPreview() {
             // Calculate zoom that fits table width to panel width
             const fitZoom = Math.floor((panelWidth / naturalTableWidth) * 100);
 
-            // Only auto-fit if content would have whitespace (fitZoom > current default)
-            // and cap at 100% — don't blow up past natural size
-            if (fitZoom > bulkState.previewZoom) {
+            if (fitZoom >= 55) {
+                // Content fits at 55% or is narrower — zoom IN to fill width (cap at 100%)
                 bulkState.previewZoom = Math.min(fitZoom, 100);
+            } else {
+                // Content is wider than panel at 55% — keep 55%, allow horizontal scroll
+                bulkState.previewZoom = 55;
             }
         }
 
@@ -4391,10 +4413,11 @@ function bulkAutoFitPreview() {
         const tableRect = table.getBoundingClientRect();
         const scaledTableHeight = tableRect.height;
 
-        // Target height: chrome above + scaled table + legend below + 2px bottom padding
+        // Target height: chrome above + scaled table + legend below + padding + scrollbar
         const BOTTOM_PADDING = 2;
+        const SCROLLBAR_HEIGHT = 16; // Account for horizontal scrollbar
         const MIN_HEIGHT = 80;
-        const targetHeight = chromeHeight + scaledTableHeight + legendHeight + BOTTOM_PADDING;
+        const targetHeight = chromeHeight + scaledTableHeight + legendHeight + BOTTOM_PADDING + SCROLLBAR_HEIGHT;
         const finalHeight = Math.max(MIN_HEIGHT, Math.ceil(targetHeight));
 
         const currentHeight = previewEl.offsetHeight;
@@ -4426,6 +4449,14 @@ function bulkUpdateColumnSelectionDropdown(headerRowIndex) {
 
     const headers = bulkState.fileRows[headerRowIndex] || [];
 
+    // Compute last data column across the visible row range
+    const lastRowInput = document.getElementById('bulkLastRowInput');
+    const lastRowIdx = lastRowInput && lastRowInput.value ? parseInt(lastRowInput.value) - 1 : null;
+    const totalRows = bulkState.fileRows.length;
+    const endRow = lastRowIdx !== null ? Math.min(lastRowIdx + 1, totalRows) : totalRows;
+    bulkState.lastDataColumn = bulkGetLastDataColumn(bulkState.fileRows, headerRowIndex, endRow);
+    const maxDropdownCols = bulkState.lastDataColumn + 1;
+
     const columnSelect = document.getElementById('bulkColumnSelect');
     const qtyColumnSelect = document.getElementById('bulkQtyColumnSelect');
     const resellerPriceColumnSelect = document.getElementById('bulkResellerPriceColumnSelect');
@@ -4436,6 +4467,9 @@ function bulkUpdateColumnSelectionDropdown(headerRowIndex) {
     bulkResetColumnDropdowns();
 
     headers.forEach((header, index) => {
+        // Skip columns beyond the last data column
+        if (index >= maxDropdownCols) return;
+
         const colLetter = index < 26 ? String.fromCharCode(65 + index) : 'Col' + (index + 1);
         const headerText = `${colLetter}: ${header || '(empty)'}`;
         const headerLower = String(header).toLowerCase();
@@ -4546,13 +4580,11 @@ function bulkRenderSpreadsheetPreview() {
     }
     previewInfo.textContent = rangeInfo;
 
-    // Determine column count (max columns across displayed rows)
-    let maxCols = 0;
-    for (let i = startRow; i < endRow; i++) {
-        if (bulkState.fileRows[i] && bulkState.fileRows[i].length > maxCols) {
-            maxCols = bulkState.fileRows[i].length;
-        }
-    }
+    // Determine column count — only columns that contain actual data (skip trailing empty columns)
+    // Scan full data range (not just preview-visible rows) to find all data columns
+    const dataEndRow = lastRowIdx !== null ? Math.min(lastRowIdx + 1, totalRows) : totalRows;
+    bulkState.lastDataColumn = bulkGetLastDataColumn(bulkState.fileRows, startRow, dataEndRow);
+    const maxCols = bulkState.lastDataColumn + 1; // +1 because lastDataColumn is 0-based
 
     // Build table header with hidden column support
     let theadHtml = '<tr><th class="row-header">#</th>';
