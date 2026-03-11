@@ -24,9 +24,11 @@
                 </div>
             </div>
             <!-- Mode Toggle -->
-            <div class="mode-toggle">
-                <button class="mode-btn active" data-mode="single" onclick="setSearchMode('single')">Single</button>
-                <button class="mode-btn" data-mode="bulk" onclick="handleBulkModeClick()">Bulk</button>
+            <div class="bulk-toggle" id="bulkToggle">
+                <button class="bulk-toggle-btn" id="bulkToggleBtn" onclick="handleBulkToggleClick()">
+                    <span>Bulk Mode</span>
+                </button>
+                <span class="new-badge">NEW</span>
             </div>
             <div class="distributor-tabs">
                 <button class="tab-btn active" data-distributor="ingram" onclick="selectDistributor('ingram')">

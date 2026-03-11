@@ -3975,11 +3975,11 @@ function setSearchMode(mode) {
 
     const singlePanel = document.querySelector('.single-search-panel');
     const bulkPanel = document.querySelector('.bulk-search-panel-container');
-    const modeBtns = document.querySelectorAll('.mode-btn');
-
-    modeBtns.forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.mode === mode);
-    });
+    // Update bulk toggle button active state
+    const bulkToggle = document.getElementById('bulkToggle');
+    if (bulkToggle) {
+        bulkToggle.classList.toggle('active', mode === 'bulk');
+    }
 
     // Close product details panel when switching modes
     hideProductDetails();
@@ -4043,14 +4043,20 @@ function setSearchMode(mode) {
     updateQueueUI();
 }
 
-// Admin bypass: triple-click the Bulk mode button to unlock bulk mode
+// Bulk toggle: triple-click to unlock, then single-click to toggle on/off
 let bulkBypassClicks = 0;
 let bulkBypassTimer = null;
 
-function handleBulkModeClick() {
+function handleBulkToggleClick() {
     if (state.bulkAdminBypass) {
-        // Already unlocked — switch to bulk mode normally
-        setSearchMode('bulk');
+        // Already unlocked — toggle between modes
+        if (state.searchMode === 'bulk') {
+            setSearchMode('single');
+            document.getElementById('bulkToggle').classList.remove('active');
+        } else {
+            setSearchMode('bulk');
+            document.getElementById('bulkToggle').classList.add('active');
+        }
         return;
     }
 
@@ -4060,8 +4066,9 @@ function handleBulkModeClick() {
     if (bulkBypassClicks >= 3) {
         state.bulkAdminBypass = true;
         bulkBypassClicks = 0;
-        console.log('[BulkSearch] Admin bypass activated via Bulk button');
+        console.log('[BulkSearch] Admin bypass activated via Bulk Mode button');
         setSearchMode('bulk');
+        document.getElementById('bulkToggle').classList.add('active');
     } else {
         bulkBypassTimer = setTimeout(() => { bulkBypassClicks = 0; }, 1000);
     }

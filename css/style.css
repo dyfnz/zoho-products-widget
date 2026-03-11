@@ -38,6 +38,7 @@
     /* Typography - Plus Jakarta Sans */
     --font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     --font-mono: 'SF Mono', Monaco, 'Consolas', monospace;
+    --font-size-3xs: 0.5625rem;  /* 9px equivalent */
     --font-size-2xs: 0.6875rem;  /* 11px equivalent */
     --font-size-xs: 0.75rem;     /* 12px equivalent */
     --font-size-sm: 0.8125rem;   /* 13px equivalent */
@@ -2803,39 +2804,59 @@ button svg {
 }
 
 /* =====================================================
-   MODE TOGGLE - Single/Bulk Switch (Phase 1)
+   BULK MODE TOGGLE (Phase 8)
    ===================================================== */
 
-.mode-toggle {
+/* Bulk Mode Toggle */
+.bulk-toggle {
     display: flex;
-    gap: 2px;
-    background: rgba(255, 255, 255, 0.08);
-    border-radius: var(--radius-md);
-    padding: 2px;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 4px var(--space-2);
+    background: rgba(14, 165, 233, 0.15);
+    border: 1px solid rgba(14, 165, 233, 0.4);
+    border-radius: var(--radius-sm);
     margin-left: auto;
     margin-right: var(--space-3);
+    cursor: pointer;
 }
 
-.mode-btn {
-    padding: 3px 10px;
+.bulk-toggle:hover {
+    background: rgba(14, 165, 233, 0.25);
+}
+
+.bulk-toggle.active {
+    background: rgba(245, 158, 11, 0.2);
+    border-color: rgba(245, 158, 11, 0.5);
+}
+
+.bulk-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     border: none;
-    border-radius: 3px;
     background: transparent;
-    color: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
     font-family: var(--font-family);
     font-size: var(--font-size-xs);
     font-weight: 600;
-    cursor: pointer;
-    transition: var(--transition-fast);
-}
-
-.mode-btn:hover {
-    color: rgba(255, 255, 255, 0.9);
-}
-
-.mode-btn.active {
-    background: var(--color-accent);
     color: var(--color-text-inverse);
+    padding: 0;
+}
+
+.bulk-toggle-btn:hover {
+    color: var(--color-text-inverse);
+}
+
+.new-badge {
+    background: var(--color-warning);
+    color: var(--color-primary-dark);
+    font-size: var(--font-size-2xs);
+    font-weight: 800;
+    padding: 1px 4px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
 }
 
 /* Bulk mode: flex row so bulk content + queue panel sit side by side */
@@ -4556,7 +4577,7 @@ button.sel-btn .sel-btn-icon {
     display: inline-block;
     width: 11px;
     text-align: center;
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
     vertical-align: middle;
     margin-left: 2px;
     margin-right: 0;
@@ -4572,12 +4593,12 @@ button.sel-btn .sel-btn-icon {
 
 .bulk-msrp-dot.bulk-msrp-down {
     color: #16a34a;
-    font-size: 9px;
+    font-size: var(--font-size-3xs);
 }
 
 .bulk-msrp-dot.bulk-msrp-up {
     color: #dc2626;
-    font-size: 9px;
+    font-size: var(--font-size-3xs);
 }
 
 /* Re-edit MSRP choices button */
