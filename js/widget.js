@@ -112,6 +112,7 @@ document.addEventListener('DOMContentLoaded', function() {
     updateQueueUI();
     loadManufacturerMappings();
     initMfrMappingsResize();
+    initBulkPreviewResize();
     initMfrMappingsTooltip();
 
     // Set "Group by Manufacturer" checkbox to match default state
@@ -6039,4 +6040,42 @@ function bulkApplyMsrpChoices() {
 function bulkHideMsrpComparisonPanel() {
     const panel = document.getElementById('bulkMsrpComparisonPanel');
     if (panel) panel.style.display = 'none';
+}
+
+// Bulk spreadsheet preview vertical resize
+function initBulkPreviewResize() {
+    const handle = document.getElementById('bulkPreviewResizeHandle');
+    const target = document.getElementById('bulkSpreadsheetPreview');
+
+    if (!handle || !target) return;
+
+    let isResizingPreview = false;
+    let previewResizeStartY = 0;
+    let previewResizeStartHeight = 0;
+
+    handle.addEventListener('mousedown', (e) => {
+        isResizingPreview = true;
+        previewResizeStartY = e.clientY;
+        previewResizeStartHeight = target.offsetHeight;
+        document.body.style.cursor = 'ns-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isResizingPreview) return;
+
+        const deltaY = e.clientY - previewResizeStartY;
+        const newHeight = Math.max(80, Math.min(800, previewResizeStartHeight + deltaY));
+        target.style.height = newHeight + 'px';
+        bulkState.userHasResized = true;
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isResizingPreview) {
+            isResizingPreview = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
+    });
 }
