@@ -600,10 +600,9 @@ function selectDistributor(distributor) {
     resetFilters();
     showStatus(`Switched to ${DISTRIBUTORS[distributor].name}. Search by manufacturer or SKU.`, 'info');
 
-    // Update bulk distributor badges if in bulk mode, and clear file/preview state
+    // Update bulk distributor badges if in bulk mode
     if (state.searchMode === 'bulk') {
         updateBulkDistributorBadges();
-        bulkClearSearch();
     }
 }
 
