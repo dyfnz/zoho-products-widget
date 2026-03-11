@@ -2401,6 +2401,11 @@ async function showMfrResolutionPanel(unresolvedList) {
 
         const panel = document.getElementById('mfrResolutionPanel');
         if (panel) {
+            // In bulk mode, move panel into the bulk search area
+            if (state.searchMode === 'bulk') {
+                const anchor = document.getElementById('bulkMfrResolutionAnchor');
+                if (anchor) anchor.appendChild(panel);
+            }
             panel.style.display = 'block';
             panel.classList.remove('collapsed');
             panel.classList.remove('all-resolved');
@@ -2421,6 +2426,13 @@ function hideMfrResolutionPanel() {
     const panel = document.getElementById('mfrResolutionPanel');
     if (panel) {
         panel.style.display = 'none';
+        // If panel was moved to bulk anchor, move it back to original location
+        const bulkAnchor = document.getElementById('bulkMfrResolutionAnchor');
+        if (bulkAnchor && bulkAnchor.contains(panel)) {
+            // Move back to original parent (after the details-panel placeholder in single-search-panel)
+            const singlePanel = document.querySelector('.single-search-panel');
+            if (singlePanel) singlePanel.appendChild(panel);
+        }
     }
     state.unresolvedManufacturers = [];
     state.mfrResolutions = new Map();
