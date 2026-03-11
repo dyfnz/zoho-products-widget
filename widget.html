@@ -620,7 +620,7 @@
 
                             <!-- Column 3: Paste MPNs -->
                             <div class="paste-section">
-                                <label class="paste-label" for="bulkPasteArea">Paste MPNs</label>
+                                <label class="paste-label" for="bulkPasteArea">Paste MPNs <span class="bulk-info-badge" id="bulkPasteDistributorBadge"></span></label>
                                 <textarea class="paste-textarea" id="bulkPasteArea" placeholder="Paste part numbers here&#10;One per line or comma-separated" oninput="bulkParsePastedSKUs()"></textarea>
                             </div>
                         </div>
@@ -810,6 +810,14 @@
                                     <p>Load products above to see results</p>
                                 </div>
                             </div>
+                            <div class="bulk-pagination" id="bulkPagination" style="display: none;">
+                                <button class="bulk-pagination-btn" id="bulkPrevPage" onclick="bulkChangePage(-1)">&#8592; Previous</button>
+                                <span id="bulkPageInfo">Page 1 of 1</span>
+                                <button class="bulk-pagination-btn" id="bulkNextPage" onclick="bulkChangePage(1)">Next &#8594;</button>
+                            </div>
+                        </div>
+                        <div class="preview-resize-handle" id="bulkResultsResizeHandle">
+                            <div class="preview-resize-grip"></div>
                         </div>
 
                         <!-- Phase 7b: MSRP Comparison Panel -->

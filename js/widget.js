@@ -113,6 +113,7 @@ document.addEventListener('DOMContentLoaded', function() {
     loadManufacturerMappings();
     initMfrMappingsResize();
     initBulkPreviewResize();
+    initBulkResultsResize();
     initMfrMappingsTooltip();
 
     // Set "Group by Manufacturer" checkbox to match default state
@@ -598,6 +599,20 @@ function selectDistributor(distributor) {
 
     resetFilters();
     showStatus(`Switched to ${DISTRIBUTORS[distributor].name}. Search by manufacturer or SKU.`, 'info');
+
+    // Update bulk distributor badges if in bulk mode
+    if (state.searchMode === 'bulk') {
+        updateBulkDistributorBadges();
+    }
+}
+
+function updateBulkDistributorBadges() {
+    const dist = DISTRIBUTORS[state.currentDistributor];
+    const name = dist ? dist.name : '';
+    const badge = document.getElementById('bulkDistributorBadge');
+    if (badge) badge.textContent = name;
+    const pasteBadge = document.getElementById('bulkPasteDistributorBadge');
+    if (pasteBadge) pasteBadge.textContent = name;
 }
 
 // =====================================================
@@ -3966,6 +3981,9 @@ const bulkState = {
     msrpMismatches: [],
     msrpChoices: new Map(),
     resultsPricingMode: 'reseller',
+    // Phase 8 — pagination
+    resultsPage: 1,
+    resultsPerPage: 50,
 };
 
 const BULK_PREVIEW_MAX_ROWS = 50;
@@ -4022,12 +4040,8 @@ function setSearchMode(mode) {
             bulkInitDropZone();
             document.addEventListener('click', bulkHandleDropdownOutsideClick);
         }
-        // Update distributor badge
-        const badge = document.getElementById('bulkDistributorBadge');
-        if (badge) {
-            const dist = DISTRIBUTORS[state.currentDistributor];
-            badge.textContent = dist ? dist.name : '';
-        }
+        // Update distributor badges (title bar + paste section)
+        updateBulkDistributorBadges();
     }
 
     // Sync pricing toggle to active mode's pricing state
@@ -4433,20 +4447,16 @@ function bulkAutoFitPreviewHeight() {
     // Total height = fixed chrome + scaled table content
     const calculatedHeight = HEADER_HEIGHT + TOOLBAR_HEIGHT + scaledTableHeight + LEGEND_HEIGHT + SCROLL_PADDING;
 
-    // Only EXPAND if needed, never shrink below default (350px)
-    const DEFAULT_HEIGHT = 350;
-    const MAX_HEIGHT = 600;
-    const finalHeight = Math.min(MAX_HEIGHT, Math.max(DEFAULT_HEIGHT, Math.ceil(calculatedHeight)));
+    // Snap-fit: set height to exactly what's needed (both grow AND shrink)
+    const MIN_HEIGHT = 80;
+    const finalHeight = Math.max(MIN_HEIGHT, Math.ceil(calculatedHeight));
 
     const previewEl = document.getElementById('bulkSpreadsheetPreview');
     const currentHeight = previewEl.offsetHeight;
 
-    // Only change if we need to expand
-    if (finalHeight > currentHeight) {
+    if (Math.abs(finalHeight - currentHeight) > 2) {
         previewEl.style.height = `${finalHeight}px`;
-        console.log(`[BulkAutoFit] Expanded: ${totalDisplayRows} rows at ${bulkState.previewZoom}% zoom -> ${finalHeight}px (was ${currentHeight}px)`);
-    } else {
-        console.log(`[BulkAutoFit] No change needed: ${totalDisplayRows} rows fit in ${currentHeight}px`);
+        console.log(`[BulkAutoFit] Snap-fit: ${totalDisplayRows} rows at ${bulkState.previewZoom}% zoom -> ${finalHeight}px (was ${currentHeight}px)`);
     }
 }
 
@@ -5500,6 +5510,9 @@ async function bulkLoadProducts() {
 
         console.log(`[BulkSearch] Loaded ${bulkState.products.length} products, ${bulkState.unmatchedMpns.length} unmatched`);
 
+        // Reset pagination for new search results
+        bulkState.resultsPage = 1;
+
         // Phase 5/7b: Render results (pause for MSRP comparison if mismatches exist)
         if (bulkState.msrpMismatches.length > 0) {
             // Default results toggle to MSRP when mismatches exist and any default chose 'current' (DB price)
@@ -5587,6 +5600,7 @@ function bulkClearSearch() {
     bulkState.msrpMismatches = [];
     bulkState.msrpChoices = new Map();
     bulkState.resultsPricingMode = 'reseller';
+    bulkState.resultsPage = 1;
 
     // Hide MSRP comparison panel and re-edit button
     bulkHideMsrpComparisonPanel();
@@ -5674,6 +5688,8 @@ function bulkDisplayResults() {
         emptyState.style.display = 'flex';
         resultsPanel.style.display = 'none';
         if (reEditBtn) reEditBtn.style.display = 'none';
+        const pagination = document.getElementById('bulkPagination');
+        if (pagination) pagination.style.display = 'none';
         return;
     }
 
@@ -5697,27 +5713,44 @@ function bulkDisplayResults() {
         .map(mfr => `<span class="bulk-mfr-badge">${mfr}</span>`)
         .join('');
 
+    // Pagination: compute page range
+    const startIdx = (bulkState.resultsPage - 1) * bulkState.resultsPerPage;
+    const endIdx = startIdx + bulkState.resultsPerPage;
+
+    // Build a flat list of global indices for found products (preserving group order)
+    let globalCounter = 0;
+
     // Render table with collapsible groups
     let html = '';
     mfrList.forEach(mfr => {
         const products = grouped[mfr];
         const isCollapsed = bulkState.collapsedGroups.has(mfr);
 
-        // Manufacturer group divider
+        // Determine which products in this group fall on the current page
+        const pageProducts = [];
+        products.forEach(p => {
+            if (p.not_found) return;
+            if (globalCounter >= startIdx && globalCounter < endIdx) {
+                pageProducts.push(p);
+            }
+            globalCounter++;
+        });
+
+        // Only render this manufacturer group if it has products on this page
+        if (pageProducts.length === 0) return;
+
+        // Manufacturer group divider — show TOTAL count for the group, not just page slice
         html += `<tr><td class="bulk-mfr-group-divider ${isCollapsed ? 'bulk-collapsed' : ''}" data-mfr="${mfr}" onclick="bulkToggleGroup('${mfr.replace(/'/g, "\\'")}')">` +
             `<svg class="bulk-collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>` +
             `${mfr} <span class="bulk-mfr-group-count">${products.length} product${products.length !== 1 ? 's' : ''}</span>` +
             `</td></tr>`;
 
-        // Product rows
-        products.forEach(p => {
+        // Product rows — only the page slice
+        pageProducts.forEach(p => {
             const globalIdx = bulkState.products.indexOf(p);
             const isSelected = bulkState.selectedProductIndices.has(globalIdx);
             const hiddenClass = isCollapsed ? 'bulk-hidden' : '';
             const escapedMfr = mfr.replace(/"/g, '&quot;');
-
-            // Skip not-found products — they already show in the error message above Load Products
-            if (p.not_found) return;
 
             const price = bulkState.resultsPricingMode === 'reseller' && p.resellerPrice != null ? p.resellerPrice : p.msrp;
             const msrpIndicator = p._msrpAdjusted
@@ -5737,6 +5770,7 @@ function bulkDisplayResults() {
 
     tbody.innerHTML = html;
     bulkUpdateResultsSelectionUI();
+    bulkUpdatePagination();
 }
 
 function bulkToggleGroup(mfr) {
@@ -6078,4 +6112,73 @@ function initBulkPreviewResize() {
             document.body.style.userSelect = '';
         }
     });
+}
+
+// Bulk results panel vertical resize
+function initBulkResultsResize() {
+    const handle = document.getElementById('bulkResultsResizeHandle');
+    const target = document.getElementById('bulkResultsPanel');
+
+    if (!handle || !target) return;
+
+    let isResizingResults = false;
+    let resultsResizeStartY = 0;
+    let resultsResizeStartHeight = 0;
+
+    handle.addEventListener('mousedown', (e) => {
+        isResizingResults = true;
+        resultsResizeStartY = e.clientY;
+        resultsResizeStartHeight = target.offsetHeight;
+        document.body.style.cursor = 'ns-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isResizingResults) return;
+
+        const deltaY = e.clientY - resultsResizeStartY;
+        const newHeight = Math.max(100, Math.min(2000, resultsResizeStartHeight + deltaY));
+        target.style.maxHeight = newHeight + 'px';
+        target.style.overflow = 'hidden';
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isResizingResults) {
+            isResizingResults = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
+    });
+}
+
+// =====================================================
+// BULK SEARCH — Phase 8: Pagination
+// =====================================================
+
+function bulkChangePage(delta) {
+    const totalProducts = bulkState.products.filter(p => !p.not_found).length;
+    const totalPages = Math.ceil(totalProducts / bulkState.resultsPerPage);
+    const newPage = bulkState.resultsPage + delta;
+    if (newPage < 1 || newPage > totalPages) return;
+    bulkState.resultsPage = newPage;
+    bulkDisplayResults();
+}
+
+function bulkUpdatePagination() {
+    const pagination = document.getElementById('bulkPagination');
+    const totalProducts = bulkState.products.filter(p => !p.not_found).length;
+    const totalPages = Math.ceil(totalProducts / bulkState.resultsPerPage);
+
+    if (totalPages <= 1) {
+        if (pagination) pagination.style.display = 'none';
+        return;
+    }
+
+    if (pagination) {
+        pagination.style.display = 'flex';
+        document.getElementById('bulkPageInfo').textContent = 'Page ' + bulkState.resultsPage + ' of ' + totalPages;
+        document.getElementById('bulkPrevPage').disabled = bulkState.resultsPage <= 1;
+        document.getElementById('bulkNextPage').disabled = bulkState.resultsPage >= totalPages;
+    }
 }
