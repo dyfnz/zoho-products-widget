@@ -541,7 +541,11 @@
                             </div>
                         </div>
 
-                        <div class="input-zones-container">
+                        <div class="bulk-collapsible-header" data-section="bulkInputRowContent" onclick="bulkToggleSection('bulkInputRowContent')">
+                            <svg class="bulk-collapse-chevron" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4,2 8,6 4,10"/></svg>
+                            <span>Distributor Quotes</span>
+                        </div>
+                        <div class="input-zones-container bulk-section-content" id="bulkInputRowContent">
                             <!-- Column 1: File Drop Zone -->
                             <div class="drop-zone-wrapper">
                                 <div class="drop-zone-panel">
@@ -669,7 +673,11 @@
 
                         <!-- Spreadsheet Preview (Phase 3) -->
                         <div class="preview-row" id="bulkPreviewRow" style="display: none;">
-                            <div class="preview-section-container" id="bulkPreviewSectionContainer">
+                            <div class="bulk-collapsible-header" data-section="bulkPreviewSectionContainer" onclick="bulkToggleSection('bulkPreviewSectionContainer')">
+                                <svg class="bulk-collapse-chevron" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4,2 8,6 4,10"/></svg>
+                                <span>Spreadsheet Preview</span>
+                            </div>
+                            <div class="preview-section-container bulk-section-content" id="bulkPreviewSectionContainer">
                                 <div class="spreadsheet-preview" id="bulkSpreadsheetPreview">
                                     <div class="preview-header">
                                         <span class="preview-title">Spreadsheet Preview</span>
@@ -721,7 +729,11 @@
 
                         <!-- Parsed MPNs (Phase 3) -->
                         <div class="parsed-row" id="bulkParsedRow" style="display: none;">
-                            <div class="parsed-preview" id="bulkParsedPreview">
+                            <div class="bulk-collapsible-header" data-section="bulkParsedContent" onclick="bulkToggleSection('bulkParsedContent')">
+                                <svg class="bulk-collapse-chevron" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4,2 8,6 4,10"/></svg>
+                                <span>Parsed MPNs</span>
+                            </div>
+                            <div class="parsed-preview bulk-section-content" id="bulkParsedContent">
                                 <div class="parsed-header">
                                     <span class="parsed-title">Parsed MPNs (editable)</span>
                                     <span class="parsed-count" id="bulkParsedCount">0 SKUs</span>
@@ -763,6 +775,11 @@
 
                         <!-- Phase 5: Bulk Results Panel -->
                         <div class="bulk-results-panel" id="bulkResultsPanel" style="display: none;">
+                            <div class="bulk-collapsible-header" data-section="bulkResultsContent" onclick="bulkToggleSection('bulkResultsContent')">
+                                <svg class="bulk-collapse-chevron" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4,2 8,6 4,10"/></svg>
+                                <span>Product Results</span>
+                            </div>
+                            <div class="bulk-section-content" id="bulkResultsContent">
                             <div class="bulk-results-header">
                                 <div class="bulk-results-title">
                                     <span class="bulk-results-title-text">Results</span>
@@ -819,6 +836,7 @@
                                 <span id="bulkPageInfo">Page 1 of 1</span>
                                 <button class="bulk-pagination-btn" id="bulkNextPage" onclick="bulkChangePage(1)">Next &#8594;</button>
                             </div>
+                            </div><!-- /.bulk-section-content #bulkResultsContent -->
                         </div>
                         <div class="preview-resize-handle" id="bulkResultsResizeHandle">
                             <div class="preview-resize-grip"></div>

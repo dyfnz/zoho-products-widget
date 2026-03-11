@@ -5592,6 +5592,15 @@ function bulkClearSearch() {
     bulkState.resultsPricingMode = 'reseller';
     bulkState.resultsPage = 1;
 
+    // Reset collapsible sections to expanded
+    bulkState.collapsedSections.forEach(function(sectionId) {
+        var header = document.querySelector('.bulk-collapsible-header[data-section="' + sectionId + '"]');
+        var content = document.getElementById(sectionId);
+        if (header) header.classList.remove('bulk-section-collapsed');
+        if (content) content.classList.remove('bulk-section-hidden');
+    });
+    bulkState.collapsedSections.clear();
+
     // Hide MSRP comparison panel and re-edit button
     bulkHideMsrpComparisonPanel();
     const reEditBtn = document.getElementById('bulkMsrpReEditBtn');
@@ -6182,5 +6191,28 @@ function bulkUpdatePagination() {
         document.getElementById('bulkPageInfo').textContent = 'Page ' + bulkState.resultsPage + ' of ' + totalPages;
         document.getElementById('bulkPrevPage').disabled = bulkState.resultsPage <= 1;
         document.getElementById('bulkNextPage').disabled = bulkState.resultsPage >= totalPages;
+    }
+}
+
+// =====================================================
+// BULK SEARCH — Phase 8.6: Collapsible Section Headers
+// =====================================================
+
+// Track collapsed state
+bulkState.collapsedSections = new Set();
+
+function bulkToggleSection(sectionId) {
+    var header = document.querySelector('.bulk-collapsible-header[data-section="' + sectionId + '"]');
+    var content = document.getElementById(sectionId);
+    if (!header || !content) return;
+
+    if (bulkState.collapsedSections.has(sectionId)) {
+        bulkState.collapsedSections.delete(sectionId);
+        header.classList.remove('bulk-section-collapsed');
+        content.classList.remove('bulk-section-hidden');
+    } else {
+        bulkState.collapsedSections.add(sectionId);
+        header.classList.add('bulk-section-collapsed');
+        content.classList.add('bulk-section-hidden');
     }
 }

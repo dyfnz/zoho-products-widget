@@ -4678,3 +4678,43 @@ button.sel-btn .sel-btn-icon {
     white-space: normal;
     line-height: 1.2;
 }
+
+/* =====================================================
+   BULK COLLAPSIBLE SECTION HEADERS (Phase 8.6)
+   ===================================================== */
+
+.bulk-collapsible-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    cursor: pointer;
+    user-select: none;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    color: var(--color-text);
+    background: var(--color-border-light);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    margin-bottom: 4px;
+}
+
+.bulk-collapsible-header:hover {
+    background: var(--color-border);
+}
+
+.bulk-collapsible-header .bulk-collapse-chevron {
+    width: 12px;
+    height: 12px;
+    transform: rotate(90deg);
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+}
+
+.bulk-collapsible-header.bulk-section-collapsed .bulk-collapse-chevron {
+    transform: rotate(0deg);
+}
+
+.bulk-section-content.bulk-section-hidden {
+    display: none !important;
+}
