@@ -4344,120 +4344,66 @@ function bulkZoomPreview(direction) {
 }
 
 function bulkAutoFitPreview() {
-    if (bulkState.userManuallyZoomed) return; // User took control, don't auto-fit
+    if (bulkState.userHasResized) return; // User manually resized, don't auto-fit
 
     const wrapper = document.getElementById('bulkPreviewTableWrapper');
     const table = document.getElementById('bulkPreviewTable');
-    const panel = wrapper.parentElement; // The scrollable container
+    const previewEl = document.getElementById('bulkSpreadsheetPreview');
+    const scrollArea = document.getElementById('bulkPreviewContainer');
 
-    if (!table || !wrapper || !panel) return;
+    if (!table || !wrapper || !previewEl || !scrollArea) return;
 
-    // Temporarily reset zoom to measure natural table width
-    wrapper.style.transform = 'scale(1)';
-    const naturalTableWidth = table.offsetWidth;
-    const panelWidth = panel.clientWidth - 10; // Small padding buffer
+    // --- Step 1: Auto-fit zoom (width) if user hasn't manually zoomed ---
+    if (!bulkState.userManuallyZoomed) {
+        // Temporarily reset zoom to measure natural table width
+        wrapper.style.transform = 'scale(1)';
+        const naturalTableWidth = table.offsetWidth;
+        const panelWidth = scrollArea.clientWidth - 10; // Small padding buffer
 
-    if (naturalTableWidth <= 0 || panelWidth <= 0) {
-        // Restore default zoom
-        wrapper.style.transform = `scale(${bulkState.previewZoom / 100})`;
-        return;
+        if (naturalTableWidth > 0 && panelWidth > 0) {
+            // Calculate zoom that fits table width to panel width
+            const fitZoom = Math.floor((panelWidth / naturalTableWidth) * 100);
+
+            // Only auto-fit if content would have whitespace (fitZoom > current default)
+            // and cap at 100% — don't blow up past natural size
+            if (fitZoom > bulkState.previewZoom) {
+                bulkState.previewZoom = Math.min(fitZoom, 100);
+            }
+        }
+
+        bulkUpdatePreviewZoom();
     }
 
-    // Calculate zoom that fits table width to panel width
-    const fitZoom = Math.floor((panelWidth / naturalTableWidth) * 100);
-
-    // Only auto-fit if content would have whitespace (fitZoom > current default)
-    // and cap at 100% — don't blow up past natural size
-    if (fitZoom > bulkState.previewZoom) {
-        bulkState.previewZoom = Math.min(fitZoom, 100);
-    }
-
-    bulkUpdatePreviewZoom();
-
-    // After fitting width, check if we should shrink the outer panel height.
+    // --- Step 2: Auto-fit height (priority) — snap to show all selected rows ---
+    // Use requestAnimationFrame so the zoom transform is applied before measuring
     requestAnimationFrame(() => {
-        if (bulkState.userHasResized) return; // User manually resized, respect their choice
+        if (bulkState.userHasResized) return;
 
-        const previewEl = document.getElementById('bulkSpreadsheetPreview');
-        if (!previewEl) return;
+        // Measure the fixed chrome (header, toolbar, legend) — everything except the scroll area
+        const previewRect = previewEl.getBoundingClientRect();
+        const scrollRect = scrollArea.getBoundingClientRect();
+        const chromeHeight = scrollRect.top - previewRect.top; // height of header + toolbar above scroll area
 
-        // Measure the actual rendered height of the scaled table
-        const scaledTableRect = table.getBoundingClientRect();
-        const scaledTableHeight = scaledTableRect.height;
-
-        // Measure the fixed chrome (header, toolbar, legend) — everything except previewContainer
-        const header = previewEl.querySelector('.preview-header');
-        const toolbar = previewEl.querySelector('.selection-toolbar');
         const legend = previewEl.querySelector('.preview-legend');
-        const chromeHeight =
-            (header ? header.offsetHeight : 0) +
-            (toolbar ? toolbar.offsetHeight : 0) +
-            (legend ? legend.offsetHeight : 0);
+        const legendHeight = legend ? legend.offsetHeight : 0;
 
-        // Total needed = chrome + scaled table + padding for comfort
-        const PADDING = 16;
-        const MIN_HEIGHT = 120;
-        const neededHeight = chromeHeight + scaledTableHeight + PADDING;
+        // Get scaled table height from the actual rendered bounding rect
+        const tableRect = table.getBoundingClientRect();
+        const scaledTableHeight = tableRect.height;
+
+        // Target height: chrome above + scaled table + legend below + 2px bottom padding
+        const BOTTOM_PADDING = 2;
+        const MIN_HEIGHT = 80;
+        const targetHeight = chromeHeight + scaledTableHeight + legendHeight + BOTTOM_PADDING;
+        const finalHeight = Math.max(MIN_HEIGHT, Math.ceil(targetHeight));
 
         const currentHeight = previewEl.offsetHeight;
 
-        // Only SHRINK — never grow beyond the current height (bulkAutoFitPreviewHeight handles expansion)
-        if (neededHeight < currentHeight - 10) {
-            const newHeight = Math.max(Math.ceil(neededHeight), MIN_HEIGHT);
-            previewEl.style.height = newHeight + 'px';
-            console.log(`[BulkAutoFit] Shrunk panel: content needs ${Math.ceil(neededHeight)}px, was ${currentHeight}px, now ${newHeight}px`);
+        if (Math.abs(finalHeight - currentHeight) > 2) {
+            previewEl.style.height = `${finalHeight}px`;
+            console.log(`[BulkAutoFit] Snap-fit: content needs ${Math.ceil(targetHeight)}px at ${bulkState.previewZoom}% zoom -> ${finalHeight}px (was ${currentHeight}px)`);
         }
     });
-}
-
-function bulkAutoFitPreviewHeight() {
-    if (bulkState.userHasResized) return; // User manually resized, don't auto-fit
-
-    const headerRowInput = document.getElementById('bulkHeaderRowInput');
-    const lastRowInput = document.getElementById('bulkLastRowInput');
-
-    // Only auto-fit when BOTH header AND last row are set
-    if (!headerRowInput.value || !lastRowInput.value) return;
-
-    const headerRowIdx = parseInt(headerRowInput.value) - 1 || 0;
-    const lastRowIdx = parseInt(lastRowInput.value) - 1;
-
-    // Calculate visible rows (excluding hidden ones)
-    let visibleRowCount = 0;
-    for (let r = headerRowIdx; r <= lastRowIdx; r++) {
-        if (!bulkState.hiddenRows.has(r)) visibleRowCount++;
-    }
-
-    // Add 1 for hidden rows indicator if any rows are hidden
-    const hiddenIndicatorRows = bulkState.hiddenRows.size > 0 ? 1 : 0;
-    const totalDisplayRows = visibleRowCount + hiddenIndicatorRows;
-
-    // Constants for height calculation (fixed chrome heights)
-    const HEADER_HEIGHT = 26;
-    const TOOLBAR_HEIGHT = 20;
-    const LEGEND_HEIGHT = 22;
-    const TABLE_HEADER_HEIGHT = 18;
-    const ROW_HEIGHT = 18;
-    const SCROLL_PADDING = 12;
-
-    // Calculate content height at current zoom
-    const zoomFactor = bulkState.previewZoom / 100;
-    const scaledTableHeight = (totalDisplayRows * ROW_HEIGHT + TABLE_HEADER_HEIGHT) * zoomFactor;
-
-    // Total height = fixed chrome + scaled table content
-    const calculatedHeight = HEADER_HEIGHT + TOOLBAR_HEIGHT + scaledTableHeight + LEGEND_HEIGHT + SCROLL_PADDING;
-
-    // Snap-fit: set height to exactly what's needed (both grow AND shrink)
-    const MIN_HEIGHT = 80;
-    const finalHeight = Math.max(MIN_HEIGHT, Math.ceil(calculatedHeight));
-
-    const previewEl = document.getElementById('bulkSpreadsheetPreview');
-    const currentHeight = previewEl.offsetHeight;
-
-    if (Math.abs(finalHeight - currentHeight) > 2) {
-        previewEl.style.height = `${finalHeight}px`;
-        console.log(`[BulkAutoFit] Snap-fit: ${totalDisplayRows} rows at ${bulkState.previewZoom}% zoom -> ${finalHeight}px (was ${currentHeight}px)`);
-    }
 }
 
 function bulkResetColumnDropdowns() {
@@ -4692,10 +4638,8 @@ function bulkRenderSpreadsheetPreview() {
 
     // Update zoom display
     bulkUpdatePreviewZoom();
-    // Auto-fit zoom to panel width after render
+    // Auto-fit zoom (width) and snap-fit height after render
     bulkAutoFitPreview();
-    // Auto-fit height when both header and last row are set
-    bulkAutoFitPreviewHeight();
 }
 
 function bulkHideSpreadsheetPreview() {
