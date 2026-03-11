@@ -264,6 +264,7 @@ body {
     font-size: var(--font-size-sm);
     font-weight: 500;
     width: 100%;
+    flex: none;
 }
 
 .status-bar.info {
