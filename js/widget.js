@@ -4184,6 +4184,8 @@ function bulkHandleFileSelect(event) {
 
             // Update drop zone UI on success
             if (dropZone) dropZone.classList.add('has-file');
+            const clearBtn = document.getElementById('bulkDropZoneClearBtn');
+            if (clearBtn) clearBtn.classList.add('visible');
             if (statusEl) {
                 statusEl.textContent = `${file.name} loaded`;
                 statusEl.style.color = 'var(--color-success)';
@@ -5640,6 +5642,8 @@ function bulkClearSearch() {
     // Reset drop zone
     const dropZone = document.getElementById('bulkDropZone');
     if (dropZone) dropZone.classList.remove('has-file');
+    const dropClearBtn = document.getElementById('bulkDropZoneClearBtn');
+    if (dropClearBtn) dropClearBtn.classList.remove('visible');
     const dropStatus = document.getElementById('bulkDropZoneStatus');
     if (dropStatus) {
         dropStatus.textContent = '';

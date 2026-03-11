@@ -3016,6 +3016,7 @@ button svg {
     background: var(--color-border-light);
     border-radius: var(--radius-md);
     border: 1px solid var(--color-border);
+    position: relative;
 }
 
 .drop-zone-panel-title {
@@ -4717,4 +4718,36 @@ button.sel-btn .sel-btn-icon {
 
 .bulk-section-content.bulk-section-hidden {
     display: none !important;
+}
+
+/* ===== Phase 8.8: Drop Zone Clear Button ===== */
+.drop-zone-clear-btn {
+    display: none;
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 5;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+    line-height: 1;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.drop-zone-clear-btn:hover {
+    border-color: var(--color-text-secondary);
+    color: var(--color-text);
+    background: var(--color-border-light);
+}
+
+.drop-zone-clear-btn.visible {
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
