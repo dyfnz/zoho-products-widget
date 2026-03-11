@@ -4008,6 +4008,9 @@ function setSearchMode(mode) {
     } else {
         // Hide single-mode content but keep queue (.right-panel) visible
         singlePanel.querySelectorAll('.left-panel').forEach(el => el.style.display = 'none');
+        // Hide any lingering status notification from single mode
+        const filterStatus = document.getElementById('filterStatus');
+        if (filterStatus) filterStatus.style.display = 'none';
         bulkPanel.style.display = '';
         // Activate flex row layout so bulk content + queue sit side by side
         contentWrapper.classList.add('bulk-mode-active');

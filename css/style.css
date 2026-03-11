@@ -2843,6 +2843,7 @@ button svg {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-3);
+    align-content: flex-start;
 }
 
 /* Status bar spans full width at top in bulk flex layout */
