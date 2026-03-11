@@ -263,6 +263,7 @@ body {
     border-radius: var(--radius-md);
     font-size: var(--font-size-sm);
     font-weight: 500;
+    width: 100%;
 }
 
 .status-bar.info {
@@ -2841,6 +2842,11 @@ button svg {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-3);
+}
+
+/* Status bar spans full width at top in bulk flex layout */
+.content-wrapper.bulk-mode-active > .status-bar {
+    order: -1;
 }
 
 /* Product details panel spans full width below bulk content + queue */

@@ -3999,7 +3999,7 @@ function setSearchMode(mode) {
 
     if (mode === 'single') {
         // Restore single-search-panel: show always-visible children, leave conditionally-hidden ones alone
-        singlePanel.querySelectorAll('#filterStatus, .left-panel').forEach(el => el.style.display = '');
+        singlePanel.querySelectorAll('.left-panel').forEach(el => el.style.display = '');
         singlePanel.style.display = '';
         bulkPanel.style.display = 'none';
         // Restore normal layout
@@ -4007,7 +4007,7 @@ function setSearchMode(mode) {
         singlePanel.classList.remove('queue-only');
     } else {
         // Hide single-mode content but keep queue (.right-panel) visible
-        singlePanel.querySelectorAll('#filterStatus, .left-panel').forEach(el => el.style.display = 'none');
+        singlePanel.querySelectorAll('.left-panel').forEach(el => el.style.display = 'none');
         bulkPanel.style.display = '';
         // Activate flex row layout so bulk content + queue sit side by side
         contentWrapper.classList.add('bulk-mode-active');
