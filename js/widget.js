@@ -114,6 +114,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initMfrMappingsResize();
     initBulkPreviewResize();
     initBulkResultsResize();
+    initBulkScrollWheelZoom();
     initMfrMappingsTooltip();
 
     // Set "Group by Manufacturer" checkbox to match default state
@@ -6215,4 +6216,27 @@ function bulkToggleSection(sectionId) {
         header.classList.add('bulk-section-collapsed');
         content.classList.add('bulk-section-hidden');
     }
+}
+
+// =====================================================
+// BULK SEARCH — Phase 8.7: Cmd/Ctrl + Scroll Wheel Zoom on Spreadsheet Preview
+// =====================================================
+// When user holds Cmd (Mac) or Ctrl (Windows/Linux) and scrolls the mouse wheel
+// over the spreadsheet preview area, zoom in/out. Without modifier key, normal
+// scrolling behavior is preserved. Reuses existing bulkZoomPreview() which handles
+// min/max clamping (25%-150%) and sets userManuallyZoomed = true.
+
+function initBulkScrollWheelZoom() {
+    const previewContainer = document.getElementById('bulkPreviewContainer');
+    if (!previewContainer) return;
+
+    previewContainer.addEventListener('wheel', function(e) {
+        // Only intercept when Cmd (Mac) or Ctrl (Windows/Linux) is held
+        if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            // Scroll up (negative deltaY) = zoom in (+1), scroll down = zoom out (-1)
+            const direction = e.deltaY < 0 ? 1 : -1;
+            bulkZoomPreview(direction);
+        }
+    }, { passive: false });
 }
