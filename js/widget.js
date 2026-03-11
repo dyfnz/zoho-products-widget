@@ -5596,6 +5596,7 @@ function bulkClearSearch() {
     bulkState.resultsPage = 1;
 
     // Reset collapsible sections to expanded
+    if (!bulkState.collapsedSections) bulkState.collapsedSections = new Set();
     bulkState.collapsedSections.forEach(function(sectionId) {
         var header = document.querySelector('.bulk-collapsible-header[data-section="' + sectionId + '"]');
         var content = document.getElementById(sectionId);
@@ -5663,8 +5664,12 @@ function bulkClearSearch() {
     const mappingsPanel = document.getElementById('bulkMappingsPanel');
     if (mappingsPanel) mappingsPanel.classList.add('disabled');
 
-    // Reset column dropdowns
+    // Reset column dropdowns and row inputs
     bulkResetColumnDropdowns();
+    const headerRowInput = document.getElementById('bulkHeaderRowInput');
+    if (headerRowInput) headerRowInput.value = '1';
+    const lastRowInput = document.getElementById('bulkLastRowInput');
+    if (lastRowInput) lastRowInput.value = '';
 
     // Update parsed preview (will show empty state)
     bulkUpdateParsedPreview();

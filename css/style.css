@@ -4727,14 +4727,12 @@ button.sel-btn .sel-btn-icon {
     top: 4px;
     right: 4px;
     z-index: 5;
-    width: 20px;
-    height: 20px;
-    padding: 0;
+    padding: 2px 8px;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
     background: var(--color-surface);
     color: var(--color-text-muted);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-2xs);
     line-height: 1;
     cursor: pointer;
     transition: all var(--transition-fast);
