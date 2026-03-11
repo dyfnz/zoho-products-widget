@@ -600,9 +600,10 @@ function selectDistributor(distributor) {
     resetFilters();
     showStatus(`Switched to ${DISTRIBUTORS[distributor].name}. Search by manufacturer or SKU.`, 'info');
 
-    // Update bulk distributor badges if in bulk mode
+    // Update bulk distributor badges if in bulk mode, and clear file/preview state
     if (state.searchMode === 'bulk') {
         updateBulkDistributorBadges();
+        bulkClearSearch();
     }
 }
 
@@ -611,8 +612,6 @@ function updateBulkDistributorBadges() {
     const name = dist ? dist.name : '';
     const badge = document.getElementById('bulkDistributorBadge');
     if (badge) badge.textContent = name;
-    const pasteBadge = document.getElementById('bulkPasteDistributorBadge');
-    if (pasteBadge) pasteBadge.textContent = name;
 }
 
 // =====================================================
@@ -4348,6 +4347,19 @@ function bulkZoomPreview(direction) {
  * Determine the last column (0-based) that contains actual data
  * across the visible row range (header through last row).
  */
+function bulkGetLastDataRow(rows) {
+    for (let r = rows.length - 1; r >= 0; r--) {
+        const row = rows[r];
+        if (!row) continue;
+        for (let c = 0; c < row.length; c++) {
+            if (row[c] !== undefined && row[c] !== null && String(row[c]).trim() !== '') {
+                return r;
+            }
+        }
+    }
+    return 0;
+}
+
 function bulkGetLastDataColumn(rows, startRow, endRow) {
     let maxCol = 0;
     for (let r = startRow; r < endRow && r < rows.length; r++) {
@@ -4542,12 +4554,15 @@ function bulkRenderSpreadsheetPreview() {
 
     // Determine the row range to display:
     // - Start from header row (include it for context)
-    // - End at last row if specified, otherwise cap at BULK_PREVIEW_MAX_ROWS from header
+    // - End at last row if specified, otherwise cap at last row with content (skip trailing empty rows)
     const startRow = headerRowIdx;
-    const endRow =
-        lastRowIdx !== null
-            ? Math.min(lastRowIdx + 1, totalRows) // +1 to include last row
-            : Math.min(headerRowIdx + BULK_PREVIEW_MAX_ROWS, totalRows);
+    let endRow;
+    if (lastRowIdx !== null) {
+        endRow = Math.min(lastRowIdx + 1, totalRows); // +1 to include last row
+    } else {
+        const lastDataRow = bulkGetLastDataRow(bulkState.fileRows);
+        endRow = Math.min(lastDataRow + 1, totalRows); // +1 to include last data row
+    }
     const displayRowCount = endRow - startRow;
 
     // Build column-to-class map for per-group highlighting
@@ -5617,7 +5632,19 @@ function bulkClearSearch() {
     const dropZone = document.getElementById('bulkDropZone');
     if (dropZone) dropZone.classList.remove('has-file');
     const dropStatus = document.getElementById('bulkDropZoneStatus');
-    if (dropStatus) dropStatus.textContent = '';
+    if (dropStatus) {
+        dropStatus.textContent = '';
+        dropStatus.style.color = '';
+    }
+
+    // Reset sheet selector
+    const sheetSelect = document.getElementById('bulkSheetSelect');
+    if (sheetSelect) {
+        sheetSelect.innerHTML = '';
+        sheetSelect.classList.remove('visible');
+    }
+    const sheetLabel = document.getElementById('bulkSheetSelectLabel');
+    if (sheetLabel) sheetLabel.classList.remove('visible');
 
     // Disable mappings panel
     const mappingsPanel = document.getElementById('bulkMappingsPanel');

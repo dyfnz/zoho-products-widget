@@ -2972,14 +2972,6 @@ button svg {
     color: var(--color-accent);
 }
 
-.bulk-info-badge {
-    font-size: var(--font-size-2xs);
-    color: var(--color-text-muted);
-    background: var(--color-border-light);
-    padding: 2px 6px;
-    border-radius: var(--radius-sm);
-}
-
 .bulk-paste-distributor-badge {
     font-size: var(--font-size-2xs);
     font-weight: 700;
