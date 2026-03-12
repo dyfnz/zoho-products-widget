@@ -4411,36 +4411,34 @@ function bulkAutoFitPreview() {
     }
 
     // --- Step 2: Auto-fit height (priority) — snap to show all selected rows ---
-    // Use requestAnimationFrame so the zoom transform is applied before measuring
-    requestAnimationFrame(() => {
-        if (bulkState.userHasResized) return;
+    // getBoundingClientRect() forces a synchronous layout reflow, so the zoom
+    // transform set in Step 1 is already applied when we measure here.
 
-        // Measure the fixed chrome (header, toolbar, legend) — everything except the scroll area
-        const previewRect = previewEl.getBoundingClientRect();
-        const scrollRect = scrollArea.getBoundingClientRect();
-        const chromeHeight = scrollRect.top - previewRect.top; // height of header + toolbar above scroll area
+    // Measure the fixed chrome (header, toolbar, legend) — everything except the scroll area
+    const previewRect = previewEl.getBoundingClientRect();
+    const scrollRect = scrollArea.getBoundingClientRect();
+    const chromeHeight = scrollRect.top - previewRect.top; // height of header + toolbar above scroll area
 
-        const legend = previewEl.querySelector('.preview-legend');
-        const legendHeight = legend ? legend.offsetHeight : 0;
+    const legend = previewEl.querySelector('.preview-legend');
+    const legendHeight = legend ? legend.offsetHeight : 0;
 
-        // Get scaled table height from the actual rendered bounding rect
-        const tableRect = table.getBoundingClientRect();
-        const scaledTableHeight = tableRect.height;
+    // Get scaled table height from the actual rendered bounding rect
+    const tableRect = table.getBoundingClientRect();
+    const scaledTableHeight = tableRect.height;
 
-        // Target height: chrome above + scaled table + legend below + padding + scrollbar
-        const BOTTOM_PADDING = 2;
-        const SCROLLBAR_HEIGHT = 16; // Account for horizontal scrollbar
-        const MIN_HEIGHT = 80;
-        const targetHeight = chromeHeight + scaledTableHeight + legendHeight + BOTTOM_PADDING + SCROLLBAR_HEIGHT;
-        const finalHeight = Math.max(MIN_HEIGHT, Math.ceil(targetHeight));
+    // Target height: chrome above + scaled table + legend below + padding + scrollbar
+    const BOTTOM_PADDING = 2;
+    const SCROLLBAR_HEIGHT = 16; // Account for horizontal scrollbar
+    const MIN_HEIGHT = 80;
+    const targetHeight = chromeHeight + scaledTableHeight + legendHeight + BOTTOM_PADDING + SCROLLBAR_HEIGHT;
+    const finalHeight = Math.max(MIN_HEIGHT, Math.ceil(targetHeight));
 
-        const currentHeight = previewEl.offsetHeight;
+    const currentHeight = previewEl.offsetHeight;
 
-        if (Math.abs(finalHeight - currentHeight) > 2) {
-            previewEl.style.height = `${finalHeight}px`;
-            console.log(`[BulkAutoFit] Snap-fit: content needs ${Math.ceil(targetHeight)}px at ${bulkState.previewZoom}% zoom -> ${finalHeight}px (was ${currentHeight}px)`);
-        }
-    });
+    if (Math.abs(finalHeight - currentHeight) > 2) {
+        previewEl.style.height = `${finalHeight}px`;
+        console.log(`[BulkAutoFit] Snap-fit: content needs ${Math.ceil(targetHeight)}px at ${bulkState.previewZoom}% zoom -> ${finalHeight}px (was ${currentHeight}px)`);
+    }
 }
 
 function bulkResetColumnDropdowns() {
