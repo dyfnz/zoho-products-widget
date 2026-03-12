@@ -4245,8 +4245,20 @@ function bulkLoadSheetData(sheetIndex) {
     const mappingsPanel = document.getElementById('bulkMappingsPanel');
     if (mappingsPanel) mappingsPanel.classList.remove('disabled');
 
-    const headerRow = parseInt(document.getElementById('bulkHeaderRowInput')?.value) - 1 || 0;
-    bulkUpdateColumnSelectionDropdown(headerRow);
+    // Auto-detect header row (async), then update column dropdowns
+    bulkAutoDetectHeaderRow().then(function(detectedHeaderRow) {
+        // Update the input to show detected row (1-based)
+        var headerRowInput = document.getElementById('bulkHeaderRowInput');
+        if (headerRowInput) {
+            headerRowInput.value = detectedHeaderRow + 1; // 1-based for UI
+        }
+        console.log('[BulkAutoMap] Setting header row to', detectedHeaderRow + 1, '(0-based:', detectedHeaderRow, ')');
+        bulkUpdateColumnSelectionDropdown(detectedHeaderRow);
+
+        showStatus('Auto-detected header row: ' + (detectedHeaderRow + 1), 'info');
+    });
+
+    // Preview rendering stays synchronous — doesn't depend on header row detection
     bulkState.userManuallyZoomed = false;
     bulkState.previewZoom = 55;
     bulkRenderSpreadsheetPreview();
@@ -6317,4 +6329,110 @@ function bulkDetectDistributor() {
     console.log('[BulkDetect] No distributor detected after scanning all', bulkState.fileRows.length, 'rows');
     showStatus('Could not auto-detect distributor from file', 'warning');
     return null;
+}
+
+// ========== BULK AUTO-DETECT HEADER ROW (Phase 9.2 Step 3) ==========
+
+function bulkAutoDetectHeaderRow() {
+    // Returns a Promise that resolves to the 0-based header row index
+
+    var detected = state.currentDistributor; // already set by bulkDetectDistributor()
+
+    console.log('[BulkAutoMap] Starting header row detection for distributor:', detected);
+
+    // Step 1: Query Supabase for stored header_row
+    return fetch(SUPABASE_URL + '/rest/v1/bulk_column_mapping_rules?distributor=eq.' + encodeURIComponent(detected) + '&select=header_row', {
+        headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+        }
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        var storedRow = (data && data[0] && data[0].header_row != null) ? data[0].header_row : null;
+        console.log('[BulkAutoMap] Supabase stored header_row for', detected, ':', storedRow);
+
+        if (storedRow !== null && storedRow >= 1) {
+            // Validate: check if that row has header-like content
+            var rowIndex = storedRow - 1; // convert to 0-based
+            if (rowIndex < bulkState.fileRows.length && bulkIsHeaderRow(rowIndex)) {
+                console.log('[BulkAutoMap] Stored header row', storedRow, 'validated successfully');
+                return rowIndex;
+            }
+            console.log('[BulkAutoMap] Stored header row', storedRow, 'failed validation, falling back to heuristic');
+        }
+
+        // Step 2: Heuristic scan
+        return bulkHeuristicHeaderRowScan();
+    })
+    .catch(function(err) {
+        console.warn('[BulkAutoMap] Supabase query failed, using heuristic:', err);
+        return bulkHeuristicHeaderRowScan();
+    });
+}
+
+function bulkIsHeaderRow(rowIndex) {
+    var row = bulkState.fileRows[rowIndex];
+    if (!row) return false;
+    var score = bulkScoreHeaderRow(row);
+    return score >= 2; // at least 2 keyword matches
+}
+
+function bulkScoreHeaderRow(row) {
+    // All known header keywords (lowercase)
+    var keywords = [
+        // MPN
+        'item number', 'mpn', 'part number', 'mfg part', 'manufacturer part', 'sku', 'part #', 'part no', 'mfr. part',
+        // QTY
+        'qty', 'quantity',
+        // Price
+        'price', 'reseller', 'cost', 'dealer price', 'our price', 'unit price', 'unit cost', 'customer price', 'contract price',
+        // VPN
+        'vpn', 'vendor part', 'ingram part', 'vendor name',
+        // MSRP
+        'msrp', 'list price', 'retail price', 'suggested retail',
+        // Other common headers
+        'description', 'availability', 'rebate', 'quote line', 'spa ref'
+    ];
+
+    var score = 0;
+    var matched = [];
+    for (var c = 0; c < row.length; c++) {
+        var cellVal = String(row[c] || '').trim().toLowerCase();
+        if (!cellVal) continue;
+        for (var k = 0; k < keywords.length; k++) {
+            if (cellVal.indexOf(keywords[k]) !== -1) {
+                score++;
+                matched.push(cellVal);
+                break; // one match per cell is enough
+            }
+        }
+    }
+    console.log('[BulkAutoMap] Row scored', score, 'matches:', matched.join(', '));
+    return score;
+}
+
+function bulkHeuristicHeaderRowScan() {
+    console.log('[BulkAutoMap] Running heuristic header row scan');
+    var bestRow = 0; // default to first row (0-based)
+    var bestScore = 0;
+    var maxScan = Math.min(30, bulkState.fileRows.length);
+
+    for (var r = 0; r < maxScan; r++) {
+        var row = bulkState.fileRows[r];
+        if (!row) continue;
+        var score = bulkScoreHeaderRow(row);
+        if (score > bestScore) {
+            bestScore = score;
+            bestRow = r;
+        }
+    }
+
+    if (bestScore >= 2) {
+        console.log('[BulkAutoMap] Heuristic found header at row', bestRow + 1, '(0-based:', bestRow, ') with score', bestScore);
+        return bestRow;
+    }
+
+    console.log('[BulkAutoMap] Heuristic found no strong header match, defaulting to row 1');
+    return 0; // default to first row
 }
