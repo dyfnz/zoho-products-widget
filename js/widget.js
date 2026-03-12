@@ -6268,36 +6268,41 @@ function initBulkScrollWheelZoom() {
 function bulkDetectDistributor() {
     if (!bulkState.fileRows || bulkState.fileRows.length === 0) return null;
 
-    // Build a single searchable string from the first 20 rows × all columns
-    const maxRows = Math.min(20, bulkState.fileRows.length);
-    let searchText = '';
-
-    for (let r = 0; r < maxRows; r++) {
+    // Scan ALL rows, return immediately on first match
+    for (let r = 0; r < bulkState.fileRows.length; r++) {
         const row = bulkState.fileRows[r];
         if (!row) continue;
+
+        // Concatenate all cells in this row into a single lowercase string
+        let rowText = '';
         for (let c = 0; c < row.length; c++) {
             const cellVal = String(row[c] || '').trim().toLowerCase();
             if (cellVal) {
-                searchText += ' ' + cellVal;
+                rowText += ' ' + cellVal;
             }
+        }
+
+        if (!rowText) continue;
+
+        // Check for distributor keywords — email domains first (most specific), then word-boundary terms
+        let detected = null;
+
+        if (/tdsynnex\.com/.test(rowText) || /td\s*synnex/.test(rowText) || /\bsynnex\b/.test(rowText)) {
+            detected = 'tdsynnex';
+        } else if (/arrow\.com/.test(rowText) || /\barrow\b/.test(rowText)) {
+            detected = 'arrow';
+        } else if (/ingrammicro\.com/.test(rowText) || /\bingram\b/.test(rowText)) {
+            detected = 'ingram';
+        }
+
+        if (detected) {
+            if (detected !== state.currentDistributor) {
+                console.log(`[BulkSearch] Auto-detected distributor: ${detected} (row ${r + 1})`);
+                selectDistributor(detected);
+            }
+            return detected;
         }
     }
 
-    // Check for distributor keywords — first match wins
-    let detected = null;
-
-    if (/\barrow\b/.test(searchText)) {
-        detected = 'arrow';
-    } else if (/\bingram\b/.test(searchText)) {
-        detected = 'ingram';
-    } else if (/\bsynnex\b|td\s*synnex/.test(searchText)) {
-        detected = 'tdsynnex';
-    }
-
-    if (detected && detected !== state.currentDistributor) {
-        console.log(`[BulkSearch] Auto-detected distributor: ${detected}`);
-        selectDistributor(detected);
-    }
-
-    return detected;
+    return null;
 }
