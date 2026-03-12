@@ -4237,6 +4237,9 @@ function bulkLoadSheetData(sheetIndex) {
     bulkState.fileRows = rows;
     console.log(`[BulkSearch] Loaded ${rows.length} rows from sheet: ${sheetName}`);
 
+    // Auto-detect distributor from spreadsheet content (Phase 9.2 Step 2)
+    bulkDetectDistributor();
+
     // Phase 3: Enable mappings panel and render preview
     const mappingsPanel = document.getElementById('bulkMappingsPanel');
     if (mappingsPanel) mappingsPanel.classList.remove('disabled');
@@ -6253,4 +6256,48 @@ function initBulkScrollWheelZoom() {
             bulkZoomPreview(direction);
         }
     }, { passive: false });
+}
+
+// ========== BULK DISTRIBUTOR AUTO-DETECTION (Phase 9.2 Step 2) ==========
+
+/**
+ * Scan the first ~20 rows of bulkState.fileRows for distributor keywords
+ * and auto-select the matching distributor tab if found.
+ * Returns the detected distributor string ('arrow', 'ingram', 'tdsynnex') or null.
+ */
+function bulkDetectDistributor() {
+    if (!bulkState.fileRows || bulkState.fileRows.length === 0) return null;
+
+    // Build a single searchable string from the first 20 rows × all columns
+    const maxRows = Math.min(20, bulkState.fileRows.length);
+    let searchText = '';
+
+    for (let r = 0; r < maxRows; r++) {
+        const row = bulkState.fileRows[r];
+        if (!row) continue;
+        for (let c = 0; c < row.length; c++) {
+            const cellVal = String(row[c] || '').trim().toLowerCase();
+            if (cellVal) {
+                searchText += ' ' + cellVal;
+            }
+        }
+    }
+
+    // Check for distributor keywords — first match wins
+    let detected = null;
+
+    if (/\barrow\b/.test(searchText)) {
+        detected = 'arrow';
+    } else if (/\bingram\b/.test(searchText)) {
+        detected = 'ingram';
+    } else if (/\bsynnex\b|td\s*synnex/.test(searchText)) {
+        detected = 'tdsynnex';
+    }
+
+    if (detected && detected !== state.currentDistributor) {
+        console.log(`[BulkSearch] Auto-detected distributor: ${detected}`);
+        selectDistributor(detected);
+    }
+
+    return detected;
 }
