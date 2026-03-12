@@ -4238,6 +4238,7 @@ function bulkLoadSheetData(sheetIndex) {
     console.log(`[BulkSearch] Loaded ${rows.length} rows from sheet: ${sheetName}`);
 
     // Auto-detect distributor from spreadsheet content (Phase 9.2 Step 2)
+    console.log('[BulkDetect] About to call bulkDetectDistributor(), fileRows length:', bulkState.fileRows.length);
     bulkDetectDistributor();
 
     // Phase 3: Enable mappings panel and render preview
@@ -6266,7 +6267,14 @@ function initBulkScrollWheelZoom() {
  * Returns the detected distributor string ('arrow', 'ingram', 'tdsynnex') or null.
  */
 function bulkDetectDistributor() {
-    if (!bulkState.fileRows || bulkState.fileRows.length === 0) return null;
+    console.log('[BulkDetect] bulkDetectDistributor() called');
+
+    if (!bulkState.fileRows || bulkState.fileRows.length === 0) {
+        console.log('[BulkDetect] No fileRows available, returning null');
+        return null;
+    }
+
+    console.log('[BulkDetect] Starting distributor detection, fileRows:', bulkState.fileRows.length, 'rows');
 
     // Scan ALL rows, return immediately on first match
     for (let r = 0; r < bulkState.fileRows.length; r++) {
@@ -6284,6 +6292,8 @@ function bulkDetectDistributor() {
 
         if (!rowText) continue;
 
+        console.log('[BulkDetect] Row', r, ':', rowText.substring(0, 100));
+
         // Check for distributor keywords — email domains first (most specific), then word-boundary terms
         let detected = null;
 
@@ -6296,13 +6306,15 @@ function bulkDetectDistributor() {
         }
 
         if (detected) {
-            if (detected !== state.currentDistributor) {
-                console.log(`[BulkSearch] Auto-detected distributor: ${detected} (row ${r + 1})`);
-                selectDistributor(detected);
-            }
+            const displayName = DISTRIBUTORS[detected] ? DISTRIBUTORS[detected].name : detected;
+            console.log('[BulkDetect] MATCH FOUND:', detected, 'in row', r, '- selecting distributor:', displayName);
+            selectDistributor(detected);
+            showStatus('Auto-detected distributor: ' + displayName, 'success');
             return detected;
         }
     }
 
+    console.log('[BulkDetect] No distributor detected after scanning all', bulkState.fileRows.length, 'rows');
+    showStatus('Could not auto-detect distributor from file', 'warning');
     return null;
 }
