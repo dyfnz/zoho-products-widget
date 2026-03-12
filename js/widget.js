@@ -4245,7 +4245,7 @@ function bulkLoadSheetData(sheetIndex) {
     const mappingsPanel = document.getElementById('bulkMappingsPanel');
     if (mappingsPanel) mappingsPanel.classList.remove('disabled');
 
-    // Auto-detect header row (async), then update column dropdowns
+    // Auto-detect header row (async), then fetch mapping rules, then update column dropdowns
     bulkAutoDetectHeaderRow().then(function(detectedHeaderRow) {
         // Update the input to show detected row (1-based)
         var headerRowInput = document.getElementById('bulkHeaderRowInput');
@@ -4253,14 +4253,32 @@ function bulkLoadSheetData(sheetIndex) {
             headerRowInput.value = detectedHeaderRow + 1; // 1-based for UI
         }
         console.log('[BulkAutoMap] Setting header row to', detectedHeaderRow + 1, '(0-based:', detectedHeaderRow, ')');
-        bulkUpdateColumnSelectionDropdown(detectedHeaderRow);
 
-        // Re-render preview now that header row is set (must happen after async detection)
+        // Fetch mapping rules from Supabase, then update dropdowns with rules
+        return bulkFetchMappingRules().then(function(rules) {
+            bulkUpdateColumnSelectionDropdown(detectedHeaderRow, rules);
+
+            // Auto-detect last data row after column mapping (uses MPN column if available)
+            var lastRow = bulkAutoDetectLastRow(detectedHeaderRow);
+            var bulkLastRowInput = document.getElementById('bulkLastRowInput');
+            if (bulkLastRowInput && lastRow > detectedHeaderRow) {
+                bulkLastRowInput.value = lastRow + 1; // 1-based for UI
+                console.log('[BulkAutoMap] Auto-detected last data row:', lastRow + 1, '(0-based:', lastRow, ')');
+            }
+        });
+    }).then(function() {
+        // Re-render preview now that header row, last row, and column mappings are set
         bulkState.userManuallyZoomed = false;
         bulkState.previewZoom = 55;
         bulkRenderSpreadsheetPreview();
 
-        showStatus('Auto-detected header row: ' + (detectedHeaderRow + 1), 'info');
+        var headerRowInput = document.getElementById('bulkHeaderRowInput');
+        var lastRowInput = document.getElementById('bulkLastRowInput');
+        var detectedRow = headerRowInput ? parseInt(headerRowInput.value) : 1;
+        var detectedLastRow = lastRowInput ? lastRowInput.value : '';
+        var statusMsg = 'Auto-detected header row: ' + detectedRow;
+        if (detectedLastRow) statusMsg += ', last row: ' + detectedLastRow;
+        showStatus(statusMsg, 'info');
     });
 }
 
@@ -4479,81 +4497,121 @@ function bulkAppendAutoSelectOption(selectEl, colLetter, headerText, selectId) {
     selectEl.appendChild(option);
 }
 
-function bulkUpdateColumnSelectionDropdown(headerRowIndex) {
+function bulkUpdateColumnSelectionDropdown(headerRowIndex, rules) {
     if (!bulkState.fileRows || bulkState.fileRows.length === 0) return;
 
-    const headers = bulkState.fileRows[headerRowIndex] || [];
+    var headers = bulkState.fileRows[headerRowIndex] || [];
 
     // Compute last data column across the visible row range
-    const lastRowInput = document.getElementById('bulkLastRowInput');
-    const lastRowIdx = lastRowInput && lastRowInput.value ? parseInt(lastRowInput.value) - 1 : null;
-    const totalRows = bulkState.fileRows.length;
-    const endRow = lastRowIdx !== null ? Math.min(lastRowIdx + 1, totalRows) : totalRows;
+    var lastRowInput = document.getElementById('bulkLastRowInput');
+    var lastRowIdx = lastRowInput && lastRowInput.value ? parseInt(lastRowInput.value) - 1 : null;
+    var totalRows = bulkState.fileRows.length;
+    var endRow = lastRowIdx !== null ? Math.min(lastRowIdx + 1, totalRows) : totalRows;
     bulkState.lastDataColumn = bulkGetLastDataColumn(bulkState.fileRows, headerRowIndex, endRow);
-    const maxDropdownCols = bulkState.lastDataColumn + 1;
+    var maxDropdownCols = bulkState.lastDataColumn + 1;
 
-    const columnSelect = document.getElementById('bulkColumnSelect');
-    const qtyColumnSelect = document.getElementById('bulkQtyColumnSelect');
-    const resellerPriceColumnSelect = document.getElementById('bulkResellerPriceColumnSelect');
-    const vpnColumnSelect = document.getElementById('bulkVpnColumnSelect');
-    const msrpColumnSelect = document.getElementById('bulkMsrpColumnSelect');
+    var columnSelect = document.getElementById('bulkColumnSelect');
+    var qtyColumnSelect = document.getElementById('bulkQtyColumnSelect');
+    var resellerPriceColumnSelect = document.getElementById('bulkResellerPriceColumnSelect');
+    var vpnColumnSelect = document.getElementById('bulkVpnColumnSelect');
+    var msrpColumnSelect = document.getElementById('bulkMsrpColumnSelect');
+
+    // Use rules if provided (from Supabase), otherwise fall back to hardcoded keywords
+    var mpnKeywords = (rules && rules.mpn) ? rules.mpn : ['item number', 'mpn', 'part number', 'mfg part', 'manufacturer part', 'sku'];
+    var qtyKeywords = (rules && rules.qty) ? rules.qty : ['qty', 'quantity'];
+    var priceKeywords = (rules && rules.price) ? rules.price : ['price', 'reseller', 'cost', 'dealer price', 'our price', 'unit price'];
+    var vpnKeywords = (rules && rules.vpn) ? rules.vpn : ['vpn', 'vendor part', 'ingram part'];
+    var msrpKeywords = (rules && rules.msrp) ? rules.msrp : ['msrp', 'list price', 'retail price', 'suggested retail'];
 
     // Reset all dropdowns
     bulkResetColumnDropdowns();
 
-    headers.forEach((header, index) => {
+    // --- Pass 1: Populate all dropdown options (no auto-selection yet) ---
+    // Also build a lookup of which columns match which field keywords
+    var mpnCandidates = [];
+    var qtyCandidates = [];
+    var priceCandidates = [];
+    var vpnCandidates = [];
+    var msrpCandidates = [];
+
+    headers.forEach(function(header, index) {
         // Skip columns beyond the last data column
         if (index >= maxDropdownCols) return;
 
-        const colLetter = index < 26 ? String.fromCharCode(65 + index) : 'Col' + (index + 1);
-        const headerText = `${colLetter}: ${header || '(empty)'}`;
-        const headerLower = String(header).toLowerCase();
+        var colLetter = index < 26 ? String.fromCharCode(65 + index) : 'Col' + (index + 1);
+        var headerText = colLetter + ': ' + (header || '(empty)');
+        var headerLower = String(header).toLowerCase().trim();
 
-        // MPN column — auto-select on match
-        const mpnOption = document.createElement('option');
+        // Check if this is an "Ext"/"Extended" field (line-total columns, not unit values)
+        var isExtField = /\bext\b\.?|extended/i.test(String(header));
+
+        // Add option to each dropdown (always — user can manually pick any column)
+        var mpnOption = document.createElement('option');
         mpnOption.value = index;
         mpnOption.textContent = headerText;
-        if (['item number', 'mpn', 'part number', 'mfg part', 'manufacturer part', 'sku'].some(v => headerLower.includes(v))) {
-            mpnOption.selected = true;
-        }
         columnSelect.appendChild(mpnOption);
 
-        // QTY column — auto-select on match
-        const qtyOption = document.createElement('option');
+        var qtyOption = document.createElement('option');
         qtyOption.value = index;
         qtyOption.textContent = headerText;
-        if (['qty', 'quantity'].some(v => headerLower.includes(v))) {
-            qtyOption.selected = true;
-        }
         qtyColumnSelect.appendChild(qtyOption);
 
-        // Reseller Price column — auto-select on match
-        const priceOption = document.createElement('option');
+        var priceOption = document.createElement('option');
         priceOption.value = index;
         priceOption.textContent = headerText;
-        if (['price', 'reseller', 'cost', 'dealer price', 'our price', 'unit price'].some(v => headerLower.includes(v))) {
-            priceOption.selected = true;
-        }
         resellerPriceColumnSelect.appendChild(priceOption);
 
-        // VPN column — auto-select on match
-        const vpnOption = document.createElement('option');
+        var vpnOption = document.createElement('option');
         vpnOption.value = index;
         vpnOption.textContent = headerText;
-        if (['vpn', 'vendor part', 'ingram part'].some(v => headerLower.includes(v))) {
-            vpnOption.selected = true;
-        }
         vpnColumnSelect.appendChild(vpnOption);
 
-        // MSRP column — auto-select on match
-        const msrpOption = document.createElement('option');
+        var msrpOption = document.createElement('option');
         msrpOption.value = index;
         msrpOption.textContent = headerText;
-        if (['msrp', 'list price', 'retail price', 'suggested retail'].some(v => headerLower.includes(v))) {
-            msrpOption.selected = true;
-        }
         msrpColumnSelect.appendChild(msrpOption);
+
+        // Record candidate matches for auto-selection (respecting Ext exclusion)
+        if (mpnKeywords.some(function(v) { return headerLower.indexOf(v) !== -1; })) {
+            mpnCandidates.push(index);
+        }
+        if (qtyKeywords.some(function(v) { return headerLower.indexOf(v) !== -1; })) {
+            qtyCandidates.push(index);
+        }
+        if (!isExtField && priceKeywords.some(function(v) { return headerLower.indexOf(v) !== -1; })) {
+            priceCandidates.push(index);
+        }
+        if (vpnKeywords.some(function(v) { return headerLower.indexOf(v) !== -1; })) {
+            vpnCandidates.push(index);
+        }
+        if (!isExtField && msrpKeywords.some(function(v) { return headerLower.indexOf(v) !== -1; })) {
+            msrpCandidates.push(index);
+        }
     });
+
+    // --- Pass 2: Auto-select columns with priority ordering and no duplicates ---
+    // Priority: MPN → QTY → Price → VPN → MSRP
+    // Each column index can only be claimed by one field
+    var usedColumns = {};
+
+    // Helper: pick the first unclaimed candidate for a dropdown
+    function autoSelectFirst(selectEl, candidates, fieldName) {
+        for (var i = 0; i < candidates.length; i++) {
+            var colIdx = candidates[i];
+            if (!usedColumns[colIdx]) {
+                selectEl.value = String(colIdx);
+                usedColumns[colIdx] = fieldName;
+                console.log('[BulkAutoMap] Auto-selected column', colIdx, 'for', fieldName);
+                return;
+            }
+        }
+    }
+
+    autoSelectFirst(columnSelect, mpnCandidates, 'mpn');
+    autoSelectFirst(qtyColumnSelect, qtyCandidates, 'qty');
+    autoSelectFirst(resellerPriceColumnSelect, priceCandidates, 'price');
+    autoSelectFirst(vpnColumnSelect, vpnCandidates, 'vpn');
+    autoSelectFirst(msrpColumnSelect, msrpCandidates, 'msrp');
 }
 
 function bulkRenderSpreadsheetPreview() {
@@ -6410,6 +6468,114 @@ function bulkScoreHeaderRow(row) {
     }
     console.log('[BulkAutoMap] Row scored', score, 'matches:', matched.join(', '));
     return score;
+}
+
+function bulkAutoDetectLastRow(headerRowIndex) {
+    // Detect the last data row by scanning backwards from the end of fileRows.
+    // A "data row" has content in >= 3 columns (to skip footer/notes rows).
+    // Uses the auto-detected MPN column as a strong signal if available.
+    var rows = bulkState.fileRows;
+    if (!rows || rows.length === 0) return headerRowIndex;
+
+    var mpnColSelect = document.getElementById('bulkColumnSelect');
+    var mpnColIdx = (mpnColSelect && mpnColSelect.value !== '') ? parseInt(mpnColSelect.value) : -1;
+
+    // Scan backwards from the end
+    for (var r = rows.length - 1; r > headerRowIndex; r--) {
+        var row = rows[r];
+        if (!row) continue;
+
+        // Count how many cells have non-empty content
+        var populatedCount = 0;
+        var mpnHasData = false;
+        for (var c = 0; c < row.length; c++) {
+            var cellVal = String(row[c] || '').trim();
+            if (cellVal !== '') {
+                populatedCount++;
+                if (c === mpnColIdx) mpnHasData = true;
+            }
+        }
+
+        // Strong signal: MPN column has data AND at least 2 other cells populated
+        if (mpnColIdx >= 0 && mpnHasData && populatedCount >= 3) {
+            return r;
+        }
+        // Fallback: no MPN column detected, use >= 3 populated cells
+        if (mpnColIdx < 0 && populatedCount >= 3) {
+            return r;
+        }
+    }
+
+    // No data rows found — return the row after the header
+    return headerRowIndex;
+}
+
+// ========== BULK COLUMN MAPPING RULES FETCH (Phase 9.2 Step 4) ==========
+
+function bulkFetchMappingRules() {
+    // Fetch both distributor-specific and universal rules from Supabase
+    // Returns a Promise resolving to { mpn: [...], qty: [...], price: [...], vpn: [...], msrp: [...] }
+    var distributor = state.currentDistributor;
+
+    console.log('[BulkAutoMap] Fetching mapping rules for distributor:', distributor);
+
+    // Query both the distributor row and universal row in one request
+    var url = SUPABASE_URL + '/rest/v1/bulk_column_mapping_rules?distributor=in.(' +
+        encodeURIComponent(distributor) + ',universal)&select=distributor,mpn,qty,price,vpn,msrp';
+
+    return fetch(url, {
+        headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+        }
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(rows) {
+        // Separate distributor-specific and universal rows
+        var distRow = null;
+        var univRow = null;
+        for (var i = 0; i < rows.length; i++) {
+            if (rows[i].distributor === distributor) distRow = rows[i];
+            if (rows[i].distributor === 'universal') univRow = rows[i];
+        }
+
+        // Merge: distributor-specific keywords first, then universal
+        var fields = ['mpn', 'qty', 'price', 'vpn', 'msrp'];
+        var merged = {};
+        for (var f = 0; f < fields.length; f++) {
+            var field = fields[f];
+            var keywords = [];
+            // Add distributor-specific keywords first
+            if (distRow && distRow[field]) {
+                var distKeywords = distRow[field].split(',').map(function(k) { return k.trim().toLowerCase(); }).filter(Boolean);
+                keywords = keywords.concat(distKeywords);
+            }
+            // Add universal keywords (deduplicating)
+            if (univRow && univRow[field]) {
+                var univKeywords = univRow[field].split(',').map(function(k) { return k.trim().toLowerCase(); }).filter(Boolean);
+                for (var u = 0; u < univKeywords.length; u++) {
+                    if (keywords.indexOf(univKeywords[u]) === -1) {
+                        keywords.push(univKeywords[u]);
+                    }
+                }
+            }
+            merged[field] = keywords;
+        }
+
+        console.log('[BulkAutoMap] Merged mapping rules:', merged);
+        return merged;
+    })
+    .catch(function(err) {
+        console.warn('[BulkAutoMap] Failed to fetch mapping rules, using hardcoded defaults:', err);
+        // Return hardcoded defaults as fallback
+        return {
+            mpn: ['item number', 'mpn', 'part number', 'mfg part', 'manufacturer part', 'sku', 'part #', 'part no', 'mfr. part'],
+            qty: ['qty', 'quantity'],
+            price: ['price', 'reseller', 'cost', 'dealer price', 'our price', 'unit price', 'unit cost', 'customer price', 'contract price', 'wholesale price', 'net price'],
+            vpn: ['vpn', 'vendor part', 'ingram part'],
+            msrp: ['msrp', 'list price', 'retail price', 'suggested retail']
+        };
+    });
 }
 
 function bulkHeuristicHeaderRowScan() {
