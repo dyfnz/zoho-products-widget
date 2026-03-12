@@ -4255,13 +4255,13 @@ function bulkLoadSheetData(sheetIndex) {
         console.log('[BulkAutoMap] Setting header row to', detectedHeaderRow + 1, '(0-based:', detectedHeaderRow, ')');
         bulkUpdateColumnSelectionDropdown(detectedHeaderRow);
 
+        // Re-render preview now that header row is set (must happen after async detection)
+        bulkState.userManuallyZoomed = false;
+        bulkState.previewZoom = 55;
+        bulkRenderSpreadsheetPreview();
+
         showStatus('Auto-detected header row: ' + (detectedHeaderRow + 1), 'info');
     });
-
-    // Preview rendering stays synchronous — doesn't depend on header row detection
-    bulkState.userManuallyZoomed = false;
-    bulkState.previewZoom = 55;
-    bulkRenderSpreadsheetPreview();
 }
 
 /**
