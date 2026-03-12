@@ -4387,6 +4387,9 @@ function bulkAutoFitPreview() {
 
     if (!table || !wrapper || !previewEl || !scrollArea) return;
 
+    // Disable CSS transition so getBoundingClientRect() measures final transform instantly
+    wrapper.style.transition = 'none';
+
     // --- Step 1: Auto-fit zoom (width) if user hasn't manually zoomed ---
     if (!bulkState.userManuallyZoomed) {
         // Temporarily reset zoom to measure natural table width
@@ -4439,6 +4442,10 @@ function bulkAutoFitPreview() {
         previewEl.style.height = `${finalHeight}px`;
         console.log(`[BulkAutoFit] Snap-fit: content needs ${Math.ceil(targetHeight)}px at ${bulkState.previewZoom}% zoom -> ${finalHeight}px (was ${currentHeight}px)`);
     }
+
+    // Force reflow to commit the instant (non-animated) transform, then restore CSS transition
+    wrapper.offsetHeight;
+    wrapper.style.transition = '';
 }
 
 function bulkResetColumnDropdowns() {
