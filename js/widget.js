@@ -4306,6 +4306,8 @@ function bulkAutoMapColumns() {
 // BULK SEARCH — Phase 9.2+9.4: Mapping Rules Editor
 // =====================================================
 
+var _bulkMappingRulesResizeInited = false;
+
 function bulkToggleMappingRulesPanel() {
     var panel = document.getElementById('bulkMappingRulesPanel');
     var btn = document.getElementById('bulkMappingRulesBtn');
@@ -4320,11 +4322,51 @@ function bulkToggleMappingRulesPanel() {
         bulkFetchAllMappingRules();
         panel.style.display = 'block';
         if (btn) btn.classList.add('active');
+        if (!_bulkMappingRulesResizeInited) {
+            initBulkMappingRulesResize();
+            _bulkMappingRulesResizeInited = true;
+        }
     }
 }
 
+function initBulkMappingRulesResize() {
+    var handle = document.getElementById('bulkMappingRulesResize');
+    var container = document.getElementById('bulkMappingRulesTableContainer');
+    if (!handle || !container) return;
+
+    var isResizing = false;
+    var startY = 0;
+    var startHeight = 0;
+
+    handle.addEventListener('mousedown', function(e) {
+        isResizing = true;
+        startY = e.clientY;
+        startHeight = container.offsetHeight;
+        document.body.style.cursor = 'ns-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', function(e) {
+        if (!isResizing) return;
+        var deltaY = e.clientY - startY;
+        var newHeight = Math.max(80, Math.min(600, startHeight + deltaY));
+        container.style.maxHeight = newHeight + 'px';
+    });
+
+    document.addEventListener('mouseup', function() {
+        if (isResizing) {
+            isResizing = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
+    });
+
+    console.log('[BulkRulesEditor] Resize handle initialized');
+}
+
 function bulkFetchAllMappingRules() {
-    var url = SUPABASE_URL + '/rest/v1/bulk_column_mapping_rules?select=distributor,mpn,qty,price,vpn,msrp&order=distributor.asc';
+    var url = SUPABASE_URL + '/rest/v1/bulk_column_mapping_rules?select=distributor,sheet_name,mpn,qty,price,vpn,msrp&order=distributor.asc';
 
     fetch(url, {
         headers: {
@@ -4341,36 +4383,47 @@ function bulkFetchAllMappingRules() {
         console.error('[BulkRulesEditor] Failed to fetch rules:', err);
         var tbody = document.getElementById('bulkMappingRulesTableBody');
         if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--color-text-muted); padding: 12px;">Failed to load mapping rules</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--color-text-muted); padding: 12px;">Failed to load mapping rules</td></tr>';
         }
     });
 }
+
+// Track collapsed columns in the mapping rules editor
+var _bulkRuleCollapsedCols = {};
 
 function bulkRenderMappingRulesTable(rows) {
     var tbody = document.getElementById('bulkMappingRulesTableBody');
     if (!tbody) return;
 
     if (!rows || rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--color-text-muted); padding: 12px;">No mapping rules found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--color-text-muted); padding: 12px;">No mapping rules found</td></tr>';
         return;
     }
 
     // Display name mapping
-    var distNames = { arrow: 'Arrow', ingram: 'Ingram Micro', tdsynnex: 'TD SYNNEX', universal: 'Universal (fallback)' };
-    var fields = ['mpn', 'qty', 'price', 'vpn', 'msrp'];
+    var distNames = { arrow: 'Arrow', ingram: 'Ingram Micro', tdsynnex: 'TD SYNNEX' };
+    var fields = ['sheet_name', 'mpn', 'qty', 'price', 'vpn', 'msrp'];
 
     var html = '';
     for (var i = 0; i < rows.length; i++) {
         var row = rows[i];
-        var displayName = distNames[row.distributor] || row.distributor;
+        var isUniversal = (row.distributor === 'universal');
         html += '<tr data-distributor="' + escapeHtml(row.distributor) + '">';
-        html += '<td>' + escapeHtml(displayName) + '</td>';
+        // Distributor cell — universal gets stacked HTML, others get escaped text
+        if (isUniversal) {
+            html += '<td>Universal<br><span style="font-size: 0.85em; color: var(--color-text-muted); font-weight: 400;">(fallback)</span></td>';
+        } else {
+            var displayName = distNames[row.distributor] || row.distributor;
+            html += '<td>' + escapeHtml(displayName) + '</td>';
+        }
         for (var f = 0; f < fields.length; f++) {
             var field = fields[f];
+            var colIndex = f + 1; // 0 is distributor
             var value = row[field] || '';
             var cellClass = value ? 'bulk-rule-cell-text' : 'bulk-rule-cell-text bulk-rule-cell-empty';
             var cellDisplay = value ? escapeHtml(value) : '(none)';
-            html += '<td onclick="bulkEditMappingRuleCell(this, \'' + escapeHtml(row.distributor) + '\', \'' + escapeHtml(field) + '\')">';
+            var collapsedClass = _bulkRuleCollapsedCols[colIndex] ? ' bulk-rule-col-collapsed' : '';
+            html += '<td class="' + collapsedClass.trim() + '" data-col-index="' + colIndex + '" onclick="bulkEditMappingRuleCell(this, \'' + escapeHtml(row.distributor) + '\', \'' + escapeHtml(field) + '\')">';
             html += '<span class="' + cellClass + '">' + cellDisplay + '</span>';
             html += '</td>';
         }
@@ -4378,6 +4431,115 @@ function bulkRenderMappingRulesTable(rows) {
     }
 
     tbody.innerHTML = html;
+
+    // Set up column resize handles and collapse toggles on thead
+    bulkSetupRuleColumnResizeHandles();
+    bulkApplyCollapsedCols();
+}
+
+function bulkSetupRuleColumnResizeHandles() {
+    var table = document.querySelector('.bulk-mapping-rules-table');
+    if (!table) return;
+    var ths = table.querySelectorAll('thead th');
+
+    for (var i = 0; i < ths.length; i++) {
+        var th = ths[i];
+        // Clear any existing handles/toggles
+        var existing = th.querySelectorAll('.bulk-rule-col-resize, .bulk-rule-col-toggle');
+        for (var e = 0; e < existing.length; e++) { existing[e].remove(); }
+
+        // Add resize handle (skip last column — no right-edge resize needed)
+        if (i < ths.length - 1) {
+            var handle = document.createElement('div');
+            handle.className = 'bulk-rule-col-resize';
+            handle.setAttribute('data-col-index', String(i));
+            th.appendChild(handle);
+            (function(colIdx, handleEl, thEl) {
+                var isColResizing = false;
+                var colStartX = 0;
+                var colStartWidth = 0;
+
+                handleEl.addEventListener('mousedown', function(ev) {
+                    isColResizing = true;
+                    colStartX = ev.clientX;
+                    colStartWidth = thEl.offsetWidth;
+                    document.body.style.cursor = 'col-resize';
+                    document.body.style.userSelect = 'none';
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                });
+
+                document.addEventListener('mousemove', function(ev) {
+                    if (!isColResizing) return;
+                    var deltaX = ev.clientX - colStartX;
+                    var newWidth = Math.max(32, colStartWidth + deltaX);
+                    thEl.style.width = newWidth + 'px';
+                });
+
+                document.addEventListener('mouseup', function() {
+                    if (isColResizing) {
+                        isColResizing = false;
+                        document.body.style.cursor = '';
+                        document.body.style.userSelect = '';
+                    }
+                });
+            })(i, handle, th);
+        }
+
+        // Add collapse toggle for non-distributor columns (index > 0)
+        if (i > 0) {
+            var toggle = document.createElement('span');
+            toggle.className = 'bulk-rule-col-toggle';
+            toggle.title = _bulkRuleCollapsedCols[i] ? 'Expand column' : 'Collapse column';
+            toggle.innerHTML = _bulkRuleCollapsedCols[i] ? '+' : '&#x2212;';
+            toggle.setAttribute('data-col-index', String(i));
+            (function(colIdx, toggleEl) {
+                toggleEl.addEventListener('click', function(ev) {
+                    ev.stopPropagation();
+                    bulkToggleRuleColumn(colIdx);
+                });
+            })(i, toggle);
+            th.appendChild(toggle);
+        }
+    }
+}
+
+function bulkToggleRuleColumn(colIndex) {
+    _bulkRuleCollapsedCols[colIndex] = !_bulkRuleCollapsedCols[colIndex];
+    console.log('[BulkRulesEditor] Column ' + colIndex + ' collapsed:', _bulkRuleCollapsedCols[colIndex]);
+    bulkApplyCollapsedCols();
+}
+
+function bulkApplyCollapsedCols() {
+    var table = document.querySelector('.bulk-mapping-rules-table');
+    if (!table) return;
+
+    var ths = table.querySelectorAll('thead th');
+    for (var i = 0; i < ths.length; i++) {
+        var isCollapsed = !!_bulkRuleCollapsedCols[i];
+        if (isCollapsed) {
+            ths[i].classList.add('bulk-rule-col-collapsed');
+        } else {
+            ths[i].classList.remove('bulk-rule-col-collapsed');
+        }
+        // Update toggle symbol
+        var toggle = ths[i].querySelector('.bulk-rule-col-toggle');
+        if (toggle) {
+            toggle.innerHTML = isCollapsed ? '+' : '&#x2212;';
+            toggle.title = isCollapsed ? 'Expand column' : 'Collapse column';
+        }
+    }
+
+    // Apply to all body cells
+    var bodyTds = table.querySelectorAll('tbody td[data-col-index]');
+    for (var j = 0; j < bodyTds.length; j++) {
+        var ci = parseInt(bodyTds[j].getAttribute('data-col-index'), 10);
+        if (_bulkRuleCollapsedCols[ci]) {
+            bodyTds[j].classList.add('bulk-rule-col-collapsed');
+        } else {
+            bodyTds[j].classList.remove('bulk-rule-col-collapsed');
+        }
+    }
 }
 
 function bulkEditMappingRuleCell(td, distributor, field) {
