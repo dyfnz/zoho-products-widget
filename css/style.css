@@ -3255,13 +3255,19 @@ button svg {
     align-items: center;
 }
 
-/* Auto Map button — spans Header row + Last row in column 3 */
-/* When sheet row is hidden (default), header=row1 last=row2, so span 1/3 */
-/* When sheet row is visible, header=row2 last=row3, so span 2/4 */
-.bulk-auto-map-btn {
+/* Auto Map area — wrapper for Auto Map button + gear icon in mappings grid */
+.bulk-auto-map-area {
     grid-column: 3;
     grid-row: 1 / 3;
     align-self: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Auto Map button */
+.bulk-auto-map-btn {
     padding: var(--space-1) var(--space-2);
     background: transparent;
     border: 1.5px solid var(--color-border);
@@ -3281,9 +3287,83 @@ button svg {
     background: rgba(14, 165, 233, 0.06);
 }
 
-/* When sheet select row is visible, shift Auto Map down one grid row */
-.bulk-sheet-select-row.visible ~ .bulk-auto-map-btn {
+/* When sheet select row is visible, shift Auto Map area down one grid row */
+.bulk-sheet-select-row.visible ~ .bulk-auto-map-area {
     grid-row: 2 / 4;
+}
+
+/* Mapping Rules gear icon button */
+.bulk-mapping-rules-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    background: transparent;
+    border: 1.5px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.bulk-mapping-rules-btn:hover {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+    background: rgba(14, 165, 233, 0.06);
+}
+
+.bulk-mapping-rules-btn.active {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+    background: rgba(14, 165, 233, 0.1);
+}
+
+/* Column Mapping Rules Editor table */
+.bulk-mapping-rules-table {
+    table-layout: auto;
+}
+
+.bulk-mapping-rules-table th:first-child,
+.bulk-mapping-rules-table td:first-child {
+    font-weight: 600;
+    white-space: nowrap;
+    width: 1%;
+}
+
+.bulk-mapping-rules-table td {
+    cursor: pointer;
+    position: relative;
+}
+
+.bulk-mapping-rules-table td:not(:first-child):hover {
+    background: rgba(14, 165, 233, 0.06);
+}
+
+.bulk-mapping-rules-table td .bulk-rule-cell-text {
+    display: block;
+    min-height: 1.2em;
+    word-break: break-word;
+}
+
+.bulk-mapping-rules-table td .bulk-rule-cell-empty {
+    color: var(--color-text-muted);
+    font-style: italic;
+}
+
+/* Inline edit input */
+.bulk-mapping-rules-table td .bulk-rule-edit-input {
+    width: 100%;
+    padding: 2px 4px;
+    border: 1.5px solid var(--color-accent);
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-size: inherit;
+    color: var(--color-text);
+    background: var(--color-surface);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.15);
 }
 
 .column-select-label {

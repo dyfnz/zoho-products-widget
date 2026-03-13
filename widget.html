@@ -601,7 +601,15 @@
 
                                     <span class="column-select-label">Last row:</span>
                                     <input type="number" class="header-row-input" id="bulkLastRowInput" value="" min="1" placeholder="All" onchange="bulkOnRowInputChange()">
-                                    <button class="bulk-auto-map-btn" id="bulkAutoMapBtn" onclick="bulkAutoMapColumns()" title="Auto-detect header row, columns, and last row">Auto Map</button>
+                                    <div class="bulk-auto-map-area">
+                                        <button class="bulk-auto-map-btn" id="bulkAutoMapBtn" onclick="bulkAutoMapColumns()" title="Auto-detect header row, columns, and last row">Auto Map</button>
+                                        <button class="bulk-mapping-rules-btn" id="bulkMappingRulesBtn" onclick="bulkToggleMappingRulesPanel()" title="Edit column mapping rules">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                                                <circle cx="12" cy="12" r="3"/>
+                                            </svg>
+                                        </button>
+                                    </div>
 
                                     <span class="column-select-label">MPN col:</span>
                                     <select class="column-select" id="bulkColumnSelect" onchange="bulkOnMappingChange()"><option value="">Select...</option></select>
@@ -632,6 +640,46 @@
                                 <div class="paste-section">
                                     <textarea class="paste-textarea" id="bulkPasteArea" placeholder="Paste part numbers here&#10;One per line or comma-separated" oninput="bulkParsePastedSKUs()"></textarea>
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- Column Mapping Rules Editor (Phase 9.2 Step 7) -->
+                        <div id="bulkMappingRulesPanel" class="mfr-mappings-panel" style="display: none;">
+                            <div class="mfr-mappings-header">
+                                <div class="mfr-mappings-header-left">
+                                    <h3>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                                            <circle cx="12" cy="12" r="3"/>
+                                        </svg>
+                                        Column Mapping Rules
+                                    </h3>
+                                </div>
+                                <button class="mfr-mappings-close" onclick="bulkToggleMappingRulesPanel()" title="Close">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M18 6 6 18M6 6l12 12"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <div class="mfr-mappings-table-container" id="bulkMappingRulesTableContainer">
+                                <table class="mfr-mappings-table bulk-mapping-rules-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Distributor</th>
+                                            <th>MPN</th>
+                                            <th>QTY</th>
+                                            <th>Price</th>
+                                            <th>VPN</th>
+                                            <th>MSRP</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="bulkMappingRulesTableBody">
+                                        <!-- Populated by JavaScript -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="mfr-mappings-resize" id="bulkMappingRulesResize">
+                                <div class="mfr-mappings-resize-grip"></div>
                             </div>
                         </div>
 

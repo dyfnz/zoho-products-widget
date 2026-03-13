@@ -4302,6 +4302,180 @@ function bulkAutoMapColumns() {
     });
 }
 
+// =====================================================
+// BULK SEARCH — Phase 9.2+9.4: Mapping Rules Editor
+// =====================================================
+
+function bulkToggleMappingRulesPanel() {
+    var panel = document.getElementById('bulkMappingRulesPanel');
+    var btn = document.getElementById('bulkMappingRulesBtn');
+    if (!panel) return;
+
+    var isVisible = panel.style.display !== 'none';
+
+    if (isVisible) {
+        panel.style.display = 'none';
+        if (btn) btn.classList.remove('active');
+    } else {
+        bulkFetchAllMappingRules();
+        panel.style.display = 'block';
+        if (btn) btn.classList.add('active');
+    }
+}
+
+function bulkFetchAllMappingRules() {
+    var url = SUPABASE_URL + '/rest/v1/bulk_column_mapping_rules?select=distributor,mpn,qty,price,vpn,msrp&order=distributor.asc';
+
+    fetch(url, {
+        headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+        }
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(rows) {
+        console.log('[BulkRulesEditor] Fetched', rows.length, 'mapping rules');
+        bulkRenderMappingRulesTable(rows);
+    })
+    .catch(function(err) {
+        console.error('[BulkRulesEditor] Failed to fetch rules:', err);
+        var tbody = document.getElementById('bulkMappingRulesTableBody');
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--color-text-muted); padding: 12px;">Failed to load mapping rules</td></tr>';
+        }
+    });
+}
+
+function bulkRenderMappingRulesTable(rows) {
+    var tbody = document.getElementById('bulkMappingRulesTableBody');
+    if (!tbody) return;
+
+    if (!rows || rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--color-text-muted); padding: 12px;">No mapping rules found</td></tr>';
+        return;
+    }
+
+    // Display name mapping
+    var distNames = { arrow: 'Arrow', ingram: 'Ingram Micro', tdsynnex: 'TD SYNNEX', universal: 'Universal (fallback)' };
+    var fields = ['mpn', 'qty', 'price', 'vpn', 'msrp'];
+
+    var html = '';
+    for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        var displayName = distNames[row.distributor] || row.distributor;
+        html += '<tr data-distributor="' + escapeHtml(row.distributor) + '">';
+        html += '<td>' + escapeHtml(displayName) + '</td>';
+        for (var f = 0; f < fields.length; f++) {
+            var field = fields[f];
+            var value = row[field] || '';
+            var cellClass = value ? 'bulk-rule-cell-text' : 'bulk-rule-cell-text bulk-rule-cell-empty';
+            var cellDisplay = value ? escapeHtml(value) : '(none)';
+            html += '<td onclick="bulkEditMappingRuleCell(this, \'' + escapeHtml(row.distributor) + '\', \'' + escapeHtml(field) + '\')">';
+            html += '<span class="' + cellClass + '">' + cellDisplay + '</span>';
+            html += '</td>';
+        }
+        html += '</tr>';
+    }
+
+    tbody.innerHTML = html;
+}
+
+function bulkEditMappingRuleCell(td, distributor, field) {
+    // Don't re-enter edit mode if already editing
+    if (td.querySelector('.bulk-rule-edit-input')) return;
+
+    var currentText = td.querySelector('.bulk-rule-cell-text');
+    var currentValue = '';
+    if (currentText) {
+        // Get raw value — if it shows "(none)" it means empty
+        currentValue = currentText.classList.contains('bulk-rule-cell-empty') ? '' : currentText.textContent;
+    }
+
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'bulk-rule-edit-input';
+    input.value = currentValue;
+    input.placeholder = 'comma-separated keywords';
+
+    // Replace cell content with input
+    td.innerHTML = '';
+    td.appendChild(input);
+    input.focus();
+    input.select();
+
+    // Remove the onclick temporarily to prevent re-triggering
+    td.removeAttribute('onclick');
+
+    function saveEdit() {
+        var newValue = input.value.trim().toLowerCase();
+        // Normalize: trim each keyword, remove empty, deduplicate
+        if (newValue) {
+            var keywords = newValue.split(',');
+            var seen = {};
+            var cleaned = [];
+            for (var k = 0; k < keywords.length; k++) {
+                var kw = keywords[k].trim();
+                if (kw && !seen[kw]) {
+                    seen[kw] = true;
+                    cleaned.push(kw);
+                }
+            }
+            newValue = cleaned.join(',');
+        }
+
+        bulkSaveMappingRuleField(distributor, field, newValue, td);
+    }
+
+    input.addEventListener('blur', saveEdit);
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            input.blur(); // triggers saveEdit via blur handler
+        }
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            // Cancel edit — restore display without saving
+            bulkRestoreMappingRuleCell(td, distributor, field, currentValue);
+        }
+    });
+}
+
+function bulkSaveMappingRuleField(distributor, field, newValue, td) {
+    var patchUrl = SUPABASE_URL + '/rest/v1/bulk_column_mapping_rules?distributor=eq.' +
+        encodeURIComponent(distributor);
+
+    var patchBody = { updated_at: new Date().toISOString() };
+    patchBody[field] = newValue;
+
+    fetch(patchUrl, {
+        method: 'PATCH',
+        headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify(patchBody)
+    })
+    .then(function(res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        console.log('[BulkRulesEditor] Saved ' + field + ' for ' + distributor + ':', newValue);
+        bulkRestoreMappingRuleCell(td, distributor, field, newValue);
+    })
+    .catch(function(err) {
+        console.error('[BulkRulesEditor] Failed to save:', err);
+        showStatus('Failed to save mapping rule', 'error');
+        bulkRestoreMappingRuleCell(td, distributor, field, newValue);
+    });
+}
+
+function bulkRestoreMappingRuleCell(td, distributor, field, value) {
+    var cellClass = value ? 'bulk-rule-cell-text' : 'bulk-rule-cell-text bulk-rule-cell-empty';
+    var cellDisplay = value ? escapeHtml(value) : '(none)';
+    td.innerHTML = '<span class="' + cellClass + '">' + cellDisplay + '</span>';
+    td.setAttribute('onclick', "bulkEditMappingRuleCell(this, '" + escapeHtml(distributor) + "', '" + escapeHtml(field) + "')");
+}
+
 /**
  * Parse SKUs from the bulk paste textarea.
  * Deduplicates and normalizes (spaces→# for non-Arrow distributors).
