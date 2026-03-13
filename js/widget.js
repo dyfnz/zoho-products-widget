@@ -6705,26 +6705,20 @@ function bulkFetchMappingRules() {
             if (rows[i].distributor === 'universal') univRow = rows[i];
         }
 
-        // Merge: distributor-specific keywords first, then universal
+        // Per-field fallback: use distributor keywords if present, otherwise universal (never merge both)
         var fields = ['mpn', 'qty', 'price', 'vpn', 'msrp'];
         var merged = {};
         for (var f = 0; f < fields.length; f++) {
             var field = fields[f];
             var keywords = [];
-            // Add distributor-specific keywords first
             if (distRow && distRow[field]) {
-                var distKeywords = distRow[field].split(',').map(function(k) { return k.trim().toLowerCase(); }).filter(Boolean);
-                keywords = keywords.concat(distKeywords);
+                // Distributor has keywords for this field — use ONLY those
+                keywords = distRow[field].split(',').map(function(k) { return k.trim().toLowerCase(); }).filter(Boolean);
+            } else if (univRow && univRow[field]) {
+                // Distributor field empty — fall back to universal keywords
+                keywords = univRow[field].split(',').map(function(k) { return k.trim().toLowerCase(); }).filter(Boolean);
             }
-            // Add universal keywords (deduplicating)
-            if (univRow && univRow[field]) {
-                var univKeywords = univRow[field].split(',').map(function(k) { return k.trim().toLowerCase(); }).filter(Boolean);
-                for (var u = 0; u < univKeywords.length; u++) {
-                    if (keywords.indexOf(univKeywords[u]) === -1) {
-                        keywords.push(univKeywords[u]);
-                    }
-                }
-            }
+            console.log('[BulkAutoMap] Using ' + (distRow && distRow[field] ? 'distributor' : 'universal') + ' keywords for ' + field + ':', keywords);
             merged[field] = keywords;
         }
 
