@@ -4517,11 +4517,11 @@ function bulkUpdateColumnSelectionDropdown(headerRowIndex, rules) {
     var msrpColumnSelect = document.getElementById('bulkMsrpColumnSelect');
 
     // Use rules if provided (from Supabase), otherwise fall back to hardcoded keywords
-    var mpnKeywords = (rules && rules.mpn) ? rules.mpn : ['item number', 'mpn', 'part number', 'mfg part', 'manufacturer part', 'sku'];
+    var mpnKeywords = (rules && rules.mpn) ? rules.mpn : ['item number', 'mpn', 'part number', 'mfg part', 'manufacturer part', 'mfr part', 'mfr.', 'sku'];
     var qtyKeywords = (rules && rules.qty) ? rules.qty : ['qty', 'quantity'];
-    var priceKeywords = (rules && rules.price) ? rules.price : ['price', 'reseller', 'cost', 'dealer price', 'our price', 'unit price'];
+    var priceKeywords = (rules && rules.price) ? rules.price : ['reseller price', 'reseller', 'dealer price', 'our price', 'unit price', 'unit cost', 'customer price', 'contract price', 'wholesale price', 'net price'];
     var vpnKeywords = (rules && rules.vpn) ? rules.vpn : ['vpn', 'vendor part', 'ingram part'];
-    var msrpKeywords = (rules && rules.msrp) ? rules.msrp : ['msrp', 'list price', 'retail price', 'suggested retail'];
+    var msrpKeywords = (rules && rules.msrp) ? rules.msrp : ['msrp', 'list price', 'list', 'retail price', 'suggested retail'];
 
     // Reset all dropdowns
     bulkResetColumnDropdowns();
@@ -4544,6 +4544,8 @@ function bulkUpdateColumnSelectionDropdown(headerRowIndex, rules) {
 
         // Check if this is an "Ext"/"Extended" field (line-total columns, not unit values)
         var isExtField = /\bext\b\.?|extended/i.test(String(header));
+        // Check if this is a "List Price" or "MSRP" field (not a reseller/cost price)
+        var isListOrMsrp = /\blist\b|\bmsrp\b/i.test(String(header));
 
         // Add option to each dropdown (always — user can manually pick any column)
         var mpnOption = document.createElement('option');
@@ -4578,7 +4580,7 @@ function bulkUpdateColumnSelectionDropdown(headerRowIndex, rules) {
         if (qtyKeywords.some(function(v) { return headerLower.indexOf(v) !== -1; })) {
             qtyCandidates.push(index);
         }
-        if (!isExtField && priceKeywords.some(function(v) { return headerLower.indexOf(v) !== -1; })) {
+        if (!isExtField && !isListOrMsrp && priceKeywords.some(function(v) { return headerLower.indexOf(v) !== -1; })) {
             priceCandidates.push(index);
         }
         if (vpnKeywords.some(function(v) { return headerLower.indexOf(v) !== -1; })) {
@@ -6569,11 +6571,11 @@ function bulkFetchMappingRules() {
         console.warn('[BulkAutoMap] Failed to fetch mapping rules, using hardcoded defaults:', err);
         // Return hardcoded defaults as fallback
         return {
-            mpn: ['item number', 'mpn', 'part number', 'mfg part', 'manufacturer part', 'sku', 'part #', 'part no', 'mfr. part'],
+            mpn: ['item number', 'mpn', 'part number', 'mfg part', 'manufacturer part', 'mfr part', 'mfr.', 'sku', 'part #', 'part no'],
             qty: ['qty', 'quantity'],
-            price: ['price', 'reseller', 'cost', 'dealer price', 'our price', 'unit price', 'unit cost', 'customer price', 'contract price', 'wholesale price', 'net price'],
+            price: ['reseller price', 'reseller', 'dealer price', 'our price', 'unit price', 'unit cost', 'customer price', 'contract price', 'wholesale price', 'net price'],
             vpn: ['vpn', 'vendor part', 'ingram part'],
-            msrp: ['msrp', 'list price', 'retail price', 'suggested retail']
+            msrp: ['msrp', 'list price', 'list', 'retail price', 'suggested retail']
         };
     });
 }
