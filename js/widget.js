@@ -6637,42 +6637,102 @@ function bulkScoreHeaderRow(row) {
 }
 
 function bulkAutoDetectLastRow(headerRowIndex) {
-    // Detect the last data row by scanning backwards from the end of fileRows.
-    // A "data row" has content in >= 3 columns (to skip footer/notes rows).
-    // Uses the auto-detected MPN column as a strong signal if available.
+    // Detect the last data row using column-consistency analysis.
+    // Real data rows populate roughly the same columns. Summary/totals rows
+    // leave significant gaps where data rows have values.
     var rows = bulkState.fileRows;
     if (!rows || rows.length === 0) return headerRowIndex;
 
     var mpnColSelect = document.getElementById('bulkColumnSelect');
     var mpnColIdx = (mpnColSelect && mpnColSelect.value !== '') ? parseInt(mpnColSelect.value) : -1;
 
-    // Scan backwards from the end
-    for (var r = rows.length - 1; r > headerRowIndex; r--) {
+    // Step 1: Build reference pattern from first 3 data rows after header.
+    // Collect which column indices are populated across those rows (union).
+    var referencePopulated = {};  // column index -> true
+    var refRowCount = 0;
+    var scanEnd = Math.min(headerRowIndex + 4, rows.length - 1);
+    for (var r = headerRowIndex + 1; r <= scanEnd; r++) {
         var row = rows[r];
         if (!row) continue;
-
-        // Count how many cells have non-empty content
-        var populatedCount = 0;
-        var mpnHasData = false;
+        var popCount = 0;
         for (var c = 0; c < row.length; c++) {
-            var cellVal = String(row[c] || '').trim();
-            if (cellVal !== '') {
-                populatedCount++;
-                if (c === mpnColIdx) mpnHasData = true;
+            if (String(row[c] || '').trim() !== '') popCount++;
+        }
+        if (popCount >= 5) {
+            for (var c2 = 0; c2 < row.length; c2++) {
+                if (String(row[c2] || '').trim() !== '') {
+                    referencePopulated[c2] = true;
+                }
+            }
+            refRowCount++;
+        }
+        if (refRowCount >= 3) break;
+    }
+
+    // Count reference columns
+    var refCols = Object.keys(referencePopulated);
+    var refSize = refCols.length;
+
+    // Fallback if no reference rows found (very sparse file)
+    if (refRowCount === 0) {
+        for (var r2 = rows.length - 1; r2 > headerRowIndex; r2--) {
+            var row2 = rows[r2];
+            if (!row2) continue;
+            var cnt = 0;
+            for (var c3 = 0; c3 < row2.length; c3++) {
+                if (String(row2[c3] || '').trim() !== '') cnt++;
+            }
+            if (cnt >= 3) return r2;
+        }
+        return headerRowIndex;
+    }
+
+    // Step 2: Scan backwards from bottom, test each candidate row
+    var minThreshold = Math.max(3, Math.floor(refSize * 0.4));
+
+    for (var r3 = rows.length - 1; r3 > headerRowIndex; r3--) {
+        var row3 = rows[r3];
+        if (!row3) continue;
+
+        // Count populated cells in this row
+        var populated = 0;
+        for (var c4 = 0; c4 < row3.length; c4++) {
+            if (String(row3[c4] || '').trim() !== '') populated++;
+        }
+
+        // Quick skip: too few cells populated
+        if (populated < minThreshold) continue;
+
+        // Column consistency: how many reference columns does this row leave blank?
+        var blanksInRefCols = 0;
+        for (var c5 = 0; c5 < refCols.length; c5++) {
+            var colIdx = parseInt(refCols[c5]);
+            var cellVal = (row3.length > colIdx) ? String(row3[colIdx] || '').trim() : '';
+            if (cellVal === '') blanksInRefCols++;
+        }
+
+        var blankRatio = blanksInRefCols / refSize;
+
+        // If row is missing >40% of columns that data rows populate → summary row, skip
+        if (blankRatio > 0.40) {
+            console.log('[BulkAutoMap] Skipping row ' + (r3 + 1) + ' as summary (blank ratio: ' + Math.round(blankRatio * 100) + '%, ' + blanksInRefCols + '/' + refSize + ' ref cols blank)');
+            continue;
+        }
+
+        // MPN column gate: if MPN mapped and this row has no MPN, skip
+        if (mpnColIdx >= 0) {
+            var mpnVal = (row3.length > mpnColIdx) ? String(row3[mpnColIdx] || '').trim() : '';
+            if (mpnVal === '') {
+                console.log('[BulkAutoMap] Skipping row ' + (r3 + 1) + ' — no MPN value');
+                continue;
             }
         }
 
-        // Strong signal: MPN column has data AND at least 2 other cells populated
-        if (mpnColIdx >= 0 && mpnHasData && populatedCount >= 3) {
-            return r;
-        }
-        // Fallback: no MPN column detected, use >= 3 populated cells
-        if (mpnColIdx < 0 && populatedCount >= 3) {
-            return r;
-        }
+        console.log('[BulkAutoMap] Last data row detected: ' + (r3 + 1) + ' (blank ratio: ' + Math.round(blankRatio * 100) + '%)');
+        return r3;
     }
 
-    // No data rows found — return the row after the header
+    // No data rows found
     return headerRowIndex;
 }
 
