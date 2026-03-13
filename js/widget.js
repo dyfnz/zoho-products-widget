@@ -5284,6 +5284,147 @@ function bulkApplyColumnSelection() {
     // Show action bar when we have SKUs
     const actionBar = document.getElementById('bulkActionBar');
     if (actionBar && bulkState.parsedSkus.length > 0) actionBar.style.display = '';
+
+    // Fire-and-forget: save column mappings if new keywords detected
+    bulkSaveColumnMappingsIfNeeded();
+}
+
+function bulkSaveColumnMappingsIfNeeded() {
+    var distNames = { arrow: 'Arrow', ingram: 'Ingram Micro', tdsynnex: 'TD SYNNEX' };
+    var distributor = state.currentDistributor;
+    if (!distributor) {
+        console.log('[BulkSave] No distributor selected, skipping save');
+        return;
+    }
+    var displayName = distNames[distributor] || distributor;
+
+    // 1. Gather current selections — read header labels from the header row
+    var headerRowInput = document.getElementById('bulkHeaderRowInput');
+    var headerRow = parseInt(headerRowInput.value) - 1 || 0;
+    if (!bulkState.fileRows || !bulkState.fileRows[headerRow]) {
+        console.log('[BulkSave] No header row data available, skipping save');
+        return;
+    }
+    var headerRowData = bulkState.fileRows[headerRow];
+
+    // Map dropdown IDs to field names
+    var dropdownMap = {
+        mpn: 'bulkColumnSelect',
+        qty: 'bulkQtyColumnSelect',
+        price: 'bulkResellerPriceColumnSelect',
+        vpn: 'bulkVpnColumnSelect',
+        msrp: 'bulkMsrpColumnSelect'
+    };
+
+    // Collect user-selected header labels for each field
+    var userSelections = {};
+    var hasAnySelection = false;
+    var fields = ['mpn', 'qty', 'price', 'vpn', 'msrp'];
+    for (var i = 0; i < fields.length; i++) {
+        var field = fields[i];
+        var el = document.getElementById(dropdownMap[field]);
+        if (!el || el.value === '' || el.value === 'none') continue;
+        var colIdx = parseInt(el.value);
+        if (isNaN(colIdx)) continue;
+        var label = headerRowData[colIdx];
+        if (!label || !String(label).trim()) continue;
+        userSelections[field] = String(label).trim().toLowerCase();
+        hasAnySelection = true;
+    }
+
+    if (!hasAnySelection) {
+        console.log('[BulkSave] No column selections to save');
+        return;
+    }
+
+    console.log('[BulkSave] User selections:', userSelections);
+
+    // 2. Fetch current Supabase row for this distributor
+    var fetchUrl = SUPABASE_URL + '/rest/v1/bulk_column_mapping_rules?distributor=eq.' +
+        encodeURIComponent(distributor) + '&select=distributor,mpn,qty,price,vpn,msrp';
+
+    fetch(fetchUrl, {
+        headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+        }
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(rows) {
+        var existingRow = (rows && rows.length > 0) ? rows[0] : null;
+        if (!existingRow) {
+            console.log('[BulkSave] No existing row for distributor:', distributor);
+            return;
+        }
+
+        // 3. Compare — check if ALL mapped labels already exist
+        var newKeywords = {}; // field -> new keyword to add
+        var allExist = true;
+        var selectedFields = Object.keys(userSelections);
+        for (var i = 0; i < selectedFields.length; i++) {
+            var field = selectedFields[i];
+            var userLabel = userSelections[field];
+            var existingStr = existingRow[field] || '';
+            var existingKeywords = existingStr.split(',').map(function(k) { return k.trim().toLowerCase(); }).filter(Boolean);
+            if (existingKeywords.indexOf(userLabel) === -1) {
+                allExist = false;
+                newKeywords[field] = userLabel;
+            }
+        }
+
+        if (allExist) {
+            console.log('[BulkSave] All mappings already saved, no update needed');
+            return;
+        }
+
+        console.log('[BulkSave] New keywords to save:', newKeywords);
+
+        // 4. Prompt user
+        if (!confirm('Save mappings for future ' + displayName + ' quotes?')) {
+            console.log('[BulkSave] User declined to save mappings');
+            return;
+        }
+
+        // 5. Build PATCH body — only fields that changed
+        var patchBody = { updated_at: new Date().toISOString() };
+        var changedFields = Object.keys(newKeywords);
+        for (var i = 0; i < changedFields.length; i++) {
+            var field = changedFields[i];
+            var existingStr = existingRow[field] || '';
+            var existingKeywords = existingStr.split(',').map(function(k) { return k.trim(); }).filter(Boolean);
+            existingKeywords.push(newKeywords[field]);
+            patchBody[field] = existingKeywords.join(', ');
+        }
+
+        console.log('[BulkSave] Saving mappings:', patchBody);
+
+        var patchUrl = SUPABASE_URL + '/rest/v1/bulk_column_mapping_rules?distributor=eq.' +
+            encodeURIComponent(distributor);
+
+        return fetch(patchUrl, {
+            method: 'PATCH',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=minimal'
+            },
+            body: JSON.stringify(patchBody)
+        });
+    })
+    .then(function(res) {
+        if (res && !res.ok) {
+            console.error('[BulkSave] Supabase PATCH failed with status:', res.status);
+            return;
+        }
+        if (res) {
+            console.log('[BulkSave] Mappings saved successfully');
+            showStatus('Mappings successfully saved. Auto Map will now use saved settings for future ' + displayName + ' quotes.', 'success');
+        }
+    })
+    .catch(function(err) {
+        console.error('[BulkSave] Error saving mappings:', err);
+    });
 }
 
 function bulkUpdateParsedPreview() {
