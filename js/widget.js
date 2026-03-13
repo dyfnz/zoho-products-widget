@@ -4245,29 +4245,49 @@ function bulkLoadSheetData(sheetIndex) {
     const mappingsPanel = document.getElementById('bulkMappingsPanel');
     if (mappingsPanel) mappingsPanel.classList.remove('disabled');
 
-    // Auto-detect header row (async), then fetch mapping rules, then update column dropdowns
+    // Populate column dropdowns from row 0 (default header row 1) without auto-selecting
+    bulkUpdateColumnSelectionDropdown(0, null, true);
+
+    // Render preview immediately
+    bulkState.userManuallyZoomed = false;
+    bulkState.previewZoom = 55;
+    bulkRenderSpreadsheetPreview();
+
+    showStatus('File loaded \u2014 use Auto Map or select columns manually', 'info');
+}
+
+/**
+ * Auto Map button handler: detects header row, fetches mapping rules,
+ * auto-maps columns, and detects last data row.
+ */
+function bulkAutoMapColumns() {
+    if (!bulkState.fileRows || bulkState.fileRows.length === 0) {
+        showStatus('Load a file first', 'warning');
+        return;
+    }
+
+    // Re-detect distributor
+    bulkDetectDistributor();
+
+    // Auto-detect header row (async), then fetch rules, then map columns
     bulkAutoDetectHeaderRow().then(function(detectedHeaderRow) {
-        // Update the input to show detected row (1-based)
         var headerRowInput = document.getElementById('bulkHeaderRowInput');
         if (headerRowInput) {
             headerRowInput.value = detectedHeaderRow + 1; // 1-based for UI
         }
-        console.log('[BulkAutoMap] Setting header row to', detectedHeaderRow + 1, '(0-based:', detectedHeaderRow, ')');
+        console.log('[BulkAutoMap] Setting header row to', detectedHeaderRow + 1);
 
-        // Fetch mapping rules from Supabase, then update dropdowns with rules
         return bulkFetchMappingRules().then(function(rules) {
             bulkUpdateColumnSelectionDropdown(detectedHeaderRow, rules);
 
-            // Auto-detect last data row after column mapping (uses MPN column if available)
             var lastRow = bulkAutoDetectLastRow(detectedHeaderRow);
             var bulkLastRowInput = document.getElementById('bulkLastRowInput');
             if (bulkLastRowInput && lastRow > detectedHeaderRow) {
-                bulkLastRowInput.value = lastRow + 1; // 1-based for UI
-                console.log('[BulkAutoMap] Auto-detected last data row:', lastRow + 1, '(0-based:', lastRow, ')');
+                bulkLastRowInput.value = lastRow + 1;
+                console.log('[BulkAutoMap] Auto-detected last data row:', lastRow + 1);
             }
         });
     }).then(function() {
-        // Re-render preview now that header row, last row, and column mappings are set
         bulkState.userManuallyZoomed = false;
         bulkState.previewZoom = 55;
         bulkRenderSpreadsheetPreview();
@@ -4276,8 +4296,8 @@ function bulkLoadSheetData(sheetIndex) {
         var lastRowInput = document.getElementById('bulkLastRowInput');
         var detectedRow = headerRowInput ? parseInt(headerRowInput.value) : 1;
         var detectedLastRow = lastRowInput ? lastRowInput.value : '';
-        var statusMsg = 'Auto-detected header row: ' + detectedRow;
-        if (detectedLastRow) statusMsg += ', last row: ' + detectedLastRow;
+        var statusMsg = 'Auto-mapped: header row ' + detectedRow;
+        if (detectedLastRow) statusMsg += ', last row ' + detectedLastRow;
         showStatus(statusMsg, 'info');
     });
 }
@@ -4497,7 +4517,7 @@ function bulkAppendAutoSelectOption(selectEl, colLetter, headerText, selectId) {
     selectEl.appendChild(option);
 }
 
-function bulkUpdateColumnSelectionDropdown(headerRowIndex, rules) {
+function bulkUpdateColumnSelectionDropdown(headerRowIndex, rules, skipAutoSelect) {
     if (!bulkState.fileRows || bulkState.fileRows.length === 0) return;
 
     var headers = bulkState.fileRows[headerRowIndex] || [];
@@ -4592,6 +4612,9 @@ function bulkUpdateColumnSelectionDropdown(headerRowIndex, rules) {
     });
 
     // --- Pass 2: Auto-select columns with priority ordering and no duplicates ---
+    // Skip if caller only wants to populate options (e.g. initial file load)
+    if (skipAutoSelect) return;
+
     // Priority: MPN → QTY → Price → VPN → MSRP
     // Each column index can only be claimed by one field
     var usedColumns = {};

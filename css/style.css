@@ -3250,12 +3250,44 @@ button svg {
 /* --- Mappings Grid --- */
 .mappings-grid {
     display: grid;
-    grid-template-columns: auto 1fr;
+    grid-template-columns: auto 1fr auto;
     gap: 4px var(--space-2);
     align-items: center;
 }
 
+/* Auto Map button — spans Header row + Last row in column 3 */
+/* When sheet row is hidden (default), header=row1 last=row2, so span 1/3 */
+/* When sheet row is visible, header=row2 last=row3, so span 2/4 */
+.bulk-auto-map-btn {
+    grid-column: 3;
+    grid-row: 1 / 3;
+    align-self: center;
+    padding: var(--space-1) var(--space-2);
+    background: transparent;
+    border: 1.5px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-size: var(--font-size-2xs);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+}
+
+.bulk-auto-map-btn:hover {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+    background: rgba(14, 165, 233, 0.06);
+}
+
+/* When sheet select row is visible, shift Auto Map down one grid row */
+.bulk-sheet-select-row.visible ~ .bulk-auto-map-btn {
+    grid-row: 2 / 4;
+}
+
 .column-select-label {
+    grid-column: 1;
     font-size: var(--font-size-2xs);
     font-weight: 600;
     color: var(--color-text-secondary);
@@ -3265,6 +3297,7 @@ button svg {
 }
 
 .column-select {
+    grid-column: 2;
     justify-self: start;
     width: 100%;
     max-width: 100%;
@@ -3286,6 +3319,7 @@ button svg {
 }
 
 .header-row-input {
+    grid-column: 2;
     justify-self: start;
     width: 58px;
     padding: 2px 4px;
