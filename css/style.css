@@ -3297,7 +3297,7 @@ button svg {
 }
 
 .column-select {
-    grid-column: 2;
+    grid-column: 2 / 4;
     justify-self: start;
     width: 100%;
     max-width: 100%;
