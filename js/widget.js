@@ -85,7 +85,6 @@ const state = {
     mfrResolutionPromise: null,
     manufacturerMappingsData: [],  // Cached mappings from Supabase
     searchMode: 'single',      // 'single' or 'bulk'
-    bulkAdminBypass: false,     // admin bypass for Coming Soon overlay
 };
 
 let searchTimeout = null;
@@ -4058,34 +4057,13 @@ function setSearchMode(mode) {
     updateQueueUI();
 }
 
-// Bulk toggle: triple-click to unlock, then single-click to toggle on/off
-let bulkBypassClicks = 0;
-let bulkBypassTimer = null;
-
 function handleBulkToggleClick() {
-    if (state.bulkAdminBypass) {
-        // Already unlocked — toggle between modes
-        if (state.searchMode === 'bulk') {
-            setSearchMode('single');
-            document.getElementById('bulkToggle').classList.remove('active');
-        } else {
-            setSearchMode('bulk');
-            document.getElementById('bulkToggle').classList.add('active');
-        }
-        return;
-    }
-
-    bulkBypassClicks++;
-    clearTimeout(bulkBypassTimer);
-
-    if (bulkBypassClicks >= 3) {
-        state.bulkAdminBypass = true;
-        bulkBypassClicks = 0;
-        console.log('[BulkSearch] Admin bypass activated via Bulk Mode button');
+    if (state.searchMode === 'bulk') {
+        setSearchMode('single');
+        document.getElementById('bulkToggle').classList.remove('active');
+    } else {
         setSearchMode('bulk');
         document.getElementById('bulkToggle').classList.add('active');
-    } else {
-        bulkBypassTimer = setTimeout(() => { bulkBypassClicks = 0; }, 1000);
     }
 }
 
