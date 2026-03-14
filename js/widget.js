@@ -6676,12 +6676,18 @@ function bulkShowProductInfo(index) {
         default:
             if (rawRow) {
                 // Map Ingram RPC row to the format showProductDetails expects
+                // Product info from DB, pricing from API (fetched by showProductDetails)
                 mapped = {
                     ingramPartNumber: rawRow.ingram_part_number || product._fileVpn || product.mpn || '',
                     vendorPartNumber: rawRow.vendor_part_number || '',
                     vendorName: rawRow.manufacturer || rawRow.vendor_name || '',
                     description: rawRow.description_line_1 || rawRow.description || '',
-                    category: rawRow.category || '',
+                    extraDescription: [rawRow.description_line_1, rawRow.description_line_2].filter(Boolean).join(' '),
+                    category: rawRow.level_1_name || rawRow.category || '',
+                    subCategory: rawRow.level_2_name || '',
+                    productType: rawRow.media_type || '',
+                    replacementSku: rawRow.substitute_part_number || '',
+                    upcCode: rawRow.upc_code || '',
                     retailPrice: rawRow.retail_price,
                     customerPrice: rawRow.customer_price,
                     pricingData: null,
