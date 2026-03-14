@@ -2823,43 +2823,28 @@ function toggleMfrMappingsPanel() {
  */
 function renderMfrMappingsTable(isBulk) {
     const tbody = document.getElementById(isBulk ? 'bulkMfrMappingsTableBody' : 'mfrMappingsTableBody');
-    const countSpan = document.getElementById(isBulk ? 'bulkMfrMappingsCount' : 'mfrMappingsCount');
-
+    const countEl = document.getElementById(isBulk ? 'bulkMfrMappingsCount' : 'mfrMappingsCount');
     if (!tbody) return;
 
-    // Update count
-    if (countSpan) {
-        countSpan.textContent = state.manufacturerMappingsData.length;
+    const data = state.manufacturerMappingsData || [];
+    if (countEl) countEl.textContent = data.length;
+
+    function renderAliasCell(aliases, tagClass) {
+        if (!aliases || aliases.length === 0) {
+            return '<td><span class="mfr-mappings-no-alias">--</span></td>';
+        }
+        const tags = aliases.map(a => '<span class="mfr-alias-tag ' + tagClass + '">' + escapeHtml(a) + '</span>').join('');
+        return '<td><div class="mfr-alias-tags">' + tags + '</div></td>';
     }
 
-    if (state.manufacturerMappingsData.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="4" style="text-align: center; color: var(--color-text-muted); padding: 12px;">
-                    No manufacturer mappings found
-                </td>
-            </tr>
-        `;
-        return;
-    }
-
-    let html = '';
-    state.manufacturerMappingsData.forEach(mapping => {
-        const ingramAliases = (mapping.ingram_micro_aliases || []).join(', ') || '<span class="mfr-mappings-no-alias">--</span>';
-        const tdsynnexAliases = (mapping.td_synnex_aliases || []).join(', ') || '<span class="mfr-mappings-no-alias">--</span>';
-        const arrowAliases = (mapping.arrow_aliases || []).join(', ') || '<span class="mfr-mappings-no-alias">--</span>';
-
-        html += `
-            <tr>
-                <td>${escapeHtml(mapping.canonical_name)}</td>
-                <td>${ingramAliases}</td>
-                <td>${tdsynnexAliases}</td>
-                <td>${arrowAliases}</td>
-            </tr>
-        `;
-    });
-
-    tbody.innerHTML = html;
+    tbody.innerHTML = data.map(function(mapping) {
+        return '<tr>' +
+            '<td><span style="font-weight:600">' + escapeHtml(mapping.canonical_name) + '</span></td>' +
+            renderAliasCell(mapping.ingram_micro_aliases, 'mfr-alias-tag-ingram') +
+            renderAliasCell(mapping.td_synnex_aliases, 'mfr-alias-tag-synnex') +
+            renderAliasCell(mapping.arrow_aliases, 'mfr-alias-tag-arrow') +
+            '</tr>';
+    }).join('');
 }
 
 /**

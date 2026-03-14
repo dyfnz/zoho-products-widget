@@ -2625,6 +2625,25 @@ button svg {
     background: rgba(255, 255, 255, 0.1);
 }
 
+/* Hint bar */
+.mfr-mappings-hint {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px var(--space-2);
+    background: linear-gradient(90deg, rgba(14, 165, 233, 0.05) 0%, var(--color-border-light) 100%);
+    border-bottom: 1px solid var(--color-border);
+    font-size: var(--font-size-2xs);
+    color: var(--color-text-muted);
+    line-height: 1.4;
+}
+
+.mfr-mappings-hint svg {
+    flex-shrink: 0;
+    color: var(--color-text-muted);
+    opacity: 0.6;
+}
+
 /* Table Container - Scrollable with resizable height */
 .mfr-mappings-table-container {
     max-height: 180px;
@@ -2643,49 +2662,83 @@ button svg {
 
 .mfr-mappings-table th,
 .mfr-mappings-table td {
-    padding: 3px var(--space-2);
+    padding: 6px var(--space-2);
     text-align: left;
     border-bottom: 1px solid var(--color-border-light);
+    border-right: 1px solid rgba(226, 232, 240, 0.5);
+}
+
+.mfr-mappings-table th:last-child,
+.mfr-mappings-table td:last-child {
+    border-right: none;
 }
 
 .mfr-mappings-table th {
-    background: var(--color-border-light);
-    color: var(--color-text);
-    font-size: var(--font-size-2xs) !important;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
     position: sticky;
     top: 0;
-    z-index: 1;
+    z-index: 2;
+    background: var(--color-border-light);
+    font-size: var(--font-size-2xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-secondary);
+    border-bottom: 2px solid var(--color-border);
 }
 
-/* Column structure: Common Name | Arrow | Ingram Micro | TD Synnex */
-/* Responsive behavior: text wraps first, then Arrow hides at narrow widths */
-.mfr-mappings-table th:first-child,
-.mfr-mappings-table td:first-child {
-    min-width: 80px;
-    width: 28%;
+/* Per-distributor column header accents */
+.mfr-th-ingram {
+    border-bottom-color: var(--color-accent) !important;
 }
 
-/* Arrow column - shrinks/hides when space is constrained */
-.mfr-mappings-table th:nth-child(2),
-.mfr-mappings-table td:nth-child(2) {
-    width: 30px;
-    min-width: 0;
-    max-width: 30px;
-    text-align: center;
-    overflow: hidden;
-    flex-shrink: 1;
+.mfr-th-synnex {
+    border-bottom-color: #10b981 !important;
 }
 
-/* Ingram Micro and TD Synnex columns - always visible with word wrap */
-.mfr-mappings-table th:nth-child(3),
-.mfr-mappings-table td:nth-child(3),
-.mfr-mappings-table th:nth-child(4),
-.mfr-mappings-table td:nth-child(4) {
-    min-width: 70px;
+.mfr-th-arrow {
+    border-bottom-color: #f59e0b !important;
+}
+
+/* Column widths via colgroup */
+.mfr-col-common {
     width: 24%;
+}
+
+.mfr-col-dist {
+    width: 25.33%;
+}
+
+/* Alias keyword tags */
+.mfr-alias-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+}
+
+.mfr-alias-tag {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: var(--font-size-2xs);
+    white-space: nowrap;
+}
+
+.mfr-alias-tag-ingram {
+    background: rgba(14, 165, 233, 0.06);
+    border: 1px solid rgba(14, 165, 233, 0.2);
+    color: #0369a1;
+}
+
+.mfr-alias-tag-synnex {
+    background: rgba(16, 185, 129, 0.07);
+    border: 1px solid rgba(16, 185, 129, 0.22);
+    color: #047857;
+}
+
+.mfr-alias-tag-arrow {
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    color: #b45309;
 }
 
 .mfr-mappings-table tbody tr:hover {
@@ -2718,6 +2771,7 @@ button svg {
 .mfr-mappings-no-alias {
     color: var(--color-text-muted);
     font-style: italic;
+    font-size: var(--font-size-2xs);
 }
 
 /* Resize Handle - Centered */
@@ -2753,30 +2807,6 @@ button svg {
     background: var(--color-accent);
 }
 
-/* Arrow column specific styling - graceful hide at narrow widths */
-.mfr-mappings-table .col-arrow {
-    width: 30px;
-    min-width: 0;
-    max-width: 30px;
-    text-align: center;
-    overflow: hidden;
-    padding: 3px 2px;
-    white-space: nowrap;
-}
-
-/* At narrow widths, hide the arrow column content */
-@media (max-width: 400px) {
-    .mfr-mappings-table .col-arrow,
-    .mfr-mappings-table th:nth-child(2),
-    .mfr-mappings-table td:nth-child(2) {
-        width: 0;
-        max-width: 0;
-        padding: 0;
-        border: none;
-        visibility: hidden;
-    }
-}
-
 /* Responsive behavior for the mappings panel when queue panel is resized */
 .mfr-mappings-panel {
     min-width: 250px;
@@ -2785,14 +2815,6 @@ button svg {
 /* When panel gets narrow, prioritize important columns */
 .mfr-mappings-table-container {
     min-width: 0;
-}
-
-/* Ensure distributor columns always show with wrapped text */
-.mfr-mappings-table td:nth-child(3),
-.mfr-mappings-table td:nth-child(4) {
-    white-space: normal;
-    word-wrap: break-word;
-    word-break: break-word;
 }
 
 /* Arrow mode: hide search input, expand select dropdown */
