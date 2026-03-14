@@ -4308,6 +4308,23 @@ function bulkAutoMapColumns() {
 
 var _bulkMappingRulesResizeInited = false;
 
+// Column definitions for the mapping rules editor
+var BULK_RULES_COLUMNS = [
+    { key: 'distributor', label: 'Distributor', collapsible: false, editable: false },
+    { key: 'sheet_name', label: 'Sheet', collapsible: true, editable: true },
+    { key: 'mpn', label: 'MPN', collapsible: true, editable: true },
+    { key: 'qty', label: 'QTY', collapsible: true, editable: true },
+    { key: 'price', label: 'Price', collapsible: true, editable: true },
+    { key: 'vpn', label: 'VPN', collapsible: true, editable: true },
+    { key: 'msrp', label: 'MSRP', collapsible: true, editable: true }
+];
+
+var BULK_RULES_DIST_NAMES = { arrow: 'Arrow', ingram: 'Ingram Micro', tdsynnex: 'TD SYNNEX' };
+
+// Track collapsed columns and current edit cell
+var _bulkRuleCollapsedCols = {};
+var _bulkRulesCurrentEditCell = null;
+
 function bulkToggleMappingRulesPanel() {
     var panel = document.getElementById('bulkMappingRulesPanel');
     var btn = document.getElementById('bulkMappingRulesBtn');
@@ -4331,17 +4348,17 @@ function bulkToggleMappingRulesPanel() {
 
 function initBulkMappingRulesResize() {
     var handle = document.getElementById('bulkMappingRulesResize');
-    var container = document.getElementById('bulkMappingRulesTableContainer');
-    if (!handle || !container) return;
+    var wrap = document.getElementById('bulkMappingRulesTableContainer');
+    if (!handle || !wrap) return;
 
     var isResizing = false;
     var startY = 0;
-    var startHeight = 0;
+    var startH = 0;
 
     handle.addEventListener('mousedown', function(e) {
         isResizing = true;
         startY = e.clientY;
-        startHeight = container.offsetHeight;
+        startH = wrap.offsetHeight;
         document.body.style.cursor = 'ns-resize';
         document.body.style.userSelect = 'none';
         e.preventDefault();
@@ -4349,9 +4366,9 @@ function initBulkMappingRulesResize() {
 
     document.addEventListener('mousemove', function(e) {
         if (!isResizing) return;
-        var deltaY = e.clientY - startY;
-        var newHeight = Math.max(80, Math.min(600, startHeight + deltaY));
-        container.style.maxHeight = newHeight + 'px';
+        var delta = e.clientY - startY;
+        var newH = Math.max(100, Math.min(600, startH + delta));
+        wrap.style.maxHeight = newH + 'px';
     });
 
     document.addEventListener('mouseup', function() {
@@ -4388,218 +4405,272 @@ function bulkFetchAllMappingRules() {
     });
 }
 
-// Track collapsed columns in the mapping rules editor
-var _bulkRuleCollapsedCols = {};
-
 function bulkRenderMappingRulesTable(rows) {
-    var tbody = document.getElementById('bulkMappingRulesTableBody');
-    if (!tbody) return;
-
     if (!rows || rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--color-text-muted); padding: 12px;">No mapping rules found</td></tr>';
+        var tbody = document.getElementById('bulkMappingRulesTableBody');
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--color-text-muted); padding: 12px;">No mapping rules found</td></tr>';
+        }
         return;
     }
 
-    // Display name mapping
-    var distNames = { arrow: 'Arrow', ingram: 'Ingram Micro', tdsynnex: 'TD SYNNEX' };
-    var fields = ['sheet_name', 'mpn', 'qty', 'price', 'vpn', 'msrp'];
+    bulkRenderMappingRulesHeader();
+    bulkRenderMappingRulesBody(rows);
+    bulkSetupRuleColumnResizeHandles();
+}
 
+function bulkRenderMappingRulesHeader() {
+    var headerRow = document.getElementById('bulkMappingRulesHeaderRow');
+    if (!headerRow) return;
     var html = '';
-    for (var i = 0; i < rows.length; i++) {
-        var row = rows[i];
-        var isUniversal = (row.distributor === 'universal');
-        html += '<tr data-distributor="' + escapeHtml(row.distributor) + '">';
-        // Distributor cell — universal gets stacked HTML, others get escaped text
-        if (isUniversal) {
-            html += '<td>Universal<br><span style="font-size: 0.85em; color: var(--color-text-muted); font-weight: 400;">(fallback)</span></td>';
-        } else {
-            var displayName = distNames[row.distributor] || row.distributor;
-            html += '<td>' + escapeHtml(displayName) + '</td>';
+
+    for (var i = 0; i < BULK_RULES_COLUMNS.length; i++) {
+        var col = BULK_RULES_COLUMNS[i];
+        var isCollapsed = !!_bulkRuleCollapsedCols[i];
+        var colClass = isCollapsed ? ' bulk-rules-col-collapsed' : '';
+
+        html += '<th class="' + colClass.trim() + '" data-col="' + i + '">';
+        html += '<span class="bulk-rules-col-label">' + col.label + '</span>';
+
+        if (col.collapsible) {
+            html += '<button class="bulk-rules-col-toggle" data-col="' + i + '" title="' + (isCollapsed ? 'Expand' : 'Collapse') + ' column">';
+            html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 9l-7 7-7-7"/></svg>';
+            html += '</button>';
         }
-        for (var f = 0; f < fields.length; f++) {
-            var field = fields[f];
-            var colIndex = f + 1; // 0 is distributor
-            var value = row[field] || '';
-            var cellClass = value ? 'bulk-rule-cell-text' : 'bulk-rule-cell-text bulk-rule-cell-empty';
-            var cellDisplay = value ? escapeHtml(value) : '(none)';
-            var collapsedClass = _bulkRuleCollapsedCols[colIndex] ? ' bulk-rule-col-collapsed' : '';
-            html += '<td class="' + collapsedClass.trim() + '" data-col-index="' + colIndex + '" onclick="bulkEditMappingRuleCell(this, \'' + escapeHtml(row.distributor) + '\', \'' + escapeHtml(field) + '\')">';
-            html += '<span class="' + cellClass + '">' + cellDisplay + '</span>';
+
+        // Resize handle (skip last column)
+        if (i < BULK_RULES_COLUMNS.length - 1) {
+            html += '<div class="bulk-rules-col-resize" data-col="' + i + '"></div>';
+        }
+
+        html += '</th>';
+    }
+
+    headerRow.innerHTML = html;
+
+    // Bind toggle events on chevron buttons
+    var toggleBtns = headerRow.querySelectorAll('.bulk-rules-col-toggle');
+    for (var t = 0; t < toggleBtns.length; t++) {
+        (function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var colIdx = parseInt(btn.getAttribute('data-col'), 10);
+                bulkToggleRuleColumn(colIdx);
+            });
+        })(toggleBtns[t]);
+    }
+
+    // Bind click-to-expand on collapsed column headers
+    var allThs = headerRow.querySelectorAll('th[data-col]');
+    for (var h = 0; h < allThs.length; h++) {
+        (function(th) {
+            th.addEventListener('click', function() {
+                var colIdx = parseInt(th.getAttribute('data-col'), 10);
+                if (_bulkRuleCollapsedCols[colIdx]) {
+                    bulkToggleRuleColumn(colIdx);
+                }
+            });
+        })(allThs[h]);
+    }
+}
+
+function bulkRenderMappingRulesBody(data) {
+    var tbody = document.getElementById('bulkMappingRulesTableBody');
+    if (!tbody) return;
+    var html = '';
+
+    for (var r = 0; r < data.length; r++) {
+        var row = data[r];
+        var isUniversal = row.distributor === 'universal';
+        var rowClass = isUniversal ? ' class="bulk-rules-universal-row"' : '';
+
+        html += '<tr' + rowClass + ' data-distributor="' + escapeHtml(row.distributor) + '">';
+
+        // Distributor cell
+        if (isUniversal) {
+            html += '<td><span class="bulk-rules-universal-label">Universal</span>';
+            html += '<span class="bulk-rules-universal-sub">(fallback)</span></td>';
+        } else {
+            var name = BULK_RULES_DIST_NAMES[row.distributor] || row.distributor;
+            html += '<td>' + escapeHtml(name) + '</td>';
+        }
+
+        // Data cells
+        for (var c = 1; c < BULK_RULES_COLUMNS.length; c++) {
+            var col = BULK_RULES_COLUMNS[c];
+            var value = row[col.key] || '';
+            var isCollapsed = !!_bulkRuleCollapsedCols[c];
+            var tdClass = 'bulk-rules-editable';
+            if (isCollapsed) tdClass += ' bulk-rules-col-collapsed';
+
+            html += '<td class="' + tdClass + '" data-col="' + c + '" data-field="' + col.key + '" data-distributor="' + escapeHtml(row.distributor) + '">';
+
+            // Edit icon
+            html += '<svg class="bulk-rules-edit-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">';
+            html += '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>';
+            html += '<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+
+            // Content
+            html += '<span class="bulk-rules-cell-content">';
+            if (value) {
+                html += bulkRenderKeywordTags(value);
+            } else {
+                html += '<span class="bulk-rules-cell-empty">(none)</span>';
+            }
+            html += '</span>';
+
+            // Collapsed indicator
+            html += '<span class="bulk-rules-cell-collapsed-indicator ' + (value ? 'has-data' : 'no-data') + '"></span>';
+
             html += '</td>';
         }
+
         html += '</tr>';
     }
 
     tbody.innerHTML = html;
 
-    // Set up column resize handles and collapse toggles on thead
-    bulkSetupRuleColumnResizeHandles();
-    bulkApplyCollapsedCols();
-}
-
-function bulkSetupRuleColumnResizeHandles() {
-    var table = document.querySelector('.bulk-mapping-rules-table');
-    if (!table) return;
-    var ths = table.querySelectorAll('thead th');
-
-    for (var i = 0; i < ths.length; i++) {
-        var th = ths[i];
-        // Clear any existing handles/toggles
-        var existing = th.querySelectorAll('.bulk-rule-col-resize, .bulk-rule-col-toggle');
-        for (var e = 0; e < existing.length; e++) { existing[e].remove(); }
-
-        // Add resize handle (skip last column — no right-edge resize needed)
-        if (i < ths.length - 1) {
-            var handle = document.createElement('div');
-            handle.className = 'bulk-rule-col-resize';
-            handle.setAttribute('data-col-index', String(i));
-            th.appendChild(handle);
-            (function(colIdx, handleEl, thEl) {
-                var isColResizing = false;
-                var colStartX = 0;
-                var colStartWidth = 0;
-
-                handleEl.addEventListener('mousedown', function(ev) {
-                    isColResizing = true;
-                    colStartX = ev.clientX;
-                    colStartWidth = thEl.offsetWidth;
-                    document.body.style.cursor = 'col-resize';
-                    document.body.style.userSelect = 'none';
-                    ev.preventDefault();
-                    ev.stopPropagation();
-                });
-
-                document.addEventListener('mousemove', function(ev) {
-                    if (!isColResizing) return;
-                    var deltaX = ev.clientX - colStartX;
-                    var newWidth = Math.max(32, colStartWidth + deltaX);
-                    thEl.style.width = newWidth + 'px';
-                });
-
-                document.addEventListener('mouseup', function() {
-                    if (isColResizing) {
-                        isColResizing = false;
-                        document.body.style.cursor = '';
-                        document.body.style.userSelect = '';
-                    }
-                });
-            })(i, handle, th);
-        }
-
-        // Add collapse toggle for non-distributor columns (index > 0)
-        if (i > 0) {
-            var toggle = document.createElement('span');
-            toggle.className = 'bulk-rule-col-toggle';
-            toggle.title = _bulkRuleCollapsedCols[i] ? 'Expand column' : 'Collapse column';
-            toggle.innerHTML = _bulkRuleCollapsedCols[i] ? '+' : '&#x2212;';
-            toggle.setAttribute('data-col-index', String(i));
-            (function(colIdx, toggleEl) {
-                toggleEl.addEventListener('click', function(ev) {
-                    ev.stopPropagation();
-                    bulkToggleRuleColumn(colIdx);
-                });
-            })(i, toggle);
-            th.appendChild(toggle);
-        }
+    // Bind click-to-edit on editable cells
+    var editCells = tbody.querySelectorAll('td.bulk-rules-editable');
+    for (var e = 0; e < editCells.length; e++) {
+        (function(cell) {
+            cell.addEventListener('click', function() {
+                if (cell.classList.contains('bulk-rules-col-collapsed')) return;
+                bulkEditMappingRuleCell(cell);
+            });
+        })(editCells[e]);
     }
 }
 
-function bulkToggleRuleColumn(colIndex) {
-    _bulkRuleCollapsedCols[colIndex] = !_bulkRuleCollapsedCols[colIndex];
-    console.log('[BulkRulesEditor] Column ' + colIndex + ' collapsed:', _bulkRuleCollapsedCols[colIndex]);
-    bulkApplyCollapsedCols();
-}
-
-function bulkApplyCollapsedCols() {
-    var table = document.querySelector('.bulk-mapping-rules-table');
-    if (!table) return;
-
-    var ths = table.querySelectorAll('thead th');
-    for (var i = 0; i < ths.length; i++) {
-        var isCollapsed = !!_bulkRuleCollapsedCols[i];
-        if (isCollapsed) {
-            ths[i].classList.add('bulk-rule-col-collapsed');
-        } else {
-            ths[i].classList.remove('bulk-rule-col-collapsed');
-        }
-        // Update toggle symbol
-        var toggle = ths[i].querySelector('.bulk-rule-col-toggle');
-        if (toggle) {
-            toggle.innerHTML = isCollapsed ? '+' : '&#x2212;';
-            toggle.title = isCollapsed ? 'Expand column' : 'Collapse column';
+function bulkRenderKeywordTags(value) {
+    var parts = value.split(',');
+    var html = '<span class="bulk-rules-keywords">';
+    for (var i = 0; i < parts.length; i++) {
+        var kw = parts[i].trim();
+        if (kw) {
+            html += '<span class="bulk-rules-keyword-tag">' + escapeHtml(kw) + '</span>';
         }
     }
-
-    // Apply to all body cells
-    var bodyTds = table.querySelectorAll('tbody td[data-col-index]');
-    for (var j = 0; j < bodyTds.length; j++) {
-        var ci = parseInt(bodyTds[j].getAttribute('data-col-index'), 10);
-        if (_bulkRuleCollapsedCols[ci]) {
-            bodyTds[j].classList.add('bulk-rule-col-collapsed');
-        } else {
-            bodyTds[j].classList.remove('bulk-rule-col-collapsed');
-        }
-    }
+    html += '</span>';
+    return html;
 }
 
-function bulkEditMappingRuleCell(td, distributor, field) {
-    // Don't re-enter edit mode if already editing
-    if (td.querySelector('.bulk-rule-edit-input')) return;
+function bulkEditMappingRuleCell(td) {
+    // If already editing another cell, save it first
+    if (_bulkRulesCurrentEditCell && _bulkRulesCurrentEditCell !== td) {
+        bulkFinishEditingRuleCell(_bulkRulesCurrentEditCell, true);
+    }
+    if (td.classList.contains('bulk-rules-editing')) return;
 
-    var currentText = td.querySelector('.bulk-rule-cell-text');
+    var field = td.getAttribute('data-field');
+    var distributor = td.getAttribute('data-distributor');
+
+    // Extract current raw value from tags
+    var tags = td.querySelectorAll('.bulk-rules-keyword-tag');
     var currentValue = '';
-    if (currentText) {
-        // Get raw value — if it shows "(none)" it means empty
-        currentValue = currentText.classList.contains('bulk-rule-cell-empty') ? '' : currentText.textContent;
-    }
-
-    var input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'bulk-rule-edit-input';
-    input.value = currentValue;
-    input.placeholder = 'comma-separated keywords';
-
-    // Replace cell content with input
-    td.innerHTML = '';
-    td.appendChild(input);
-    input.focus();
-    input.select();
-
-    // Remove the onclick temporarily to prevent re-triggering
-    td.removeAttribute('onclick');
-
-    function saveEdit() {
-        var newValue = input.value.trim().toLowerCase();
-        // Normalize: trim each keyword, remove empty, deduplicate
-        if (newValue) {
-            var keywords = newValue.split(',');
-            var seen = {};
-            var cleaned = [];
-            for (var k = 0; k < keywords.length; k++) {
-                var kw = keywords[k].trim();
-                if (kw && !seen[kw]) {
-                    seen[kw] = true;
-                    cleaned.push(kw);
-                }
-            }
-            newValue = cleaned.join(',');
+    if (tags.length > 0) {
+        var vals = [];
+        for (var i = 0; i < tags.length; i++) {
+            vals.push(tags[i].textContent);
         }
-
-        bulkSaveMappingRuleField(distributor, field, newValue, td);
+        currentValue = vals.join(', ');
     }
 
-    input.addEventListener('blur', saveEdit);
-    input.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') {
+    td.classList.add('bulk-rules-editing');
+    _bulkRulesCurrentEditCell = td;
+
+    var textarea = document.createElement('textarea');
+    textarea.className = 'bulk-rules-edit-textarea';
+    textarea.value = currentValue;
+    textarea.placeholder = 'e.g. keyword1, keyword2';
+    textarea.setAttribute('data-original', currentValue);
+
+    var hint = document.createElement('div');
+    hint.className = 'bulk-rules-edit-hint';
+    hint.innerHTML = '<span><kbd>Enter</kbd> save &middot; <kbd>Esc</kbd> cancel</span>';
+
+    // Clear cell and insert editor
+    td.innerHTML = '';
+    td.appendChild(textarea);
+    td.appendChild(hint);
+
+    // Auto-size
+    bulkAutoResizeRuleTextarea(textarea);
+    textarea.focus();
+    textarea.select();
+
+    // Events
+    textarea.addEventListener('input', function() {
+        bulkAutoResizeRuleTextarea(textarea);
+    });
+
+    textarea.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            input.blur(); // triggers saveEdit via blur handler
+            bulkFinishEditingRuleCell(td, true);
         }
         if (e.key === 'Escape') {
             e.preventDefault();
-            // Cancel edit — restore display without saving
-            bulkRestoreMappingRuleCell(td, distributor, field, currentValue);
+            bulkFinishEditingRuleCell(td, false);
         }
     });
+
+    textarea.addEventListener('blur', function() {
+        // Small delay to allow button clicks
+        setTimeout(function() {
+            if (td.classList.contains('bulk-rules-editing')) {
+                bulkFinishEditingRuleCell(td, true);
+            }
+        }, 150);
+    });
+}
+
+function bulkAutoResizeRuleTextarea(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.max(52, textarea.scrollHeight) + 'px';
+}
+
+function bulkFinishEditingRuleCell(td, shouldSave) {
+    var textarea = td.querySelector('.bulk-rules-edit-textarea');
+    if (!textarea) return;
+
+    var field = td.getAttribute('data-field');
+    var distributor = td.getAttribute('data-distributor');
+    var originalValue = textarea.getAttribute('data-original') || '';
+    var newValue = textarea.value.trim().toLowerCase();
+
+    // Normalize: trim each keyword, remove empty, deduplicate
+    if (newValue) {
+        var parts = newValue.split(',');
+        var seen = {};
+        var cleaned = [];
+        for (var i = 0; i < parts.length; i++) {
+            var kw = parts[i].trim();
+            if (kw && !seen[kw]) {
+                seen[kw] = true;
+                cleaned.push(kw);
+            }
+        }
+        newValue = cleaned.join(',');
+    }
+
+    // Build normalized original for comparison
+    var normalizedOriginal = originalValue.split(',').map(function(k) { return k.trim(); }).filter(function(k) { return k; }).join(',');
+
+    if (!shouldSave) {
+        // Revert to original
+        newValue = normalizedOriginal;
+    }
+
+    td.classList.remove('bulk-rules-editing');
+    _bulkRulesCurrentEditCell = null;
+
+    // Rebuild cell content
+    bulkRestoreMappingRuleCell(td, distributor, field, newValue);
+
+    if (shouldSave && newValue !== normalizedOriginal) {
+        bulkSaveMappingRuleField(distributor, field, newValue, td);
+    }
 }
 
 function bulkSaveMappingRuleField(distributor, field, newValue, td) {
@@ -4622,20 +4693,130 @@ function bulkSaveMappingRuleField(distributor, field, newValue, td) {
     .then(function(res) {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         console.log('[BulkRulesEditor] Saved ' + field + ' for ' + distributor + ':', newValue);
-        bulkRestoreMappingRuleCell(td, distributor, field, newValue);
     })
     .catch(function(err) {
         console.error('[BulkRulesEditor] Failed to save:', err);
         showStatus('Failed to save mapping rule', 'error');
-        bulkRestoreMappingRuleCell(td, distributor, field, newValue);
     });
 }
 
 function bulkRestoreMappingRuleCell(td, distributor, field, value) {
-    var cellClass = value ? 'bulk-rule-cell-text' : 'bulk-rule-cell-text bulk-rule-cell-empty';
-    var cellDisplay = value ? escapeHtml(value) : '(none)';
-    td.innerHTML = '<span class="' + cellClass + '">' + cellDisplay + '</span>';
-    td.setAttribute('onclick', "bulkEditMappingRuleCell(this, '" + escapeHtml(distributor) + "', '" + escapeHtml(field) + "')");
+    var html = '';
+    html += '<svg class="bulk-rules-edit-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">';
+    html += '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>';
+    html += '<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+    html += '<span class="bulk-rules-cell-content">';
+    if (value) {
+        html += bulkRenderKeywordTags(value);
+    } else {
+        html += '<span class="bulk-rules-cell-empty">(none)</span>';
+    }
+    html += '</span>';
+    html += '<span class="bulk-rules-cell-collapsed-indicator ' + (value ? 'has-data' : 'no-data') + '"></span>';
+    td.innerHTML = html;
+
+    // Re-bind click
+    td.addEventListener('click', function() {
+        if (!td.classList.contains('bulk-rules-col-collapsed')) {
+            bulkEditMappingRuleCell(td);
+        }
+    });
+}
+
+function bulkToggleRuleColumn(colIndex) {
+    _bulkRuleCollapsedCols[colIndex] = !_bulkRuleCollapsedCols[colIndex];
+    console.log('[BulkRulesEditor] Column ' + colIndex + ' collapsed:', _bulkRuleCollapsedCols[colIndex]);
+    bulkApplyCollapsedCols();
+}
+
+function bulkApplyCollapsedCols() {
+    var table = document.querySelector('.bulk-rules-table');
+    if (!table) return;
+
+    // Update colgroup
+    var cols = document.querySelectorAll('#bulkMappingRulesColgroup col');
+    var expandedCount = 0;
+    for (var i = 0; i < BULK_RULES_COLUMNS.length; i++) {
+        if (i === 0) continue; // distributor col stays fixed
+        if (!_bulkRuleCollapsedCols[i]) expandedCount++;
+    }
+
+    for (var j = 0; j < cols.length; j++) {
+        if (j === 0) {
+            cols[j].style.width = '100px';
+        } else if (_bulkRuleCollapsedCols[j]) {
+            cols[j].style.width = '32px';
+        } else {
+            // Distribute remaining space equally among expanded columns
+            cols[j].style.width = (1 / expandedCount * 100) + '%';
+        }
+    }
+
+    // Update header
+    var ths = table.querySelectorAll('thead th');
+    for (var h = 0; h < ths.length; h++) {
+        var isCollapsed = !!_bulkRuleCollapsedCols[h];
+        if (isCollapsed) {
+            ths[h].classList.add('bulk-rules-col-collapsed');
+        } else {
+            ths[h].classList.remove('bulk-rules-col-collapsed');
+        }
+        var toggle = ths[h].querySelector('.bulk-rules-col-toggle');
+        if (toggle) {
+            toggle.title = isCollapsed ? 'Expand column' : 'Collapse column';
+        }
+    }
+
+    // Update body cells
+    var tds = table.querySelectorAll('tbody td[data-col]');
+    for (var d = 0; d < tds.length; d++) {
+        var ci = parseInt(tds[d].getAttribute('data-col'), 10);
+        if (_bulkRuleCollapsedCols[ci]) {
+            tds[d].classList.add('bulk-rules-col-collapsed');
+        } else {
+            tds[d].classList.remove('bulk-rules-col-collapsed');
+        }
+    }
+}
+
+function bulkSetupRuleColumnResizeHandles() {
+    var handles = document.querySelectorAll('.bulk-rules-col-resize');
+    for (var i = 0; i < handles.length; i++) {
+        (function(handle) {
+            var colIdx = parseInt(handle.getAttribute('data-col'), 10);
+            var isDragging = false;
+            var startX = 0;
+            var startWidth = 0;
+            var colEl = null;
+
+            handle.addEventListener('mousedown', function(e) {
+                isDragging = true;
+                startX = e.clientX;
+                colEl = document.querySelectorAll('#bulkMappingRulesColgroup col')[colIdx];
+                var th = handle.parentElement;
+                startWidth = th.offsetWidth;
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+                e.preventDefault();
+                e.stopPropagation();
+            });
+
+            document.addEventListener('mousemove', function(e) {
+                if (!isDragging) return;
+                var delta = e.clientX - startX;
+                var newW = Math.max(40, startWidth + delta);
+                if (colEl) colEl.style.width = newW + 'px';
+            });
+
+            document.addEventListener('mouseup', function() {
+                if (isDragging) {
+                    isDragging = false;
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                }
+            });
+        })(handles[i]);
+    }
 }
 
 /**

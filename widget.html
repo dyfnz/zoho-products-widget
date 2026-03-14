@@ -645,6 +645,7 @@
 
                         <!-- Column Mapping Rules Editor (Phase 9.2 Step 7) -->
                         <div id="bulkMappingRulesPanel" class="mfr-mappings-panel" style="display: none;">
+                            <!-- Header -->
                             <div class="mfr-mappings-header">
                                 <div class="mfr-mappings-header-left">
                                     <h3>
@@ -654,6 +655,12 @@
                                         </svg>
                                         Column Mapping Rules
                                     </h3>
+                                    <button class="bulk-rules-info-trigger" type="button" aria-label="Help">
+                                        ?
+                                        <span class="bulk-rules-info-tooltip">
+                                            Keywords are matched against spreadsheet column headers during Auto Map. Each distributor can have its own keywords. Universal keywords are used as a fallback when a distributor has no saved values for a field.
+                                        </span>
+                                    </button>
                                 </div>
                                 <button class="mfr-mappings-close" onclick="bulkToggleMappingRulesPanel()" title="Close">
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -661,26 +668,35 @@
                                     </svg>
                                 </button>
                             </div>
-                            <div class="mfr-mappings-table-container" id="bulkMappingRulesTableContainer">
-                                <table class="mfr-mappings-table bulk-mapping-rules-table">
+                            <!-- Hint bar -->
+                            <div class="bulk-rules-hint">
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                </svg>
+                                Click any cell to edit &middot; Comma-separated keywords &middot; Drag column borders to resize
+                            </div>
+                            <!-- Table -->
+                            <div class="bulk-rules-table-wrap" id="bulkMappingRulesTableContainer">
+                                <table class="mfr-mappings-table bulk-rules-table">
+                                    <colgroup id="bulkMappingRulesColgroup">
+                                        <col style="width: 100px;">
+                                        <col style="width: 70px;">
+                                        <col>
+                                        <col>
+                                        <col>
+                                        <col>
+                                        <col>
+                                    </colgroup>
                                     <thead>
-                                        <tr>
-                                            <th>Distributor</th>
-                                            <th>Sheet</th>
-                                            <th>MPN</th>
-                                            <th>QTY</th>
-                                            <th>Price</th>
-                                            <th>VPN</th>
-                                            <th>MSRP</th>
-                                        </tr>
+                                        <tr id="bulkMappingRulesHeaderRow"></tr>
                                     </thead>
-                                    <tbody id="bulkMappingRulesTableBody">
-                                        <!-- Populated by JavaScript -->
-                                    </tbody>
+                                    <tbody id="bulkMappingRulesTableBody"></tbody>
                                 </table>
                             </div>
-                            <div class="mfr-mappings-resize" id="bulkMappingRulesResize">
-                                <div class="mfr-mappings-resize-grip"></div>
+                            <!-- Resize handle -->
+                            <div class="bulk-rules-resize-handle" id="bulkMappingRulesResize">
+                                <div class="bulk-rules-resize-grip"></div>
                             </div>
                         </div>
 

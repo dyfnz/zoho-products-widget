@@ -3320,122 +3320,474 @@ button svg {
     background: rgba(14, 165, 233, 0.1);
 }
 
-/* Column Mapping Rules Editor table */
-.bulk-mapping-rules-table {
-    table-layout: fixed;
-}
+/* ===== Column Mapping Rules Editor — Redesigned Panel ===== */
 
-.bulk-mapping-rules-table th {
+/* Info tooltip trigger */
+.bulk-rules-info-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    color: var(--color-text-inverse);
+    font-size: 10px;
+    font-weight: 700;
+    cursor: help;
     position: relative;
-    overflow: hidden;
-    user-select: none;
-}
-
-/* Distributor column slightly narrower, rest equal */
-.bulk-mapping-rules-table th:nth-child(1) { width: 11%; }
-.bulk-mapping-rules-table th:nth-child(2) { width: 12.8%; }
-.bulk-mapping-rules-table th:nth-child(3) { width: 15.2%; }
-.bulk-mapping-rules-table th:nth-child(4) { width: 12.8%; }
-.bulk-mapping-rules-table th:nth-child(5) { width: 15.2%; }
-.bulk-mapping-rules-table th:nth-child(6) { width: 15.2%; }
-.bulk-mapping-rules-table th:nth-child(7) { width: 15.2%; }
-
-.bulk-mapping-rules-table th:first-child,
-.bulk-mapping-rules-table td:first-child {
-    font-weight: 600;
-    white-space: nowrap;
-}
-
-.bulk-mapping-rules-table td {
-    cursor: pointer;
-    position: relative;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.bulk-mapping-rules-table td:not(:first-child):hover {
-    background: rgba(14, 165, 233, 0.06);
-}
-
-.bulk-mapping-rules-table td .bulk-rule-cell-text {
-    display: block;
-    min-height: 1.2em;
-    word-break: break-word;
-}
-
-.bulk-mapping-rules-table td .bulk-rule-cell-empty {
-    color: var(--color-text-muted);
-    font-style: italic;
-}
-
-/* Inline edit input */
-.bulk-mapping-rules-table td .bulk-rule-edit-input {
-    width: 100%;
-    padding: 2px 4px;
-    border: 1.5px solid var(--color-accent);
-    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+    transition: background var(--transition-fast);
+    border: none;
+    padding: 0;
     font-family: inherit;
-    font-size: inherit;
-    color: var(--color-text);
-    background: var(--color-surface);
-    outline: none;
-    box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.15);
+    line-height: 1;
 }
 
-/* Column resize drag handles */
-.bulk-rule-col-resize {
+.bulk-rules-info-trigger:hover {
+    background: rgba(255,255,255,0.3);
+}
+
+.bulk-rules-info-tooltip {
+    display: none;
     position: absolute;
-    right: 0;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 260px;
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-2xs);
+    font-weight: 400;
+    line-height: 1.5;
+    box-shadow: var(--shadow-md);
+    z-index: 100;
+    pointer-events: none;
+}
+
+.bulk-rules-info-tooltip::before {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 8px;
+    height: 8px;
+    background: var(--color-primary);
+}
+
+.bulk-rules-info-trigger:hover .bulk-rules-info-tooltip {
+    display: block;
+}
+
+/* Hint bar below header */
+.bulk-rules-hint {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px var(--space-2);
+    background: linear-gradient(90deg, rgba(14, 165, 233, 0.05) 0%, var(--color-border-light) 100%);
+    border-bottom: 1px solid var(--color-border);
+    font-size: var(--font-size-2xs);
+    color: var(--color-text-muted);
+}
+
+.bulk-rules-hint svg {
+    flex-shrink: 0;
+    color: var(--color-accent);
+    opacity: 0.5;
+}
+
+/* Table container */
+.bulk-rules-table-wrap {
+    max-height: 280px;
+    min-height: 100px;
+    overflow-y: auto;
+    overflow-x: auto;
+}
+
+/* Table */
+.bulk-rules-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-xs);
+}
+
+/* Column group — flexible widths */
+.bulk-rules-table colgroup col {
+    transition: width var(--transition-fast);
+}
+
+/* Header */
+.bulk-rules-table thead th {
+    position: sticky;
     top: 0;
-    bottom: 0;
-    width: 5px;
-    cursor: col-resize;
-    background: transparent;
-    z-index: 1;
+    z-index: 2;
+    padding: 5px var(--space-2);
+    background: var(--color-border-light);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-2xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    text-align: left;
+    border-bottom: 2px solid var(--color-border);
+    border-right: 1px solid var(--color-border);
+    white-space: nowrap;
+    user-select: none;
+    position: relative;
 }
 
-.bulk-rule-col-resize:hover {
-    background: var(--color-accent);
-    opacity: 0.3;
+.bulk-rules-table thead th:last-child {
+    border-right: none;
 }
 
-/* Collapsed column style */
-.bulk-rule-col-collapsed {
-    width: 32px !important;
-    max-width: 32px !important;
-    min-width: 32px !important;
-    overflow: hidden !important;
-    white-space: nowrap !important;
-    text-overflow: ellipsis !important;
-}
-
-.bulk-rule-col-collapsed .bulk-rule-cell-text,
-.bulk-rule-col-collapsed .bulk-rule-edit-input {
-    display: none !important;
-}
-
-/* Collapse toggle in header */
-.bulk-rule-col-toggle {
-    display: inline-block;
+/* Collapse/expand chevron button in header */
+.bulk-rules-col-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 14px;
     height: 14px;
-    line-height: 14px;
-    text-align: center;
-    font-size: 10px;
+    margin-left: 3px;
+    padding: 0;
+    border: none;
+    background: transparent;
     color: var(--color-text-muted);
     cursor: pointer;
-    margin-left: 4px;
     border-radius: 2px;
+    transition: all var(--transition-fast);
     vertical-align: middle;
+    font-family: inherit;
 }
 
-.bulk-rule-col-toggle:hover {
+.bulk-rules-col-toggle:hover {
     color: var(--color-accent);
     background: rgba(14, 165, 233, 0.1);
 }
 
-.bulk-rule-col-label {
-    cursor: default;
+.bulk-rules-col-toggle svg {
+    width: 10px;
+    height: 10px;
+    transition: transform var(--transition-fast);
+}
+
+/* Column resize handle */
+.bulk-rules-col-resize {
+    position: absolute;
+    right: -2px;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    cursor: col-resize;
+    z-index: 3;
+}
+
+.bulk-rules-col-resize::after {
+    content: '';
+    position: absolute;
+    right: 2px;
+    top: 25%;
+    bottom: 25%;
+    width: 1px;
+    background: transparent;
+    transition: background var(--transition-fast);
+}
+
+.bulk-rules-col-resize:hover::after {
+    background: var(--color-accent);
+}
+
+/* Collapsed column state */
+th.bulk-rules-col-collapsed,
+td.bulk-rules-col-collapsed {
+    width: 32px !important;
+    max-width: 32px !important;
+    min-width: 32px !important;
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+    overflow: hidden !important;
+}
+
+th.bulk-rules-col-collapsed .bulk-rules-col-label {
+    writing-mode: vertical-lr;
+    transform: rotate(180deg);
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    color: var(--color-text-muted);
+    display: inline-block;
+    max-height: 40px;
+    overflow: hidden;
+    line-height: 1;
+}
+
+th.bulk-rules-col-collapsed .bulk-rules-col-toggle {
+    display: none;
+}
+
+th.bulk-rules-col-collapsed {
+    text-align: center !important;
+    vertical-align: middle;
+    cursor: pointer;
+    background: var(--color-border-light);
+    border-right-color: var(--color-border);
+}
+
+td.bulk-rules-col-collapsed {
+    background: var(--color-border-light) !important;
+    cursor: default !important;
+}
+
+td.bulk-rules-col-collapsed .bulk-rules-cell-content {
+    display: none;
+}
+
+td.bulk-rules-col-collapsed .bulk-rules-edit-icon {
+    display: none !important;
+}
+
+td.bulk-rules-col-collapsed .bulk-rules-cell-collapsed-indicator {
+    display: block;
+}
+
+/* Body Cells */
+.bulk-rules-table tbody td {
+    padding: 6px var(--space-2);
+    border-bottom: 1px solid var(--color-border-light);
+    border-right: 1px solid rgba(226, 232, 240, 0.5);
+    vertical-align: top;
+    position: relative;
+    transition: background var(--transition-fast);
+}
+
+.bulk-rules-table tbody td:last-child {
+    border-right: none;
+}
+
+/* Distributor name column — left accent stripe */
+.bulk-rules-table tbody td:first-child {
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--color-text);
+    background: var(--color-surface);
+    vertical-align: middle;
+    border-left: 3px solid transparent;
+}
+
+/* Per-distributor accent colors */
+.bulk-rules-table tbody tr[data-distributor="arrow"] td:first-child {
+    border-left-color: #f59e0b;
+    color: #b45309;
+}
+.bulk-rules-table tbody tr[data-distributor="ingram"] td:first-child {
+    border-left-color: var(--color-accent);
+    color: var(--color-accent-dark);
+}
+.bulk-rules-table tbody tr[data-distributor="tdsynnex"] td:first-child {
+    border-left-color: #10b981;
+    color: #047857;
+}
+.bulk-rules-table tbody tr.bulk-rules-universal-row td:first-child {
+    border-left-color: var(--color-text-muted);
+}
+
+/* Editable cell affordance */
+.bulk-rules-table tbody td.bulk-rules-editable {
+    cursor: pointer;
+}
+
+.bulk-rules-table tbody td.bulk-rules-editable:hover {
+    background: rgba(14, 165, 233, 0.04);
+}
+
+/* Pencil icon on hover */
+.bulk-rules-table tbody td.bulk-rules-editable .bulk-rules-edit-icon {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    opacity: 0;
+    color: var(--color-accent);
+    transition: opacity var(--transition-fast);
+    pointer-events: none;
+}
+
+.bulk-rules-table tbody td.bulk-rules-editable:hover .bulk-rules-edit-icon {
+    opacity: 0.5;
+}
+
+/* Cell content */
+.bulk-rules-cell-content {
+    display: block;
+    min-height: 1.4em;
+    line-height: 1.5;
+    word-break: break-word;
+    padding-right: 14px;
+}
+
+/* Collapsed indicator (shown when column is collapsed) */
+.bulk-rules-cell-collapsed-indicator {
+    display: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    margin: 4px auto 0;
+}
+
+.bulk-rules-cell-collapsed-indicator.has-data {
+    background: var(--color-accent);
+    opacity: 0.5;
+}
+
+.bulk-rules-cell-collapsed-indicator.no-data {
+    background: var(--color-border);
+}
+
+/* Empty cell styling */
+.bulk-rules-cell-empty {
+    color: var(--color-text-muted);
+    font-style: italic;
+    opacity: 0.7;
+}
+
+/* Keyword tags display */
+.bulk-rules-keywords {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+}
+
+.bulk-rules-keyword-tag {
+    display: inline-block;
+    padding: 1px 5px;
+    background: rgba(14, 165, 233, 0.06);
+    border: 1px solid rgba(14, 165, 233, 0.2);
+    border-radius: 3px;
+    font-size: var(--font-size-2xs);
+    color: var(--color-accent-dark);
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+/* Per-distributor keyword tag colors */
+.bulk-rules-table tbody tr[data-distributor="arrow"] .bulk-rules-keyword-tag {
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.25);
+    color: #b45309;
+}
+.bulk-rules-table tbody tr[data-distributor="tdsynnex"] .bulk-rules-keyword-tag {
+    background: rgba(16, 185, 129, 0.07);
+    border-color: rgba(16, 185, 129, 0.22);
+    color: #047857;
+}
+
+/* Universal row keyword tags — muted */
+.bulk-rules-universal-row .bulk-rules-keyword-tag {
+    background: rgba(100, 116, 139, 0.07);
+    border-color: rgba(100, 116, 139, 0.2);
+    color: var(--color-text-secondary);
+}
+
+/* Universal (fallback) row */
+.bulk-rules-table tbody tr.bulk-rules-universal-row td {
+    background: var(--color-border-light);
+    border-bottom-color: var(--color-border);
+}
+
+.bulk-rules-table tbody tr.bulk-rules-universal-row td:first-child {
+    background: var(--color-border-light);
+}
+
+.bulk-rules-universal-label {
+    font-weight: 600;
+    color: var(--color-text);
+    font-size: var(--font-size-xs);
+}
+
+.bulk-rules-universal-sub {
+    display: block;
+    font-size: var(--font-size-2xs);
+    color: var(--color-text-muted);
+    font-weight: 400;
+    margin-top: 1px;
+}
+
+/* Textarea Edit Mode */
+.bulk-rules-edit-textarea {
+    width: 100%;
+    min-height: 52px;
+    padding: 4px 6px;
+    border: 1.5px solid var(--color-accent);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-family);
+    font-size: var(--font-size-2xs);
+    color: var(--color-text);
+    background: var(--color-surface);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.12);
+    resize: vertical;
+    line-height: 1.5;
+    overflow: hidden;
+}
+
+.bulk-rules-edit-textarea::placeholder {
+    color: var(--color-text-muted);
+    font-style: italic;
+}
+
+/* Edit mode hint below textarea */
+.bulk-rules-edit-hint {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 3px;
+    font-size: 9px;
+    color: var(--color-text-muted);
+    line-height: 1.3;
+}
+
+.bulk-rules-edit-hint kbd {
+    display: inline-block;
+    padding: 0 3px;
+    background: var(--color-border-light);
+    border: 1px solid var(--color-border);
+    border-radius: 2px;
+    font-family: var(--font-family);
+    font-size: 9px;
+}
+
+/* Editing state on the cell */
+td.bulk-rules-editing {
+    padding: 4px 6px !important;
+    background: rgba(14, 165, 233, 0.03) !important;
+}
+
+/* Resize Handle */
+.bulk-rules-resize-handle {
+    height: 7px;
+    background: linear-gradient(to bottom, var(--color-border-light), var(--color-border));
+    cursor: ns-resize;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background var(--transition-fast);
+    user-select: none;
+}
+
+.bulk-rules-resize-handle:hover {
+    background: linear-gradient(to bottom, var(--color-border), var(--color-accent));
+}
+
+.bulk-rules-resize-grip {
+    width: 30px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--color-text-muted);
+    opacity: 0.3;
+}
+
+.bulk-rules-resize-handle:hover .bulk-rules-resize-grip {
+    opacity: 0.6;
 }
 
 .column-select-label {
