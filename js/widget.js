@@ -23,7 +23,7 @@ const DISTRIBUTORS = {
         color: '#0ea5e9'
     },
     tdsynnex: {
-        name: 'TD SYNNEX',
+        name: 'TD Synnex',
         apiPrefix: '/tdsynnex',
         color: '#10b981'
     },
@@ -3212,7 +3212,7 @@ async function showProductDetails(productIndex) {
 
     const isTDSynnex = product._source === 'tdsynnex';
     const isArrow = product._source === 'arrow';
-    const distLabel = isArrow ? 'Arrow' : (isTDSynnex ? 'TD SYNNEX' : 'Ingram');
+    const distLabel = isArrow ? 'Arrow' : (isTDSynnex ? 'TD Synnex' : 'Ingram');
     console.log(`[Details] Loading details for ${product.vendorPartNumber} (${distLabel})...`);
 
     const detailsSection = document.getElementById('productDetailsSection');
@@ -4282,7 +4282,7 @@ var BULK_RULES_COLUMNS = [
     { key: 'msrp', label: 'MSRP', collapsible: true, editable: true }
 ];
 
-var BULK_RULES_DIST_NAMES = { arrow: 'Arrow', ingram: 'Ingram Micro', tdsynnex: 'TD SYNNEX' };
+var BULK_RULES_DIST_NAMES = { arrow: 'Arrow', ingram: 'Ingram Micro', tdsynnex: 'TD Synnex' };
 
 // Track collapsed columns and current edit cell
 var _bulkRuleCollapsedCols = {};
@@ -5770,7 +5770,7 @@ function bulkApplyColumnSelection() {
 }
 
 function bulkSaveColumnMappingsIfNeeded() {
-    var distNames = { arrow: 'Arrow', ingram: 'Ingram Micro', tdsynnex: 'TD SYNNEX' };
+    var distNames = { arrow: 'Arrow', ingram: 'Ingram Micro', tdsynnex: 'TD Synnex' };
     var distributor = state.currentDistributor;
     if (!distributor) {
         console.log('[BulkSave] No distributor selected, skipping save');
