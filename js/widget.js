@@ -3034,7 +3034,7 @@ async function submitQueue() {
                     case 'tdsynnex': mapped = mapTDSynnexProduct(raw); break;
                     case 'arrow': mapped = mapArrowProduct(raw); break;
                     default: mapped = {
-                        ingramPartNumber: raw.ingram_part_number || '',
+                        ingramPartNumber: raw.ingram_part_number || product._fileVpn || product.mpn || '',
                         vendorPartNumber: raw.vendor_part_number || raw.manufacturer_part_number || '',
                         vendorName: raw.manufacturer || raw.vendor_name || '',
                         description: raw.description_line_1 || raw.description || '',
@@ -3072,7 +3072,7 @@ async function submitQueue() {
                     resellerPrice: product.resellerPrice || null,
                     _source: product._source || state.currentDistributor,
                     qty: product.qty || 1,
-                    ...(dist === 'ingram' && { ingramPartNumber: product.vpn || '' }),
+                    ...(dist === 'ingram' && { ingramPartNumber: product._fileVpn || product.vpn || product.mpn || '' }),
                     ...(dist === 'tdsynnex' && { tdSynnexSkuNumber: product.vpn || '', distributorPartNumber: product.vpn || '' }),
                     ...(dist === 'arrow' && { distributorPartNumber: product.vpn || '' }),
                 };
@@ -6220,6 +6220,7 @@ async function bulkLoadProducts() {
                         p._fileMsrp = fd.msrp;    // Save spreadsheet MSRP
                         p.msrp = fd.msrp;         // Overlay (will be corrected by comparison UI if needed)
                     }
+                    if (fd.vpn) p._fileVpn = fd.vpn;
                 }
             });
         }
@@ -6676,7 +6677,7 @@ function bulkShowProductInfo(index) {
             if (rawRow) {
                 // Map Ingram RPC row to the format showProductDetails expects
                 mapped = {
-                    ingramPartNumber: rawRow.ingram_part_number || '',
+                    ingramPartNumber: rawRow.ingram_part_number || product._fileVpn || product.mpn || '',
                     vendorPartNumber: rawRow.vendor_part_number || '',
                     vendorName: rawRow.manufacturer || rawRow.vendor_name || '',
                     description: rawRow.description_line_1 || rawRow.description || '',
@@ -6687,7 +6688,7 @@ function bulkShowProductInfo(index) {
                     _source: 'ingram'
                 };
             } else {
-                mapped = { ...product, vendorPartNumber: product.mpn, ingramPartNumber: product.vpn || product.mpn, _source: 'ingram' };
+                mapped = { ...product, vendorPartNumber: product.mpn, ingramPartNumber: product._fileVpn || product.vpn || product.mpn, _source: 'ingram' };
             }
             break;
     }
