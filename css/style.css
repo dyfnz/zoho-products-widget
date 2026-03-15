@@ -234,8 +234,10 @@ body {
 .tab-btn {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 4px;
     padding: 4px var(--space-2);
+    min-width: 120px;
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: var(--radius-sm);
@@ -261,6 +263,19 @@ body {
 .tab-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+}
+
+@keyframes pulse-attention {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.6);
+    }
+    50% {
+        box-shadow: 0 0 12px 4px rgba(14, 165, 233, 0.35);
+    }
+}
+
+.distributor-tabs.pulse-attention .tab-btn {
+    animation: pulse-attention 1.5s ease-in-out infinite;
 }
 
 .tab-icon {
@@ -5057,8 +5072,11 @@ button.sel-btn .sel-btn-icon {
 }
 
 .bulk-load-btn:disabled {
-    opacity: 0.5;
+    opacity: 0.4;
     cursor: not-allowed;
+    background: var(--color-border);
+    color: var(--color-text-muted);
+    border-color: var(--color-border);
 }
 
 .bulk-clear-btn {

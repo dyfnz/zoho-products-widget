@@ -28,7 +28,7 @@ const DISTRIBUTORS = {
         color: '#10b981'
     },
     arrow: {
-        name: 'Arrow',
+        name: 'Arrow ECS',
         apiPrefix: '/arrow',
         color: '#f59e0b'
     }
@@ -615,6 +615,12 @@ function selectDistributor(distributor) {
     // Update bulk distributor badges if in bulk mode
     if (state.searchMode === 'bulk') {
         updateBulkDistributorBadges();
+        // Re-parse paste content for new distributor's format
+        var bulkSkuInput = document.getElementById('bulkSkuInput');
+        if (bulkSkuInput && bulkSkuInput.value.trim()) {
+            bulkParsePastedSKUs();
+        }
+        bulkUpdateLoadButtonState();
     }
 }
 
@@ -3407,7 +3413,7 @@ async function showProductDetails(productIndex) {
 
     const isTDSynnex = product._source === 'tdsynnex';
     const isArrow = product._source === 'arrow';
-    const distLabel = isArrow ? 'Arrow' : (isTDSynnex ? 'TD Synnex' : 'Ingram');
+    const distLabel = isArrow ? 'Arrow ECS' : (isTDSynnex ? 'TD Synnex' : 'Ingram');
     console.log(`[Details] Loading details for ${product.vendorPartNumber} (${distLabel})...`);
 
     const detailsSection = document.getElementById('productDetailsSection');
@@ -4138,6 +4144,8 @@ function showStatus(message, type) {
 
 const bulkState = {
     initialized: false,
+    detectedDistributor: null,
+    detectionSucceeded: false,
     workbook: null,
     fileRows: [],
     parsedSkus: [],
@@ -4209,6 +4217,11 @@ function setSearchMode(mode) {
         // Restore normal layout
         contentWrapper.classList.remove('bulk-mode-active');
         singlePanel.classList.remove('queue-only');
+        // Single mode: restore default distributor
+        state.currentDistributor = 'ingram';
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.distributor === 'ingram');
+        });
     } else {
         // Hide single-mode content but keep queue (.right-panel) visible
         singlePanel.querySelectorAll('.left-panel').forEach(el => el.style.display = 'none');
@@ -4227,6 +4240,10 @@ function setSearchMode(mode) {
         }
         // Update distributor badges (title bar + paste section)
         updateBulkDistributorBadges();
+        // Bulk mode: no default distributor — user must select or auto-detect
+        state.currentDistributor = null;
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        bulkUpdateLoadButtonState();
     }
 
     // Sync pricing toggle to active mode's pricing state
@@ -4268,6 +4285,62 @@ function handleBulkToggleClick() {
     } else {
         setSearchMode('bulk');
         document.getElementById('bulkToggle').classList.add('active');
+    }
+}
+
+function bulkUpdateLoadButtonState() {
+    const loadBtn = document.getElementById('bulkLoadProductsBtn');
+    if (!loadBtn) return;
+
+    const hasDistributor = !!state.currentDistributor;
+    const hasPasteContent = !!(document.getElementById('bulkSkuInput') && document.getElementById('bulkSkuInput').value.trim());
+    const hasFile = !!(bulkState.fileRows && bulkState.fileRows.length > 0);
+    const hasInput = hasFile || hasPasteContent;
+
+    let shouldDisable = false;
+    let pulseButtons = false;
+    let statusMsg = null;
+
+    if (!hasInput) {
+        // No file or paste — disable but no pulse (user hasn't done anything yet)
+        shouldDisable = true;
+    } else if (hasFile && bulkState.detectionSucceeded && hasDistributor && bulkState.detectedDistributor !== state.currentDistributor) {
+        // File mode: detection succeeded but user selected WRONG distributor
+        shouldDisable = true;
+        pulseButtons = true;
+        const detectedName = DISTRIBUTORS[bulkState.detectedDistributor]?.name || bulkState.detectedDistributor;
+        const selectedName = DISTRIBUTORS[state.currentDistributor]?.name || state.currentDistributor;
+        statusMsg = { text: 'Detected ' + detectedName + ' in file but ' + selectedName + ' is selected. Please select ' + detectedName + ' to proceed.', type: 'warning' };
+    } else if (hasFile && !bulkState.detectionSucceeded && !hasDistributor) {
+        // File mode: detection failed AND no distributor selected
+        shouldDisable = true;
+        pulseButtons = true;
+        statusMsg = { text: 'Could not auto-detect distributor from file. You must choose a distributor manually to proceed.', type: 'warning' };
+    } else if (hasPasteContent && !hasDistributor) {
+        // Paste mode: no distributor selected
+        shouldDisable = true;
+        pulseButtons = true;
+        statusMsg = { text: 'Please select a distributor to proceed.', type: 'warning' };
+    } else if (!hasDistributor) {
+        // Has input but no distributor — disable, no pulse (shouldn't normally reach here)
+        shouldDisable = true;
+    }
+
+    loadBtn.disabled = shouldDisable;
+
+    // Pulse animation on distributor buttons
+    const tabsContainer = document.querySelector('.distributor-tabs');
+    if (tabsContainer) {
+        if (pulseButtons) {
+            tabsContainer.classList.add('pulse-attention');
+        } else {
+            tabsContainer.classList.remove('pulse-attention');
+        }
+    }
+
+    // Show persistent status message if needed
+    if (statusMsg) {
+        showStatus(statusMsg.text, statusMsg.type);
     }
 }
 
@@ -4501,7 +4574,7 @@ var BULK_RULES_COLUMNS = [
     { key: 'msrp', label: 'MSRP', collapsible: true, editable: true }
 ];
 
-var BULK_RULES_DIST_NAMES = { arrow: 'Arrow', ingram: 'Ingram Micro', tdsynnex: 'TD Synnex' };
+var BULK_RULES_DIST_NAMES = { arrow: 'Arrow ECS', ingram: 'Ingram Micro', tdsynnex: 'TD Synnex' };
 
 // Track collapsed columns and current edit cell
 var _bulkRuleCollapsedCols = {};
@@ -5016,6 +5089,7 @@ function bulkParsePastedSKUs() {
     if (!text) {
         bulkState.parsedSkus = [];
         bulkUpdateParsedPreview();
+        bulkUpdateLoadButtonState();
         console.log('[BulkSearch] Parsed 0 SKUs from paste (empty input)');
         return;
     }
@@ -5038,6 +5112,7 @@ function bulkParsePastedSKUs() {
     bulkState.parsedSkus = [...new Set(skus)];
     console.log(`[BulkSearch] Parsed ${bulkState.parsedSkus.length} SKUs from paste`);
     bulkUpdateParsedPreview();
+    bulkUpdateLoadButtonState();
 }
 
 // =====================================================
@@ -5990,7 +6065,7 @@ function bulkApplyColumnSelection() {
 }
 
 function bulkSaveColumnMappingsIfNeeded() {
-    var distNames = { arrow: 'Arrow', ingram: 'Ingram Micro', tdsynnex: 'TD Synnex' };
+    var distNames = { arrow: 'Arrow ECS', ingram: 'Ingram Micro', tdsynnex: 'TD Synnex' };
     var distributor = state.currentDistributor;
     if (!distributor) {
         console.log('[BulkSave] No distributor selected, skipping save');
@@ -6540,6 +6615,12 @@ function bulkClearSearch() {
     bulkState.msrpChoices = new Map();
     bulkState.resultsPricingMode = 'reseller';
     bulkState.resultsPage = 1;
+    bulkState.detectedDistributor = null;
+    bulkState.detectionSucceeded = false;
+    state.currentDistributor = null;
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    var tabsContainer = document.querySelector('.distributor-tabs');
+    if (tabsContainer) tabsContainer.classList.remove('pulse-attention');
 
     // Reset collapsible sections to expanded
     if (!bulkState.collapsedSections) bulkState.collapsedSections = new Set();
@@ -6619,6 +6700,8 @@ function bulkClearSearch() {
 
     // Update parsed preview (will show empty state)
     bulkUpdateParsedPreview();
+
+    bulkUpdateLoadButtonState();
 
     console.log('[BulkSearch] Cleared all bulk search state');
 }
@@ -7257,14 +7340,19 @@ function bulkDetectDistributor() {
         if (detected) {
             const displayName = DISTRIBUTORS[detected] ? DISTRIBUTORS[detected].name : detected;
             console.log('[BulkDetect] MATCH FOUND:', detected, 'in row', r, '- selecting distributor:', displayName);
+            bulkState.detectedDistributor = detected;
+            bulkState.detectionSucceeded = true;
             selectDistributor(detected);
+            bulkUpdateLoadButtonState();
             showStatus('Auto-detected distributor: ' + displayName, 'success');
             return detected;
         }
     }
 
     console.log('[BulkDetect] No distributor detected after scanning all', bulkState.fileRows.length, 'rows');
-    showStatus('Could not auto-detect distributor from file', 'warning');
+    bulkState.detectedDistributor = null;
+    bulkState.detectionSucceeded = false;
+    bulkUpdateLoadButtonState();
     return null;
 }
 
