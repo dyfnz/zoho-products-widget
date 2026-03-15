@@ -3955,6 +3955,12 @@ function addSelectedProducts() {
     addSelectedToQueue();
 }
 
+function closeWidget() {
+    if (typeof $Client !== 'undefined') {
+        $Client.close({ cancelled: true, products: [] });
+    }
+}
+
 function cancelSelection() {
     console.log('Cancel clicked');
 

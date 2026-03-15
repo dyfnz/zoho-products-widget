@@ -199,9 +199,34 @@ body {
 }
 
 /* Distributor Tabs */
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 30px;
+}
+
 .distributor-tabs {
     display: flex;
-    gap: var(--space-1);
+    gap: 30px;
+}
+
+.widget-close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: var(--color-accent-light);
+    cursor: pointer;
+    padding: 4px;
+    padding-right: 16px;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+}
+
+.widget-close-btn:hover {
+    color: var(--color-accent);
+    background: rgba(14, 165, 233, 0.15);
 }
 
 .tab-btn {
@@ -3296,8 +3321,7 @@ button svg {
     background: rgba(14, 165, 233, 0.15);
     border: 1px solid rgba(14, 165, 233, 0.4);
     border-radius: var(--radius-sm);
-    margin-left: auto;
-    margin-right: var(--space-3);
+    margin-right: 30px;
     cursor: pointer;
 }
 
