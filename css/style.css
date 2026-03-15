@@ -132,8 +132,8 @@ body {
    HEADER - Compact Industrial
    ===================================================== */
 .widget-header {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
     align-items: center;
     padding: var(--space-1) var(--space-4);
     background: var(--color-primary);
@@ -199,7 +199,7 @@ body {
 }
 
 /* Distributor Tabs */
-.header-right {
+.header-buttons {
     display: flex;
     align-items: center;
     gap: 30px;
@@ -207,19 +207,21 @@ body {
 
 .distributor-tabs {
     display: flex;
-    gap: 30px;
+    gap: var(--space-1);
 }
 
 .widget-close-btn {
     display: flex;
     align-items: center;
     justify-content: center;
+    justify-self: end;
     background: transparent;
     border: none;
     color: var(--color-accent-light);
     cursor: pointer;
     padding: 4px;
     padding-right: 16px;
+    margin-right: 0;
     border-radius: var(--radius-sm);
     transition: all var(--transition-fast);
 }
@@ -3321,7 +3323,6 @@ button svg {
     background: rgba(14, 165, 233, 0.15);
     border: 1px solid rgba(14, 165, 233, 0.4);
     border-radius: var(--radius-sm);
-    margin-right: 30px;
     cursor: pointer;
 }
 
