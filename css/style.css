@@ -1548,6 +1548,31 @@ button svg {
     margin-top: 2px;
 }
 
+/* Narrow panel: reduce queue item font sizes for readability */
+.right-panel.narrow .queue-item-part {
+    font-size: var(--font-size-2xs);
+}
+
+.right-panel.narrow .queue-item-price {
+    font-size: var(--font-size-2xs);
+}
+
+.right-panel.narrow .queue-item-qty {
+    font-size: 0.625rem;
+}
+
+.right-panel.narrow .queue-item-discount {
+    font-size: 0.625rem;
+}
+
+.right-panel.narrow .queue-item-discount-pct {
+    font-size: 0.5rem;
+}
+
+.right-panel.narrow .queue-col-label {
+    font-size: 0.4375rem;
+}
+
 /* MSRP indicator container — own column before price */
 .queue-item-msrp-indicator {
     display: flex;
