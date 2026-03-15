@@ -1829,6 +1829,7 @@ async function loadProducts(page = 1) {
 
             displayProductsWithPricing(products, pagination);
             showStatus('', '');
+            document.getElementById('productsSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
         } else {
             document.getElementById('productsBody').innerHTML =
                 '<tr><td colspan="5" class="no-results">No products found</td></tr>';
@@ -2041,6 +2042,7 @@ function addSelectedToQueue() {
     }
 
     updateQueueUI();
+    document.querySelector('.queue-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     if (addedCount > 0) {
         showStatus(`Added ${addedCount} product(s) to queue`, 'success');
@@ -2848,6 +2850,7 @@ function toggleMfrMappingsPanel() {
         } else {
             singleBtn?.classList.add('active');
         }
+        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 }
 
@@ -4516,6 +4519,7 @@ function bulkToggleMappingRulesPanel() {
             initBulkMappingRulesResize();
             _bulkMappingRulesResizeInited = true;
         }
+        document.getElementById('bulkMappingRulesPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 }
 
@@ -6728,6 +6732,10 @@ function bulkDisplayResults() {
     tbody.innerHTML = html;
     bulkUpdateResultsSelectionUI();
     bulkUpdatePagination();
+
+    if (!bulkState.msrpMismatches || bulkState.msrpMismatches.length === 0) {
+        document.getElementById('bulkResultsPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
 }
 
 function bulkToggleGroup(mfr) {
@@ -6809,6 +6817,7 @@ function bulkAddSelectedToQueue() {
     bulkState.selectedProductIndices.clear();
     bulkDisplayResults();
     updateQueueUI();
+    document.querySelector('.queue-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     if (skipped > 0 && added === 0) {
         bulkShowToast('bulkQueueToast', 'All items already in queue', 'bulkResultsPanel');
@@ -6963,6 +6972,7 @@ function bulkShowMsrpComparisonPanel() {
     if (resultsPanel) resultsPanel.style.display = 'none';
 
     panel.style.display = 'flex';
+    document.getElementById('bulkMsrpComparisonPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 /**
