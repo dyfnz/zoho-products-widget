@@ -1998,7 +1998,7 @@ function addSelectedToQueue() {
         if (!alreadyQueued) {
             // Enrich product with pricing data if available
             const pricingData = product.pricingData || state.pricingData?.[product.ingramPartNumber];
-            const enrichedProduct = { ...product, pricingData };
+            const enrichedProduct = { ...product, pricingData, customerDiscount: 0 };
             // Arrow MPNs use spaces but Zoho stores them with # — convert on queue entry
             if (enrichedProduct._source === 'arrow' && enrichedProduct.vendorPartNumber) {
                 enrichedProduct.vendorPartNumber = enrichedProduct.vendorPartNumber.replace(/ /g, '#');
@@ -2174,10 +2174,26 @@ function renderQueueItems() {
             // Add manufacturer header (draggable)
             const header = document.createElement('div');
             header.className = 'queue-mfr-group';
-            header.textContent = mfr;
+            header.innerHTML = '<span class="queue-mfr-group-left">' + escapeHtml(mfr) + '</span>' +
+                    '<span class="queue-mfr-group-discount">' +
+                        '<input type="number" class="mfr-discount-input" value="0" min="0" max="100" step="1" ' +
+                            'placeholder="0" data-mfr="' + mfr.replace(/"/g, '&quot;') + '" ' +
+                            'onclick="event.stopPropagation(); this.select()" ' +
+                            'onkeydown="if(event.key===\'Enter\'){event.stopPropagation(); applyMfrDiscount(\'' + mfr.replace(/'/g, "\\'") + '\'); this.blur();}" ' +
+                            'onblur="applyMfrDiscountIfNonZero(\'' + mfr.replace(/'/g, "\\'") + '\')">' +
+                        '<span class="mfr-discount-pct">%</span>' +
+                        '<button class="mfr-discount-apply" data-tooltip="Apply to group" onclick="event.stopPropagation(); applyMfrDiscount(\'' + mfr.replace(/'/g, "\\'") + '\')">' +
+                            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>' +
+                        '</button>' +
+                    '</span>';
+            header.style.display = 'flex';
+            header.style.justifyContent = 'space-between';
+            header.style.alignItems = 'center';
+            header.style.textAlign = 'left';
             header.draggable = true;
             header.dataset.manufacturer = mfr;
             queueItems.appendChild(header);
+                queueItems.insertAdjacentHTML('beforeend', createQueueColumnLabelsHTML());
 
             // Add items for this manufacturer
             groups[mfr].forEach((product, index) => {
@@ -2186,6 +2202,7 @@ function renderQueueItems() {
         });
     } else {
         // Render flat list
+        queueItems.insertAdjacentHTML('beforeend', createQueueColumnLabelsHTML());
         getActiveQueue().forEach((product, index) => {
             queueItems.appendChild(createQueueItemElement(product, index));
         });
@@ -2251,6 +2268,10 @@ function createQueueItemElement(product, index) {
                 : ''}</span>`
             : ''}
         <div class="queue-item-price">${msrpDisplay}</div>
+        <div class="queue-item-discount-wrap">
+            <input type="number" class="queue-item-discount${product.customerDiscount > 0 ? ' has-value' : ''}" value="${product.customerDiscount || 0}" min="0" max="100" step="1" data-mpn="${partNumber}" onclick="event.stopPropagation(); this.select()" oninput="updateQueueItemDiscount('${partNumber.replace(/'/g, "\\'")}', this)" onblur="finalizeQueueItemDiscount('${partNumber.replace(/'/g, "\\'")}', this)">
+            <span class="queue-item-discount-pct">%</span>
+        </div>
         <button class="queue-item-remove" onclick="removeFromQueue('${partNumber}')" title="Remove">
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M18 6 6 18M6 6l12 12"/>
@@ -2919,6 +2940,160 @@ function initMfrMappingsResize() {
     }
 }
 
+// ============================================
+// CUSTOMER DISCOUNT % — Queue Enhancement
+// ============================================
+
+// Clamp discount to integer 0-100, default 0
+function clampDiscount(val) {
+    var n = parseInt(val, 10);
+    if (isNaN(n) || n < 0) return 0;
+    if (n > 100) return 100;
+    return Math.floor(n);
+}
+
+// Update per-row discount on input
+function updateQueueItemDiscount(mpn, inputEl) {
+    var queue = getActiveQueue();
+    var product = queue.find(function(p) {
+        return (p.ingramPartNumber || p.vendorPartNumber) === mpn;
+    });
+    if (!product) return;
+    if (inputEl.value === '') return;
+    var val = clampDiscount(inputEl.value);
+    product.customerDiscount = val;
+    inputEl.classList.toggle('has-value', val > 0);
+}
+
+// Finalize per-row discount on blur (default empty to 0)
+function finalizeQueueItemDiscount(mpn, inputEl) {
+    var queue = getActiveQueue();
+    var product = queue.find(function(p) {
+        return (p.ingramPartNumber || p.vendorPartNumber) === mpn;
+    });
+    if (!product) return;
+    product.customerDiscount = clampDiscount(inputEl.value);
+    inputEl.value = product.customerDiscount;
+    inputEl.classList.toggle('has-value', product.customerDiscount > 0);
+}
+
+// Apply discount to ALL products in queue
+function applyAllDiscount() {
+    var input = document.getElementById('discountApplyAllInput');
+    var val = clampDiscount(input.value);
+    input.value = val;
+    var queue = getActiveQueue();
+    queue.forEach(function(p) { p.customerDiscount = val; });
+
+    // Update all per-row inputs
+    document.querySelectorAll('.queue-item-discount').forEach(function(el) {
+        el.value = val;
+        el.classList.toggle('has-value', val > 0);
+        flashQueueItem(el.closest('.queue-item'));
+    });
+
+    // Sync mfr header inputs
+    document.querySelectorAll('.mfr-discount-input').forEach(function(el) {
+        el.value = val;
+    });
+}
+
+// Apply discount to a single manufacturer group
+function applyMfrDiscount(mfr) {
+    var headerInput = document.querySelector('.mfr-discount-input[data-mfr="' + mfr.replace(/"/g, '\\"') + '"]');
+    if (!headerInput) return;
+    var val = clampDiscount(headerInput.value);
+    headerInput.value = val;
+    var queue = getActiveQueue();
+    queue.forEach(function(p) {
+        var pMfr = p.vendorName || p.manufacturer || 'Unknown';
+        if (pMfr === mfr) {
+            p.customerDiscount = val;
+        }
+    });
+
+    // Update matching per-row inputs
+    document.querySelectorAll('.queue-item-discount').forEach(function(el) {
+        var itemMpn = el.getAttribute('data-mpn');
+        var product = queue.find(function(p) {
+            return (p.ingramPartNumber || p.vendorPartNumber) === itemMpn;
+        });
+        if (product) {
+            var pMfr = product.vendorName || product.manufacturer || 'Unknown';
+            if (pMfr === mfr) {
+                el.value = val;
+                el.classList.toggle('has-value', val > 0);
+                flashQueueItem(el.closest('.queue-item'));
+            }
+        }
+    });
+}
+
+// Auto-apply mfr discount on blur (only if non-zero)
+function applyMfrDiscountIfNonZero(mfr) {
+    var headerInput = document.querySelector('.mfr-discount-input[data-mfr="' + mfr.replace(/"/g, '\\"') + '"]');
+    if (!headerInput) return;
+    var val = clampDiscount(headerInput.value);
+    headerInput.value = val;
+    if (val > 0) {
+        applyMfrDiscount(mfr);
+    }
+}
+
+// Reset ALL discounts to 0
+function clearAllDiscounts() {
+    var input = document.getElementById('discountApplyAllInput');
+    if (input) input.value = 0;
+    var queue = getActiveQueue();
+    queue.forEach(function(p) { p.customerDiscount = 0; });
+
+    document.querySelectorAll('.queue-item-discount').forEach(function(el) {
+        el.value = 0;
+        el.classList.remove('has-value');
+        flashQueueItem(el.closest('.queue-item'));
+    });
+
+    document.querySelectorAll('.mfr-discount-input').forEach(function(el) {
+        el.value = 0;
+    });
+}
+
+// Flash animation on queue item
+function flashQueueItem(el) {
+    if (!el) return;
+    el.classList.remove('discount-flash');
+    void el.offsetWidth;
+    el.classList.add('discount-flash');
+}
+
+// Toggle discount field visibility (eye icon)
+function toggleDiscountVisibility() {
+    var panel = document.querySelector('.queue-panel');
+    var toggleBtn = document.getElementById('discountVisibilityToggle');
+    var eyeOpen = document.getElementById('discountEyeOpen');
+    var eyeClosed = document.getElementById('discountEyeClosed');
+    if (!panel || !toggleBtn) return;
+
+    var isHidden = panel.classList.toggle('discount-fields-hidden');
+    toggleBtn.classList.toggle('fields-hidden', isHidden);
+    if (eyeOpen) eyeOpen.style.display = isHidden ? 'none' : '';
+    if (eyeClosed) eyeClosed.style.display = isHidden ? '' : 'none';
+}
+
+// Generate column labels HTML for queue
+function createQueueColumnLabelsHTML() {
+    return '<div class="queue-column-labels">' +
+        '<span class="queue-col-label queue-col-label-drag"></span>' +
+        '<span class="queue-col-label queue-col-label-qty">QTY</span>' +
+        '<span class="queue-col-label queue-col-label-part"></span>' +
+        '<span class="queue-col-label queue-col-label-indicator"></span>' +
+        '<span class="queue-col-label queue-col-label-price"></span>' +
+        '<span class="queue-col-label queue-col-label-disc">CUST DISC %</span>' +
+        '<span class="queue-col-label queue-col-label-pct-spacer"></span>' +
+        '<span class="queue-col-label queue-col-label-remove"></span>' +
+        '</div>';
+}
+
 async function submitQueue() {
     console.log('[SubmitQueue] Function called');
 
@@ -3032,6 +3207,7 @@ async function submitQueue() {
                     };
                 }
                 mapped.qty = product.qty || 1;
+                    mapped.customerDiscount = product.customerDiscount || 0;
                 mapped.resellerPrice = product.resellerPrice || null;
                 // For mapped products, ensure resellerPrice is accessible for the formatter
                 if (!mapped.resellerPrice && raw) {
@@ -3056,6 +3232,7 @@ async function submitQueue() {
                     resellerPrice: product.resellerPrice || null,
                     _source: product._source || state.currentDistributor,
                     qty: product.qty || 1,
+                        customerDiscount: product.customerDiscount || 0,
                     ...(dist === 'ingram' && { ingramPartNumber: product._fileVpn || product.vpn || product.mpn || '' }),
                     ...(dist === 'tdsynnex' && { tdSynnexSkuNumber: product.vpn || '', distributorPartNumber: product.vpn || '' }),
                     ...(dist === 'arrow' && { distributorPartNumber: product.vpn || '' }),
@@ -3103,7 +3280,8 @@ async function submitQueue() {
                 Last_Sync_Source: 'TD SYNNEX',
                 UNSPSC_Commodity: product.commodityName || '',
                 Kit_or_Standalone: product.kitStandaloneFlag === 'K' ? 'Yes' : 'No',
-                Quantity: product.qty || 1
+                Quantity: product.qty || 1,
+                        Customer_Discount: parseInt(product.customerDiscount) || 0
             };
         }
 
@@ -3122,7 +3300,8 @@ async function submitQueue() {
                 Customer_Price: product.resellerPrice || pricingData?.pricing?.customerPrice || product.unitCost || null,
                 Description: product.description || '',
                 Last_Sync_Source: 'Arrow',
-                Quantity: product.qty || 1
+                Quantity: product.qty || 1,
+                        Customer_Discount: parseInt(product.customerDiscount) || 0
             };
         }
 
@@ -3142,7 +3321,8 @@ async function submitQueue() {
             Last_Sync_Source: 'Ingram Micro',
             IM_Product_Type: product.productType || '',
             Kit_or_Standalone: pricingData?.bundlePartIndicator ? 'Yes' : 'No',
-            Quantity: product.qty || 1
+            Quantity: product.qty || 1,
+                        Customer_Discount: parseInt(product.customerDiscount) || 0
         };
     });
 
@@ -4038,6 +4218,24 @@ function setSearchMode(mode) {
     if (pricingToggle) {
         pricingToggle.style.display = (mode === 'single') ? 'none' : '';
     }
+            // Customer Discount: hidden by default in single mode, visible in bulk mode
+            var queuePanel = document.querySelector('.queue-panel');
+            var discountToggleBtn = document.getElementById('discountVisibilityToggle');
+            var eyeOpen = document.getElementById('discountEyeOpen');
+            var eyeClosed = document.getElementById('discountEyeClosed');
+            if (queuePanel) {
+                if (mode === 'single') {
+                    queuePanel.classList.add('discount-fields-hidden');
+                    if (discountToggleBtn) discountToggleBtn.classList.add('fields-hidden');
+                    if (eyeOpen) eyeOpen.style.display = 'none';
+                    if (eyeClosed) eyeClosed.style.display = '';
+                } else {
+                    queuePanel.classList.remove('discount-fields-hidden');
+                    if (discountToggleBtn) discountToggleBtn.classList.remove('fields-hidden');
+                    if (eyeOpen) eyeOpen.style.display = '';
+                    if (eyeClosed) eyeClosed.style.display = 'none';
+                }
+            }
     // Re-render queue for active mode
     updateQueueUI();
 }
@@ -6589,7 +6787,7 @@ function bulkAddSelectedToQueue() {
         if (!bulkState.queuedProducts.find(q => q.mpn === p.mpn || q.vendorPartNumber === p.mpn)) {
             const mpnKey = (p.mpn || '').toUpperCase();
             const rawRow = bulkState.rawRpcRows.get(mpnKey);
-            bulkState.queuedProducts.push({ ...p, vendorPartNumber: p.mpn, _rawRpcRow: rawRow || null });
+            bulkState.queuedProducts.push({ ...p, vendorPartNumber: p.mpn, _rawRpcRow: rawRow || null, customerDiscount: 0 });
             added++;
         } else {
             skipped++;
