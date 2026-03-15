@@ -121,6 +121,18 @@ document.addEventListener('DOMContentLoaded', function() {
     if (groupByMfrCheckbox) {
         groupByMfrCheckbox.checked = state.groupByManufacturer;
     }
+
+    // Default: hide discount fields in single mode on initial load
+    var initQueuePanel = document.querySelector('.queue-panel');
+    var initDiscountToggle = document.getElementById('discountVisibilityToggle');
+    var initEyeOpen = document.getElementById('discountEyeOpen');
+    var initEyeClosed = document.getElementById('discountEyeClosed');
+    if (initQueuePanel) {
+        initQueuePanel.classList.add('discount-fields-hidden');
+        if (initDiscountToggle) initDiscountToggle.classList.add('fields-hidden');
+        if (initEyeOpen) initEyeOpen.style.display = 'none';
+        if (initEyeClosed) initEyeClosed.style.display = '';
+    }
 });
 
 function initZohoSDK() {
