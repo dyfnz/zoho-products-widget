@@ -1501,9 +1501,9 @@ button svg {
     font-size: var(--font-size-xs);
     font-weight: 600;
     color: var(--color-text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .queue-item-price {
@@ -1867,8 +1867,8 @@ button svg {
     content: attr(data-tooltip);
     position: absolute;
     bottom: calc(100% + 5px);
-    left: 50%;
-    transform: translateX(-50%);
+    right: 0;
+    transform: none;
     padding: 3px 7px;
     background: var(--color-primary);
     color: var(--color-text-inverse);
@@ -1887,8 +1887,8 @@ button svg {
     content: '';
     position: absolute;
     bottom: calc(100% + 1px);
-    left: 50%;
-    transform: translateX(-50%);
+    right: 6px;
+    transform: none;
     border: 4px solid transparent;
     border-top-color: var(--color-primary);
     opacity: 0;
