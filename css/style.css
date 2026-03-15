@@ -267,15 +267,16 @@ body {
 
 @keyframes pulse-attention {
     0%, 100% {
-        box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.6);
+        box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
     }
     50% {
-        box-shadow: 0 0 12px 4px rgba(14, 165, 233, 0.35);
+        box-shadow: 0 0 18px 8px rgba(245, 158, 11, 0.5);
     }
 }
 
 .distributor-tabs.pulse-attention .tab-btn {
     animation: pulse-attention 1.5s ease-in-out infinite;
+    border-color: rgba(245, 158, 11, 0.6);
 }
 
 .tab-icon {
@@ -335,6 +336,12 @@ body {
     background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
     color: #991b1b;
     border: 1px solid #fca5a5;
+}
+
+.status-bar.warning {
+    background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%);
+    color: #9a3412;
+    border: 1px solid #fdba74;
 }
 
 .status-bar.loading {

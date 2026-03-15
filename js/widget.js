@@ -4238,11 +4238,11 @@ function setSearchMode(mode) {
             bulkInitDropZone();
             document.addEventListener('click', bulkHandleDropdownOutsideClick);
         }
-        // Update distributor badges (title bar + paste section)
-        updateBulkDistributorBadges();
         // Bulk mode: no default distributor — user must select or auto-detect
         state.currentDistributor = null;
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        // Update distributor badges AFTER null reset so stale single-mode value is cleared
+        updateBulkDistributorBadges();
         bulkUpdateLoadButtonState();
     }
 
