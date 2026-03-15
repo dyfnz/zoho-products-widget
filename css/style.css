@@ -139,6 +139,9 @@ body {
     background: var(--color-primary);
     color: var(--color-text-inverse);
     border-bottom: 2px solid var(--color-accent);
+    position: sticky;
+    top: 0;
+    z-index: 999;
 }
 
 .header-left {
