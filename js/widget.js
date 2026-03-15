@@ -616,7 +616,7 @@ function selectDistributor(distributor) {
     if (state.searchMode === 'bulk') {
         updateBulkDistributorBadges();
         // Re-parse paste content for new distributor's format
-        var bulkSkuInput = document.getElementById('bulkSkuInput');
+        var bulkSkuInput = document.getElementById('bulkPasteArea');
         if (bulkSkuInput && bulkSkuInput.value.trim()) {
             bulkParsePastedSKUs();
         }
@@ -4293,7 +4293,7 @@ function bulkUpdateLoadButtonState() {
     if (!loadBtn) return;
 
     const hasDistributor = !!state.currentDistributor;
-    const hasPasteContent = !!(document.getElementById('bulkSkuInput') && document.getElementById('bulkSkuInput').value.trim());
+    const hasPasteContent = !!(document.getElementById('bulkPasteArea') && document.getElementById('bulkPasteArea').value.trim());
     const hasFile = !!(bulkState.fileRows && bulkState.fileRows.length > 0);
     const hasInput = hasFile || hasPasteContent;
 
@@ -6618,6 +6618,7 @@ function bulkClearSearch() {
     bulkState.detectedDistributor = null;
     bulkState.detectionSucceeded = false;
     state.currentDistributor = null;
+    updateBulkDistributorBadges();
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     var tabsContainer = document.querySelector('.distributor-tabs');
     if (tabsContainer) tabsContainer.classList.remove('pulse-attention');
