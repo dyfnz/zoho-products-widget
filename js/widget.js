@@ -34,6 +34,14 @@ const DISTRIBUTORS = {
     }
 };
 
+// Arrow MPN normalization — Arrow stores MPNs with spaces instead of #
+function arrowMpnForLookup(mpn) {
+    return mpn ? mpn.replace(/#/g, ' ') : mpn;
+}
+function arrowMpnForDisplay(mpn) {
+    return mpn ? mpn.replace(/ /g, '#') : mpn;
+}
+
 // =====================================================
 // STATE MANAGEMENT
 // =====================================================
@@ -1073,7 +1081,7 @@ async function searchArrowProducts(manufacturer, options = {}) {
     let url = `${SUPABASE_URL}/rest/v1/zoho_arrow_products?manufacturer=eq.${encodeURIComponent(manufacturer)}`;
     url += `&order=manufacturer_part_number.asc`;
 
-    if (search) url += `&manufacturer_part_number=ilike.*${encodeURIComponent(search)}*`;
+    if (search) url += `&manufacturer_part_number=ilike.*${encodeURIComponent(arrowMpnForLookup(search))}*`;
     if (brand) url += `&brand=eq.${encodeURIComponent(brand)}`;
     if (category) url += `&item_category_name=eq.${encodeURIComponent(category)}`;
     if (subcategory) url += `&subcategory=eq.${encodeURIComponent(subcategory)}`;
@@ -1254,8 +1262,9 @@ async function lookupManufacturersFromSKU(skuPattern) {
 
         } else if (state.currentDistributor === 'arrow') {
             // Arrow: Query zoho_arrow_products by MPN pattern, extract unique manufacturers
+            var arrowSku = arrowMpnForLookup(skuPattern);
             const response = await fetch(
-                `${SUPABASE_URL}/rest/v1/zoho_arrow_products?select=manufacturer&manufacturer_part_number=ilike.*${encodeURIComponent(skuPattern)}*&limit=1000`,
+                `${SUPABASE_URL}/rest/v1/zoho_arrow_products?select=manufacturer&manufacturer_part_number=ilike.*${encodeURIComponent(arrowSku)}*&limit=1000`,
                 {
                     headers: {
                         'apikey': SUPABASE_ANON_KEY,
@@ -1896,7 +1905,7 @@ function displayProductsWithPricing(products, pagination) {
                        ${isSelected ? 'checked' : ''}
                        ${isQueued ? 'disabled title="Already in queue"' : ''}>
             </td>
-            <td class="col-part"><strong>${product.vendorPartNumber || '-'}</strong></td>
+            <td class="col-part"><strong>${state.currentDistributor === 'arrow' ? arrowMpnForDisplay(product.vendorPartNumber || '-') : (product.vendorPartNumber || '-')}</strong></td>
             <td class="col-desc desc-cell" title="${fullDescription.replace(/"/g, '&quot;')}">${fullDescription}</td>
             <td class="col-price">${msrpDisplay}</td>
             <td class="col-action">
@@ -3653,7 +3662,7 @@ async function showProductDetails(productIndex) {
         `;
         document.getElementById('detailsSubtitle').innerHTML = `
             <strong>Arrow Part:</strong> ${product.distributorPartNumber || 'N/A'} |
-            <strong>Vendor Part:</strong> ${product.vendorPartNumber || 'N/A'} |
+            <strong>Vendor Part:</strong> ${arrowMpnForDisplay(product.vendorPartNumber) || 'N/A'} |
             <strong>Manufacturer:</strong> ${product.vendorName || state.manufacturer} |
             <strong>Status:</strong> <span class="arrow-loading-indicator">Fetching...</span>
         `;
@@ -3663,7 +3672,7 @@ async function showProductDetails(productIndex) {
             { label: 'Subcategory', value: product.subCategory || '-' },
             { label: 'Brand', value: product.brand || '-' },
             { label: 'Arrow Part #', value: product.distributorPartNumber || '-' },
-            { label: 'Vendor Part #', value: product.vendorPartNumber || '-' }
+            { label: 'Vendor Part #', value: arrowMpnForDisplay(product.vendorPartNumber) || '-' }
         ]);
         renderGrid('pricingGrid', [
             { label: 'MSRP (Catalog)', value: formatCurrency(product.retailPrice) },
@@ -3692,7 +3701,7 @@ async function showProductDetails(productIndex) {
 
         document.getElementById('detailsSubtitle').innerHTML = `
             <strong>Arrow Part:</strong> ${product.distributorPartNumber || 'N/A'} |
-            <strong>Vendor Part:</strong> ${product.vendorPartNumber || 'N/A'} |
+            <strong>Vendor Part:</strong> ${arrowMpnForDisplay(product.vendorPartNumber) || 'N/A'} |
             <strong>Manufacturer:</strong> ${arrowLive.manufacturer || product.vendorName || state.manufacturer} |
             <strong>Status:</strong> <span class="${arrowLive.itemStatus === 'Active' ? 'authorized-yes' : 'authorized-no'}">${arrowLive.itemStatus || 'Unknown'}</span>
         `;
@@ -3703,7 +3712,7 @@ async function showProductDetails(productIndex) {
             { label: 'Subcategory', value: product.subCategory || '-' },
             { label: 'Brand', value: arrowLive.brand || product.brand || '-' },
             { label: 'Arrow Part #', value: product.distributorPartNumber || '-' },
-            { label: 'Vendor Part #', value: product.vendorPartNumber || '-' }
+            { label: 'Vendor Part #', value: arrowMpnForDisplay(product.vendorPartNumber) || '-' }
         ];
         renderGrid('productInfoGrid', productInfoFields);
 
@@ -5104,7 +5113,7 @@ function bulkParsePastedSKUs() {
         .flatMap(line => {
             // For Arrow, keep spaces as-is; for others, convert spaces to #
             const normalized = state.currentDistributor === 'arrow'
-                ? line.trim()
+                ? arrowMpnForLookup(line.trim())
                 : line.trim().replace(/\s+/g, '#');
             // Split on comma or tab (separators within a line)
             return normalized.split(/[,\t]+/);
@@ -6219,7 +6228,11 @@ function bulkUpdateParsedPreview() {
         editableEl.value = '';
         editableEl.placeholder = 'No MPNs parsed yet - values will appear here comma-separated';
     } else {
-        editableEl.value = bulkState.parsedSkus.join(', ');
+        if (state.currentDistributor === 'arrow') {
+            editableEl.value = bulkState.parsedSkus.map(s => arrowMpnForDisplay(s)).join(', ');
+        } else {
+            editableEl.value = bulkState.parsedSkus.join(', ');
+        }
     }
 
     // Show parsed row if there are SKUs to show
@@ -6815,7 +6828,7 @@ function bulkDisplayResults() {
                 : '';
             html += `<tr class="bulk-product-row ${isSelected ? 'bulk-selected' : ''} ${hiddenClass}" data-index="${globalIdx}" data-mfr="${escapedMfr}">` +
                 `<td class="bulk-col-checkbox"><input type="checkbox" ${isSelected ? 'checked' : ''} onchange="bulkToggleProductSelection(${globalIdx})"></td>` +
-                `<td class="bulk-col-part">${p.mpn || ''}</td>` +
+                `<td class="bulk-col-part">${state.currentDistributor === 'arrow' ? arrowMpnForDisplay(p.mpn || '') : (p.mpn || '')}</td>` +
                 `<td class="bulk-col-desc" title="${(p.description || '').replace(/"/g, '&quot;')}">${p.description || ''}</td>` +
                 `<td class="bulk-col-price">${bulkFormatPrice(price)}</td>` +
                 `<td class="bulk-col-indicator">${msrpIndicator}</td>` +
@@ -6901,7 +6914,7 @@ function bulkAddSelectedToQueue() {
         if (!bulkState.queuedProducts.find(q => q.mpn === p.mpn || q.vendorPartNumber === p.mpn)) {
             const mpnKey = (p.mpn || '').toUpperCase();
             const rawRow = bulkState.rawRpcRows.get(mpnKey);
-            bulkState.queuedProducts.push({ ...p, vendorPartNumber: p.mpn, _rawRpcRow: rawRow || null, customerDiscount: 0 });
+            bulkState.queuedProducts.push({ ...p, vendorPartNumber: (state.currentDistributor === 'arrow' ? arrowMpnForDisplay(p.mpn) : p.mpn), _rawRpcRow: rawRow || null, customerDiscount: 0 });
             added++;
         } else {
             skipped++;
