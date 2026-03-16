@@ -2249,6 +2249,21 @@ button svg {
     font-weight: 700;
 }
 
+#footerStats {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+}
+
+#footerStats strong {
+    color: var(--color-accent);
+    font-weight: 700;
+}
+
+#footerDateTime {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+}
+
 /* =====================================================
    SCROLLBAR STYLING
    ===================================================== */

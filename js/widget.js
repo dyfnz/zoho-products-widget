@@ -2034,6 +2034,27 @@ function updateSelectedCount() {
     updateFooterStats();
 }
 
+function updateFooterDateTime() {
+    var el = document.getElementById('footerDateTime');
+    if (!el) return;
+    var now = new Date();
+    var options = {
+        timeZone: 'America/Denver',
+        month: '2-digit',
+        day: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+    };
+    var formatted = now.toLocaleString('en-US', options).replace(',', ' -');
+    el.textContent = formatted;
+}
+
+// Start footer clock — update every 30 seconds
+updateFooterDateTime();
+setInterval(updateFooterDateTime, 30000);
+
 // =====================================================
 // QUEUE MANAGEMENT
 // =====================================================
