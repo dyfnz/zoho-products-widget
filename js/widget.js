@@ -1999,14 +1999,39 @@ function toggleSelectAll() {
     updateSelectedCount();
 }
 
-function updateSelectedCount() {
-    const count = state.selectedProducts.size;
-    document.getElementById('selectedCount').textContent = count;
+function updateFooterStats() {
+    var el = document.getElementById('footerStats');
+    if (!el) return;
 
-    const addToQueueBtn = document.getElementById('addToQueueBtn');
+    if (state.searchMode === 'bulk') {
+        var parsed = bulkState.parsedSkus ? bulkState.parsedSkus.length : 0;
+        var found = bulkState.products ? bulkState.products.length : 0;
+        var notFound = bulkState.unmatchedMpns ? bulkState.unmatchedMpns.length : 0;
+        var selected = bulkState.selectedProductIndices ? bulkState.selectedProductIndices.size : 0;
+        var hasResults = found > 0 || notFound > 0;
+
+        if (!parsed && !hasResults) {
+            el.innerHTML = '';
+        } else if (parsed > 0 && !hasResults) {
+            el.innerHTML = '<strong>' + parsed + '</strong> SKUs parsed';
+        } else if (hasResults && selected > 0) {
+            el.innerHTML = '<strong>' + found + '</strong> of ' + parsed + ' found · <strong>' + notFound + '</strong> not found · <strong>' + selected + '</strong> selected';
+        } else if (hasResults) {
+            el.innerHTML = '<strong>' + found + '</strong> of ' + parsed + ' found · <strong>' + notFound + '</strong> not found';
+        }
+    } else {
+        var count = state.selectedProducts ? state.selectedProducts.size : 0;
+        el.innerHTML = '<strong>' + count + '</strong> selected from search';
+    }
+}
+
+function updateSelectedCount() {
+    var count = state.selectedProducts.size;
+    var addToQueueBtn = document.getElementById('addToQueueBtn');
     if (addToQueueBtn) {
         addToQueueBtn.disabled = count === 0;
     }
+    updateFooterStats();
 }
 
 // =====================================================
@@ -4289,6 +4314,7 @@ function setSearchMode(mode) {
             }
     // Re-render queue for active mode
     updateQueueUI();
+    updateFooterStats();
 }
 
 function handleBulkToggleClick() {
@@ -5103,6 +5129,7 @@ function bulkParsePastedSKUs() {
         bulkState.parsedSkus = [];
         bulkUpdateParsedPreview();
         bulkUpdateLoadButtonState();
+        updateFooterStats();
         console.log('[BulkSearch] Parsed 0 SKUs from paste (empty input)');
         return;
     }
@@ -5126,6 +5153,7 @@ function bulkParsePastedSKUs() {
     console.log(`[BulkSearch] Parsed ${bulkState.parsedSkus.length} SKUs from paste`);
     bulkUpdateParsedPreview();
     bulkUpdateLoadButtonState();
+    updateFooterStats();
 }
 
 // =====================================================
@@ -6053,6 +6081,7 @@ function bulkApplyColumnSelection() {
     const newMpns = parsedData.map(d => d.mpn);
     bulkState.parsedSkus = [...new Set([...bulkState.parsedSkus, ...newMpns])];
     bulkUpdateParsedPreview();
+    updateFooterStats();
 
     // Show parsed row
     const parsedRow = document.getElementById('bulkParsedRow');
@@ -6540,6 +6569,7 @@ async function bulkLoadProducts() {
         }
 
         console.log(`[BulkSearch] Loaded ${bulkState.products.length} products, ${bulkState.unmatchedMpns.length} unmatched`);
+        updateFooterStats();
 
         // Reset pagination for new search results
         bulkState.resultsPage = 1;
@@ -6720,6 +6750,7 @@ function bulkClearSearch() {
     bulkUpdateParsedPreview();
 
     bulkUpdateLoadButtonState();
+    updateFooterStats();
 
     console.log('[BulkSearch] Cleared all bulk search state');
 }
@@ -6877,6 +6908,7 @@ function bulkToggleProductSelection(index) {
     }
 
     bulkUpdateResultsSelectionUI();
+    updateFooterStats();
 }
 
 function bulkToggleSelectAll() {
@@ -6891,6 +6923,7 @@ function bulkToggleSelectAll() {
     }
 
     bulkDisplayResults();
+    updateFooterStats();
 }
 
 function bulkUpdateResultsSelectionUI() {
@@ -6924,6 +6957,7 @@ function bulkAddSelectedToQueue() {
     bulkState.selectedProductIndices.clear();
     bulkDisplayResults();
     updateQueueUI();
+    updateFooterStats();
     document.querySelector('.queue-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     if (skipped > 0 && added === 0) {
