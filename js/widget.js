@@ -610,7 +610,11 @@ function selectDistributor(distributor) {
     }
 
     resetFilters();
-    showStatus(`Switched to ${DISTRIBUTORS[distributor].name}. Search by manufacturer or SKU.`, 'info');
+    if (state.searchMode === 'bulk') {
+        showStatus(`Switched to ${DISTRIBUTORS[distributor].name}. Upload a distributor quote or paste SKUs to be parsed and loaded.`, 'info');
+    } else {
+        showStatus(`Switched to ${DISTRIBUTORS[distributor].name}. Search by manufacturer or SKU.`, 'info');
+    }
 
     // Update bulk distributor badges if in bulk mode
     if (state.searchMode === 'bulk') {
