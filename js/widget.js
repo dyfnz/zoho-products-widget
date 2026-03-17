@@ -1175,12 +1175,21 @@ async function searchManufacturers() {
             // Arrow: Query zoho_arrow_products view
             manufacturers = await searchArrowManufacturers(searchTerm);
         } else {
-            // Ingram: Use proxy
+            // Ingram: Query Supabase DB (normalized manufacturer names)
             const response = await fetch(
-                `${PROXY_BASE}?action=manufacturers&search=${encodeURIComponent(searchTerm)}`
+                `${SUPABASE_URL}/rest/v1/rpc/get_ingram_manufacturers`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    },
+                    body: JSON.stringify({ p_search: searchTerm })
+                }
             );
             const data = await response.json();
-            manufacturers = data.manufacturers || [];
+            manufacturers = (data || []).map(row => row.manufacturer);
         }
 
         select.innerHTML = '<option value="">-- Select a manufacturer --</option>';
@@ -1287,17 +1296,22 @@ async function lookupManufacturersFromSKU(skuPattern) {
             }));
 
         } else {
-            // Ingram: Call productsWithPricing without vendor and extract unique vendors
-            const url = `${PROXY_BASE}?action=productsWithPricing&keyword=${encodeURIComponent(skuPattern)}&page=1`;
-            const response = await fetch(url);
-            const data = await response.json();
+            // Ingram: Search Supabase DB by SKU pattern across all manufacturers
+            const encodedPattern = encodeURIComponent(`%${skuPattern}%`);
+            const url = `${SUPABASE_URL}/rest/v1/zoho_ingram_products?select=manufacturer&or=(vendor_part_number.ilike.${encodedPattern},ingram_part_number.ilike.${encodedPattern})&manufacturer=not.is.null&limit=200`;
+            const response = await fetch(url, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                }
+            });
+            const rows = await response.json();
 
-            if (data.products && Array.isArray(data.products)) {
-                // Extract unique vendor names with counts
+            if (Array.isArray(rows)) {
                 const vendorCounts = {};
-                data.products.forEach(product => {
-                    const vendorName = product.vendorName || 'Unknown';
-                    vendorCounts[vendorName] = (vendorCounts[vendorName] || 0) + 1;
+                rows.forEach(row => {
+                    const mfr = row.manufacturer || 'Unknown';
+                    vendorCounts[mfr] = (vendorCounts[mfr] || 0) + 1;
                 });
 
                 manufacturers = Object.entries(vendorCounts).map(([name, count]) => ({
@@ -1611,22 +1625,14 @@ async function loadFilterOptions(filterType) {
             }
             // Arrow doesn't have cat3
         } else {
-            // Ingram: Use proxy
-            let url = `${PROXY_BASE}?vendor=${encodeURIComponent(state.manufacturer)}`;
-            let dataKey;
-
+            // Ingram: Query Supabase DB for categories/subcategories
+            let rpcFilterType;
             switch (filterType) {
                 case 'category':
-                    url += `&action=categories`;
-                    if (state.subcategory) url += `&subCategory=${encodeURIComponent(state.subcategory)}`;
-                    if (state.skuType) url += `&type=${encodeURIComponent(state.skuType)}`;
-                    dataKey = 'categories';
+                    rpcFilterType = 'category';
                     break;
                 case 'subcategory':
-                    url += `&action=subcategories`;
-                    if (state.category) url += `&category=${encodeURIComponent(state.category)}`;
-                    if (state.skuType) url += `&type=${encodeURIComponent(state.skuType)}`;
-                    dataKey = 'subcategories';
+                    rpcFilterType = 'subcategory';
                     break;
                 default:
                     // Ingram doesn't have cat3
@@ -1634,11 +1640,29 @@ async function loadFilterOptions(filterType) {
                     return;
             }
 
-            const response = await fetch(url);
-            const data = await response.json();
-            console.log(`[Ingram ${filterType}] URL:`, url);
-            console.log(`[Ingram ${filterType}] Response:`, data);
-            items = data[dataKey] || [];
+            const rpcBody = {
+                p_manufacturer: state.manufacturer,
+                p_filter_type: rpcFilterType,
+                p_level1: state.category || null,
+                p_level2: state.subcategory || null
+            };
+
+            const response = await fetch(
+                `${SUPABASE_URL}/rest/v1/rpc/get_ingram_filter_values`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    },
+                    body: JSON.stringify(rpcBody)
+                }
+            );
+            if (response.ok) {
+                const data = await response.json();
+                items = (data || []).map(r => r.value).filter(Boolean).sort();
+            }
         }
 
         selectEl.innerHTML = '<option value="">-- Any --</option>';
@@ -1825,20 +1849,83 @@ async function loadProducts(page = 1) {
             products = result.products;
             pagination = result.pagination;
         } else {
-            // Ingram: Use proxy
-            let url = `${PROXY_BASE}?action=productsWithPricing&vendor=${encodeURIComponent(state.manufacturer)}&page=${page}`;
-            if (state.category) url += `&category=${encodeURIComponent(state.category)}`;
-            if (state.subcategory) url += `&subCategory=${encodeURIComponent(state.subcategory)}`;
-            if (state.skuType) url += `&type=${encodeURIComponent(state.skuType)}`;
-            if (state.skuKeyword && state.skuKeyword.length >= 2) {
-                url += `&keyword=${encodeURIComponent(state.skuKeyword)}`;
-            }
+            // Ingram: Query Supabase DB
+            const offset = (page - 1) * PAGE_SIZE;
+            const rpcBody = {
+                p_manufacturer: state.manufacturer,
+                p_search: (state.skuKeyword && state.skuKeyword.length >= 2) ? state.skuKeyword : null,
+                p_level1: state.category || null,
+                p_level2: state.subcategory || null,
+                p_media_type: state.skuType || null,
+                p_limit: PAGE_SIZE,
+                p_offset: offset
+            };
 
-            const response = await fetch(url);
-            const data = await response.json();
-            // Add _source marker to Ingram products for consistency with TD Synnex
-            products = (data.products || []).map(p => ({ ...p, _source: 'ingram' }));
-            pagination = data.pagination;
+            // Fetch products and count in parallel
+            const [productsResponse, countResponse] = await Promise.all([
+                fetch(`${SUPABASE_URL}/rest/v1/rpc/search_ingram_products`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    },
+                    body: JSON.stringify(rpcBody)
+                }),
+                fetch(`${SUPABASE_URL}/rest/v1/rpc/search_ingram_products_count`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    },
+                    body: JSON.stringify({
+                        p_manufacturer: rpcBody.p_manufacturer,
+                        p_search: rpcBody.p_search,
+                        p_level1: rpcBody.p_level1,
+                        p_level2: rpcBody.p_level2,
+                        p_media_type: rpcBody.p_media_type
+                    })
+                })
+            ]);
+
+            const rows = await productsResponse.json();
+            const totalRecords = await countResponse.json();
+
+            // Map DB columns to widget product format
+            products = (rows || []).map(row => ({
+                ingramPartNumber: row.ingram_part_number || '',
+                vendorPartNumber: row.vendor_part_number || '',
+                vendorName: row.manufacturer || '',
+                description: row.description_line_1 || '',
+                extraDescription: [row.description_line_1, row.description_line_2].filter(Boolean).join(' '),
+                category: row.level_1_name || '',
+                subCategory: row.level_2_name || '',
+                productType: row.media_type || '',
+                type: row.media_type || '',
+                replacementSku: row.substitute_part_number || '',
+                upcCode: row.upc_code || '',
+                availabilityFlag: row.availability_flag || '',
+                status: row.status || '',
+                cpuCode: row.cpu_code || '',
+                // Construct pricingData from DB prices (weekly refresh — not live)
+                pricingData: {
+                    pricing: {
+                        retailPrice: row.retail_price ? parseFloat(row.retail_price) : null,
+                        customerPrice: row.customer_price ? parseFloat(row.customer_price) : null
+                    }
+                },
+                resellerPrice: row.customer_price ? parseFloat(row.customer_price) : null,
+                _source: 'ingram'
+            }));
+
+            const totalPages = Math.ceil((totalRecords || 0) / PAGE_SIZE);
+            pagination = {
+                page: page,
+                pageSize: PAGE_SIZE,
+                totalPages: totalPages,
+                totalRecords: totalRecords || 0
+            };
         }
 
         if (products.length > 0) {
