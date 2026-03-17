@@ -617,7 +617,7 @@ function selectDistributor(distributor) {
         if (brandField) brandField.style.display = 'none';
         // Ingram uses DB media_type codes — update label and reset to dynamic dropdown
         const skuTypeLabel = document.getElementById('skuTypeLabel');
-        if (skuTypeLabel) skuTypeLabel.textContent = 'Media Type';
+        if (skuTypeLabel) skuTypeLabel.innerHTML = 'Media Type <span class="count-badge" id="skuTypeCount"></span>';
         const skuTypeSelect = document.getElementById('skuTypeSelect');
         if (skuTypeSelect) skuTypeSelect.innerHTML = '<option value="">-- Any --</option>';
     }
@@ -1814,11 +1814,26 @@ async function onFilterChange(filterType) {
     if (filterType === 'category') {
         // Reload subcategory (filtered by category for all distributors)
         await loadFilterOptions('subcategory');
-    } else if (filterType === 'subcategory' && state.currentDistributor === 'tdsynnex') {
-        await loadFilterOptions('cat3');
-    } else if (filterType === 'subcategory' && state.currentDistributor === 'arrow') {
-        // Arrow cross-filter: reload category filtered by selected subcategory
-        await loadFilterOptions('category');
+        // Ingram: reload media types filtered by category
+        if (state.currentDistributor === 'ingram') {
+            state.skuType = '';
+            const skuTypeSelect = document.getElementById('skuTypeSelect');
+            if (skuTypeSelect) skuTypeSelect.value = '';
+            await loadFilterOptions('skuType');
+        }
+    } else if (filterType === 'subcategory') {
+        if (state.currentDistributor === 'tdsynnex') {
+            await loadFilterOptions('cat3');
+        } else if (state.currentDistributor === 'arrow') {
+            // Arrow cross-filter: reload category filtered by selected subcategory
+            await loadFilterOptions('category');
+        } else if (state.currentDistributor === 'ingram') {
+            // Ingram: reload media types filtered by category+subcategory
+            state.skuType = '';
+            const skuTypeSelect = document.getElementById('skuTypeSelect');
+            if (skuTypeSelect) skuTypeSelect.value = '';
+            await loadFilterOptions('skuType');
+        }
     }
 }
 
@@ -1927,7 +1942,10 @@ async function loadProducts(page = 1) {
                 status: row.status || '',
                 cpuCode: row.cpu_code || '',
                 // Construct pricingData from DB prices (weekly refresh — not live)
+                // _dbSource flag prevents caching in state.pricingData so showProductDetails
+                // always fetches live pricing/availability from the Ingram API
                 pricingData: {
+                    _dbSource: true,
                     pricing: {
                         retailPrice: row.retail_price ? parseFloat(row.retail_price) : null,
                         customerPrice: row.customer_price ? parseFloat(row.customer_price) : null
@@ -1992,7 +2010,7 @@ function displayProductsWithPricing(products, pagination) {
             ? `<span class="price-available">$${msrp.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`
             : '<span class="price-unavailable">-</span>';
 
-        if (pricingData && product.ingramPartNumber) {
+        if (pricingData && product.ingramPartNumber && !pricingData._dbSource) {
             state.pricingData[product.ingramPartNumber] = pricingData;
         }
 
