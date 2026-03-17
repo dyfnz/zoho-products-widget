@@ -611,10 +611,15 @@ function selectDistributor(distributor) {
         // Arrow: pre-populate manufacturer dropdown, hide search input
         if (mfrComboEl) mfrComboEl.classList.add('arrow-mode');
     } else {
-        // Ingram: Hide cat3, show SKU type, hide brand
+        // Ingram: Hide cat3, show Media Type filter (DB-driven), hide brand
         if (cat3Field) cat3Field.style.display = 'none';
         if (skuTypeField) skuTypeField.style.display = '';
         if (brandField) brandField.style.display = 'none';
+        // Ingram uses DB media_type codes — update label and reset to dynamic dropdown
+        const skuTypeLabel = document.getElementById('skuTypeLabel');
+        if (skuTypeLabel) skuTypeLabel.textContent = 'Media Type';
+        const skuTypeSelect = document.getElementById('skuTypeSelect');
+        if (skuTypeSelect) skuTypeSelect.innerHTML = '<option value="">-- Any --</option>';
     }
 
     resetFilters();
@@ -1394,6 +1399,9 @@ async function handleSingleManufacturerAutoSelect(manufacturer, skuValue) {
         await loadFilterOptions('brand');
         await loadFilterOptions('subcategory');
     }
+    if (state.currentDistributor === 'ingram') {
+        await loadFilterOptions('skuType');
+    }
 
     // Load products with the SKU filter
     await loadProducts(1);
@@ -1522,6 +1530,9 @@ async function onManufacturerSelect() {
         await loadFilterOptions('brand');
         await loadFilterOptions('subcategory');
     }
+    if (state.currentDistributor === 'ingram') {
+        await loadFilterOptions('skuType');
+    }
 
     // If we have a pending SKU filter from SKU-first search, apply it
     if (hasPendingSkuFilter) {
@@ -1574,6 +1585,10 @@ async function loadFilterOptions(filterType) {
             selectEl = document.getElementById('cat3Select');
             countEl = document.getElementById('cat3Count');
             break;
+        case 'skuType':
+            selectEl = document.getElementById('skuTypeSelect');
+            countEl = document.getElementById('skuTypeCount');
+            break;
         default:
             state.loadingFilters[filterType] = false;
             return;
@@ -1625,7 +1640,7 @@ async function loadFilterOptions(filterType) {
             }
             // Arrow doesn't have cat3
         } else {
-            // Ingram: Query Supabase DB for categories/subcategories
+            // Ingram: Query Supabase DB for categories/subcategories/media_type
             let rpcFilterType;
             switch (filterType) {
                 case 'category':
@@ -1633,6 +1648,9 @@ async function loadFilterOptions(filterType) {
                     break;
                 case 'subcategory':
                     rpcFilterType = 'subcategory';
+                    break;
+                case 'skuType':
+                    rpcFilterType = 'media_type';
                     break;
                 default:
                     // Ingram doesn't have cat3
@@ -3977,7 +3995,7 @@ async function showProductDetails(productIndex) {
         { label: 'Category', value: product.category || state.category || '-' },
         { label: 'Subcategory', value: product.subCategory || state.subcategory || '-' },
         { label: 'Product Type', value: product.productType || '-' },
-        { label: 'SKU Type', value: formatSKUType(product.type) },
+        { label: 'Media Type', value: product.type || product.productType || '-' },
         { label: 'Product Class', value: formatProductClass(pricingData?.productClass || product.productClass), fullWidth: true },
         { label: 'Replacement SKU', value: product.replacementSku || '-', fullWidth: true }
     ];
