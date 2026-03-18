@@ -1,7 +1,10 @@
 /**
  * Distributor Product Lookup Widget
  * For Zoho CRM Quotes module integration
- * Updated: December 2025 - UI Redesign v2
+ * Supports: TD Synnex, Ingram Micro, Arrow ECS
+ * Features: Single & Bulk search modes, MSRP comparison, manufacturer resolution,
+ *           customer discount %, smart column auto-mapping, lazy API manufacturer verification
+ * Updated: March 2026 - Ingram DB migration, Arrow API optimization, lazy mfr verification
  */
 
 // =====================================================
@@ -95,6 +98,7 @@ const state = {
     mfrResolutionPromise: null,
     manufacturerMappingsData: [],  // Cached mappings from Supabase
     searchMode: 'single',      // 'single' or 'bulk'
+    verifiedIngramMfrs: new Set(),  // Session-level tracking for lazy API verification
 };
 
 let searchTimeout = null;
@@ -951,6 +955,94 @@ async function loadArrowManufacturers() {
     } catch (error) {
         console.error('[Arrow] Failed to load manufacturers:', error);
         select.innerHTML = '<option value="">Error loading manufacturers</option>';
+    }
+}
+
+// Lazy API verification for Ingram manufacturers
+// Silently verifies unverified manufacturer names against Ingram catalog API
+// Fire-and-forget — never blocks UI or shows errors to user
+async function verifyIngramManufacturers(products) {
+    try {
+        // Only process Ingram products
+        const ingramProducts = products.filter(p => p._source === 'ingram');
+        if (ingramProducts.length === 0) return;
+
+        // Extract unique manufacturer names, skip already-verified this session
+        const manufacturers = [...new Set(ingramProducts.map(p => p.vendorName).filter(Boolean))];
+        const unchecked = manufacturers.filter(m => !state.verifiedIngramMfrs.has(m));
+        if (unchecked.length === 0) return;
+
+        // Ask Supabase which of these are actually unverified in DB
+        const unverifiedResp = await fetch(
+            `${SUPABASE_URL}/rest/v1/rpc/get_unverified_ingram_manufacturers`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                },
+                body: JSON.stringify({ p_manufacturers: unchecked })
+            }
+        );
+        if (!unverifiedResp.ok) return;
+        const unverifiedList = await unverifiedResp.json();
+        const unverifiedNames = new Set((unverifiedList || []).map(r => r.manufacturer));
+
+        // Mark all checked manufacturers as verified this session (even if already verified in DB)
+        unchecked.forEach(m => state.verifiedIngramMfrs.add(m));
+
+        if (unverifiedNames.size === 0) return;
+
+        // For each unverified manufacturer, pick first product with a VPN and verify via API
+        for (const mfrName of unverifiedNames) {
+            try {
+                const sample = ingramProducts.find(p => p.vendorName === mfrName && p.vendorPartNumber);
+                if (!sample) continue;
+
+                // Call Ingram catalog API with VPN as keyword (no vendor param — name might be wrong)
+                const skuResp = await fetch(
+                    `${PROXY_BASE}?action=skuSearch&keyword=${encodeURIComponent(sample.vendorPartNumber)}`,
+                    { headers: { 'Accept': 'application/json' } }
+                );
+                if (!skuResp.ok) continue;
+                const skuData = await skuResp.json();
+
+                // Find matching product in API response by VPN
+                const apiProducts = skuData.products || [];
+                const match = apiProducts.find(p =>
+                    (p.vendorPartNumber || '').toUpperCase() === sample.vendorPartNumber.toUpperCase()
+                );
+                if (!match || !match.vendorName) continue;
+
+                const apiMfrName = match.vendorName.trim();
+                if (!apiMfrName) continue;
+
+                // Update DB: set api_verified=true, update manufacturer name if different
+                await fetch(
+                    `${SUPABASE_URL}/rest/v1/rpc/verify_ingram_manufacturer`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        },
+                        body: JSON.stringify({
+                            p_manufacturer: mfrName,
+                            p_api_manufacturer_name: apiMfrName
+                        })
+                    }
+                );
+                console.log(`[Ingram Verify] ${mfrName} → ${apiMfrName} (${mfrName === apiMfrName ? 'confirmed' : 'updated'})`);
+            } catch (e) {
+                // Silent failure per manufacturer — don't stop verifying others
+                console.warn(`[Ingram Verify] Failed for ${mfrName}:`, e.message);
+            }
+        }
+    } catch (e) {
+        // Silent failure — verification is best-effort
+        console.warn('[Ingram Verify] Verification failed:', e.message);
     }
 }
 
@@ -2030,6 +2122,11 @@ function displayProductsWithPricing(products, pagination) {
 
     state.currentProducts = sortedProducts;
     state.pricingData = {};
+
+    // Lazy verification — fire-and-forget, non-blocking
+    if (state.currentDistributor === 'ingram') {
+        verifyIngramManufacturers(sortedProducts);
+    }
 
     sortedProducts.forEach((product, index) => {
         const partNumber = product.ingramPartNumber || product.vendorPartNumber;
@@ -6691,6 +6788,11 @@ async function bulkLoadProducts() {
 
         // Map RPC rows to product format
         bulkState.products = allRows.map(row => bulkMapRpcRowToProduct(row, state.currentDistributor));
+
+        // Lazy verification — fire-and-forget, non-blocking
+        if (state.currentDistributor === 'ingram') {
+            verifyIngramManufacturers(bulkState.products);
+        }
 
         // Merge in qty, resellerPrice, and msrp from file data if available
         if (bulkState.parsedFileData && bulkState.parsedFileData.length > 0) {
