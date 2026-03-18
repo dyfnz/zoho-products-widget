@@ -812,8 +812,30 @@ async function fetchArrowInventory(mpn, manufacturer) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
         const response = await fetch(
-            `${ARROW_PROXY_BASE}?action=inventory&mpn=${encodeURIComponent(mpn)}&manufacturer=${encodeURIComponent(manufacturer || '')}`,
-            { signal: controller.signal }
+            `${ARROW_PROXY_BASE}?action=inventory`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    Header: {
+                        UniqueTransactionId: '',
+                        PartnerID: '2240940',
+                        PriceFlag: true,
+                        Country: 'US',
+                        Region: 'NORTH_AMERICAS',
+                        TransactionType: 'RESELLER_INVENTORY_SEARCH',
+                    },
+                    ItemList: {
+                        Item: [{
+                            ArrowItemNumber: '',
+                            PartnerItemNumber: mpn,
+                            Manufacturer: manufacturer || '',
+                            UOM: 'EA',
+                        }],
+                    },
+                }),
+                signal: controller.signal,
+            }
         );
         clearTimeout(timeoutId);
         if (!response.ok) throw new Error(`Arrow API error: ${response.status}`);
