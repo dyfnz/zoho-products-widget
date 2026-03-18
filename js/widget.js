@@ -1000,9 +1000,9 @@ async function verifyIngramManufacturers(products) {
                 const sample = ingramProducts.find(p => p.vendorName === mfrName && p.vendorPartNumber);
                 if (!sample) continue;
 
-                // Call Ingram catalog API with VPN as keyword (no vendor param — name might be wrong)
+                // Call Ingram catalog API with VPN as keyword (productsWithPricing allows keyword-only, no vendor required)
                 const skuResp = await fetch(
-                    `${PROXY_BASE}?action=skuSearch&keyword=${encodeURIComponent(sample.vendorPartNumber)}`,
+                    `${PROXY_BASE}?action=productsWithPricing&keyword=${encodeURIComponent(sample.vendorPartNumber)}`,
                     { headers: { 'Accept': 'application/json' } }
                 );
                 if (!skuResp.ok) continue;
