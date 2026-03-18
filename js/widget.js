@@ -60,13 +60,15 @@ const state = {
         brand: false,
         category: false,
         subcategory: false,
-        cat3: false
+        cat3: false,
+        skuType: false
     },
     filterParams: {
         brand: '',
         category: '',
         subcategory: '',
-        cat3: ''
+        cat3: '',
+        skuType: ''
     },
     // Pagination and products
     currentPage: 1,
@@ -617,7 +619,16 @@ function selectDistributor(distributor) {
         if (brandField) brandField.style.display = 'none';
         // Ingram uses DB media_type codes — update label and reset to dynamic dropdown
         const skuTypeLabel = document.getElementById('skuTypeLabel');
-        if (skuTypeLabel) skuTypeLabel.innerHTML = 'Media Type <span class="count-badge" id="skuTypeCount"></span>';
+        if (skuTypeLabel) {
+            // Update label text without destroying the count badge span
+            const countSpan = skuTypeLabel.querySelector('.count-badge');
+            if (countSpan) {
+                // Preserve the span, just update the text before it
+                skuTypeLabel.firstChild.textContent = 'Media Type ';
+            } else {
+                skuTypeLabel.innerHTML = 'Media Type <span class="count-badge" id="skuTypeCount"></span>';
+            }
+        }
         const skuTypeSelect = document.getElementById('skuTypeSelect');
         if (skuTypeSelect) skuTypeSelect.innerHTML = '<option value="">-- Any --</option>';
     }
@@ -1767,6 +1778,7 @@ async function onFilterChange(filterType) {
     if (filterType !== 'category') state.filterParams.category = '';
     if (filterType !== 'subcategory') state.filterParams.subcategory = '';
     if (filterType !== 'cat3') state.filterParams.cat3 = '';
+    if (filterType !== 'skuType') state.filterParams.skuType = '';
 
     // Clear downstream filters when parent changes
     if (filterType === 'brand') {
@@ -4235,6 +4247,7 @@ function resetOptionalFilters() {
     state.filterParams.category = '';
     state.filterParams.subcategory = '';
     state.filterParams.cat3 = '';
+    state.filterParams.skuType = '';
 
     // Reset brand dropdown (Arrow)
     const brandSelect = document.getElementById('brandSelect');
@@ -4263,8 +4276,10 @@ function resetOptionalFilters() {
 
     const skuTypeSelect = document.getElementById('skuTypeSelect');
     if (skuTypeSelect) {
-        skuTypeSelect.value = '';
+        skuTypeSelect.innerHTML = '<option value="">-- Any --</option>';
     }
+    const skuTypeCount = document.getElementById('skuTypeCount');
+    if (skuTypeCount) skuTypeCount.textContent = '';
 
     const skuSearch = document.getElementById('skuSearch');
     if (skuSearch) {
