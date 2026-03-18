@@ -123,6 +123,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initQueueResize();
     checkProxyStatus();
     updateQueueUI();
+    loadIngramManufacturers();  // Pre-populate Ingram manufacturers on init (default distributor)
     loadManufacturerMappings();
     initMfrMappingsResize();
     initBulkPreviewResize();
@@ -598,9 +599,12 @@ function selectDistributor(distributor) {
     const cat3Field = document.getElementById('cat3FilterField');
     const skuTypeField = document.getElementById('skuTypeFilterField');
 
-    // Remove Arrow mode from manufacturer combo (will be re-added if Arrow)
+    // Remove Arrow/Ingram mode from manufacturer combo (will be re-added if needed)
     const mfrComboEl = document.querySelector('.mfr-combo');
-    if (mfrComboEl) mfrComboEl.classList.remove('arrow-mode');
+    if (mfrComboEl) {
+        mfrComboEl.classList.remove('arrow-mode');
+        mfrComboEl.classList.remove('ingram-mode');
+    }
 
     const brandField = document.getElementById('brandFilterField');
 
@@ -621,6 +625,8 @@ function selectDistributor(distributor) {
         if (cat3Field) cat3Field.style.display = 'none';
         if (skuTypeField) skuTypeField.style.display = '';
         if (brandField) brandField.style.display = 'none';
+        // Ingram: pre-populate manufacturer dropdown, hide search input
+        if (mfrComboEl) mfrComboEl.classList.add('ingram-mode');
         // Ingram uses DB media_type codes — update label and reset to dynamic dropdown
         const skuTypeLabel = document.getElementById('skuTypeLabel');
         if (skuTypeLabel) {
@@ -958,6 +964,36 @@ async function loadArrowManufacturers() {
     }
 }
 
+async function loadIngramManufacturers() {
+    const select = document.getElementById('manufacturerSelect');
+    const countEl = document.getElementById('mfrCount');
+    try {
+        const response = await fetch(
+            `${SUPABASE_URL}/rest/v1/rpc/get_ingram_manufacturers`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                },
+                body: JSON.stringify({ p_search: null })
+            }
+        );
+        if (!response.ok) throw new Error(`Failed: ${response.status}`);
+        const data = await response.json();
+        const manufacturers = data.map(r => r.manufacturer).filter(Boolean).sort();
+
+        select.innerHTML = '<option value="">-- Select Manufacturer --</option>' +
+            manufacturers.map(m => `<option value="${m}">${m}</option>`).join('');
+        if (countEl) countEl.textContent = `(${manufacturers.length})`;
+        select.disabled = false;
+    } catch (error) {
+        console.error('[Ingram] Failed to load manufacturers:', error);
+        select.innerHTML = '<option value="">Error loading manufacturers</option>';
+    }
+}
+
 // Lazy API verification for Ingram manufacturers
 // Silently verifies unverified manufacturer names against Ingram catalog API
 // Fire-and-forget — never blocks UI or shows errors to user
@@ -1283,7 +1319,7 @@ function debounceManufacturerSearch() {
 }
 
 async function searchManufacturers() {
-    if (state.currentDistributor === 'arrow') return;
+    if (state.currentDistributor === 'arrow' || state.currentDistributor === 'ingram') return;
     const searchTerm = document.getElementById('manufacturerSearch').value.trim();
     const select = document.getElementById('manufacturerSelect');
 
@@ -4312,6 +4348,9 @@ function resetFilters() {
     if (state.currentDistributor === 'arrow') {
         // Arrow: re-populate the pre-loaded manufacturer dropdown
         loadArrowManufacturers();
+    } else if (state.currentDistributor === 'ingram') {
+        // Ingram: re-populate the pre-loaded manufacturer dropdown
+        loadIngramManufacturers();
     } else {
         document.getElementById('manufacturerSelect').innerHTML =
             '<option value="">Type to search manufacturers...</option>';
