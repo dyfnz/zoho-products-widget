@@ -599,11 +599,12 @@ function selectDistributor(distributor) {
     const cat3Field = document.getElementById('cat3FilterField');
     const skuTypeField = document.getElementById('skuTypeFilterField');
 
-    // Remove Arrow/Ingram mode from manufacturer combo (will be re-added if needed)
+    // Remove Arrow/Ingram/TDSynnex mode from manufacturer combo (will be re-added if needed)
     const mfrComboEl = document.querySelector('.mfr-combo');
     if (mfrComboEl) {
         mfrComboEl.classList.remove('arrow-mode');
         mfrComboEl.classList.remove('ingram-mode');
+        mfrComboEl.classList.remove('tdsynnex-mode');
     }
 
     const brandField = document.getElementById('brandFilterField');
@@ -613,6 +614,8 @@ function selectDistributor(distributor) {
         if (cat3Field) cat3Field.style.display = '';
         if (skuTypeField) skuTypeField.style.display = 'none';
         if (brandField) brandField.style.display = 'none';
+        // TD Synnex: pre-populate manufacturer dropdown, hide search input
+        if (mfrComboEl) mfrComboEl.classList.add('tdsynnex-mode');
     } else if (distributor === 'arrow') {
         // Arrow: Hide both cat3 and SKU type, show brand
         if (cat3Field) cat3Field.style.display = 'none';
@@ -990,6 +993,36 @@ async function loadIngramManufacturers() {
         select.disabled = false;
     } catch (error) {
         console.error('[Ingram] Failed to load manufacturers:', error);
+        select.innerHTML = '<option value="">Error loading manufacturers</option>';
+    }
+}
+
+async function loadTDSynnexManufacturers() {
+    const select = document.getElementById('manufacturerSelect');
+    const countEl = document.getElementById('mfrCount');
+    try {
+        const response = await fetch(
+            `${SUPABASE_URL}/rest/v1/rpc/get_tdsynnex_manufacturers`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                },
+                body: JSON.stringify({})
+            }
+        );
+        if (!response.ok) throw new Error(`Failed: ${response.status}`);
+        const data = await response.json();
+        const manufacturers = data.map(r => r.manufacturer).filter(Boolean).sort();
+
+        select.innerHTML = '<option value="">-- Select Manufacturer --</option>' +
+            manufacturers.map(m => `<option value="${m}">${m}</option>`).join('');
+        if (countEl) countEl.textContent = `(${manufacturers.length})`;
+        select.disabled = false;
+    } catch (error) {
+        console.error('[TDSynnex] Failed to load manufacturers:', error);
         select.innerHTML = '<option value="">Error loading manufacturers</option>';
     }
 }
@@ -4351,6 +4384,9 @@ function resetFilters() {
     } else if (state.currentDistributor === 'ingram') {
         // Ingram: re-populate the pre-loaded manufacturer dropdown
         loadIngramManufacturers();
+    } else if (state.currentDistributor === 'tdsynnex') {
+        // TD Synnex: re-populate the pre-loaded manufacturer dropdown
+        loadTDSynnexManufacturers();
     } else {
         document.getElementById('manufacturerSelect').innerHTML =
             '<option value="">Type to search manufacturers...</option>';

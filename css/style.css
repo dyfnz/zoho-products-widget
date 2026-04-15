@@ -3342,13 +3342,15 @@ button svg {
     min-width: 0;
 }
 
-/* Arrow/Ingram mode: hide search input, expand select dropdown */
+/* Arrow/Ingram/TDSynnex mode: hide search input, expand select dropdown */
 .mfr-combo.arrow-mode input[type="text"],
-.mfr-combo.ingram-mode input[type="text"] {
+.mfr-combo.ingram-mode input[type="text"],
+.mfr-combo.tdsynnex-mode input[type="text"] {
     display: none;
 }
 .mfr-combo.arrow-mode select,
-.mfr-combo.ingram-mode select {
+.mfr-combo.ingram-mode select,
+.mfr-combo.tdsynnex-mode select {
     flex: 2;
 }
 
