@@ -72,21 +72,29 @@
                                 <span class="field-number">1</span>
                                 Manufacturer
                             </label>
-                            <div class="mfr-combo ingram-mode">
-                                <input type="text" id="manufacturerSearch" placeholder="Type manufacturer name (e.g. Dell, HP, Cisco)..." autocomplete="off">
-                                <select id="manufacturerSelect" onchange="onManufacturerSelect()">
-                                    <option value="">Select manufacturer...</option>
-                                </select>
-                                <span class="mfr-count" id="mfrCount"></span>
-                                <div class="tooltip-wrapper mfr-mappings-tooltip-wrapper">
-                                    <button type="button" class="mfr-mappings-btn" id="mfrMappingsBtn"
-                                            onclick="toggleMfrMappingsPanel()">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <path d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
-                                        </svg>
-                                    </button>
-                                    <div class="tooltip">View manufacturer name mappings between distributors</div>
+                            <div class="mfr-dropdown" id="mfrDropdown">
+                                <button type="button" class="mfr-dropdown-trigger" id="mfrDropdownTrigger" onclick="toggleMfrDropdown()">
+                                    <span class="mfr-dropdown-text placeholder" id="mfrDropdownText">-- Select Manufacturer --</span>
+                                    <svg class="mfr-dropdown-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M6 9l6 6 6-6"/>
+                                    </svg>
+                                </button>
+                                <div class="mfr-dropdown-panel" id="mfrDropdownPanel" style="display: none;">
+                                    <div class="mfr-dropdown-search-wrap">
+                                        <input type="text" class="mfr-dropdown-search" id="mfrDropdownSearch" placeholder="Filter manufacturers..." autocomplete="off">
+                                    </div>
+                                    <div class="mfr-dropdown-list" id="mfrDropdownList"></div>
                                 </div>
+                            </div>
+                            <span class="mfr-count" id="mfrCount"></span>
+                            <div class="tooltip-wrapper mfr-mappings-tooltip-wrapper">
+                                <button type="button" class="mfr-mappings-btn" id="mfrMappingsBtn"
+                                        onclick="toggleMfrMappingsPanel()">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+                                    </svg>
+                                </button>
+                                <div class="tooltip">View manufacturer name mappings between distributors</div>
                             </div>
                         </div>
 
