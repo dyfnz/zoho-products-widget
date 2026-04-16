@@ -1226,20 +1226,39 @@ async function loadTDSynnexCategories(manufacturer, cat1 = null, cat2 = null) {
     if (cat1) url += `&cat1=${encodeURIComponent(cat1)}`;
     if (cat2) url += `&cat2=${encodeURIComponent(cat2)}`;
 
-    const response = await fetch(url);
-    const data = await response.json();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-    if (data.success && data.data?.categories) {
-        // Extract the appropriate description field based on level
-        const level = data.data.level;
-        return data.data.categories.map(c => {
-            if (level === 1) return { name: c.cat_description_1, count: c.product_count };
-            if (level === 2) return { name: c.cat_description_2, count: c.product_count };
-            if (level === 3) return { name: c.cat_description_3, count: c.product_count };
-            return { name: 'Unknown', count: 0 };
-        });
+    try {
+        const response = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            console.error(`[TDSynnex Categories] HTTP ${response.status} for ${manufacturer}`);
+            return [];
+        }
+
+        const data = await response.json();
+
+        if (data.success && data.data?.categories) {
+            const level = data.data.level;
+            return data.data.categories.map(c => {
+                if (level === 1) return { name: c.cat_description_1, count: c.product_count };
+                if (level === 2) return { name: c.cat_description_2, count: c.product_count };
+                if (level === 3) return { name: c.cat_description_3, count: c.product_count };
+                return { name: 'Unknown', count: 0 };
+            });
+        }
+        return [];
+    } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            console.error(`[TDSynnex Categories] Timeout loading categories for ${manufacturer}`);
+        } else {
+            console.error('[TDSynnex Categories] Error:', error);
+        }
+        return [];
     }
-    return [];
 }
 
 async function searchTDSynnexProducts(manufacturer, options = {}) {
