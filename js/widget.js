@@ -99,6 +99,10 @@ const state = {
     manufacturerMappingsData: [],  // Cached mappings from Supabase
     searchMode: 'single',      // 'single' or 'bulk'
     verifiedIngramMfrs: new Set(),  // Session-level tracking for lazy API verification
+    // Admin Panel
+    adminClickTimes: [],
+    adminPanelOpen: false,
+    currentAdminPage: 'mfr-filters',
 };
 
 let currentMfrList = [];
@@ -111,6 +115,60 @@ let isResizing = false;
 let isResizingQueue = false;
 let queueResizeStartX = 0;
 let queueResizeStartWidth = 0;
+
+// =====================================================
+// ADMIN PANEL — Shell
+// =====================================================
+function handleAdminCogClick() {
+    const now = Date.now();
+    state.adminClickTimes.push(now);
+    state.adminClickTimes = state.adminClickTimes.filter(t => now - t < 600);
+    if (state.adminClickTimes.length >= 3) {
+        state.adminClickTimes = [];
+        openAdminPanel();
+    }
+}
+
+function openAdminPanel() {
+    document.getElementById('adminPanel').style.display = 'flex';
+    document.querySelector('.content-wrapper').style.display = 'none';
+    document.querySelector('.header-buttons').style.display = 'none';
+    document.getElementById('adminCogBtn').style.display = 'none';
+    const footer = document.querySelector('.action-footer');
+    if (footer) footer.style.display = 'none';
+    state.adminPanelOpen = true;
+}
+
+function closeAdminPanel() {
+    document.getElementById('adminPanel').style.display = 'none';
+    document.querySelector('.content-wrapper').style.display = '';
+    document.querySelector('.header-buttons').style.display = '';
+    document.getElementById('adminCogBtn').style.display = '';
+    const footer = document.querySelector('.action-footer');
+    if (footer) footer.style.display = '';
+    state.adminPanelOpen = false;
+}
+
+function selectAdminPage(pageId) {
+    document.querySelectorAll('.admin-nav-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.adminPage === pageId);
+    });
+    document.querySelectorAll('.admin-page').forEach(page => {
+        page.classList.toggle('active', page.id === `adminPage-${pageId}`);
+    });
+    state.currentAdminPage = pageId;
+    const headerActions = document.getElementById('adminHeaderActions');
+    if (headerActions) {
+        headerActions.style.display = (pageId === 'name-resolution') ? 'none' : 'flex';
+    }
+}
+
+function toggleAdminNav() {
+    const nav = document.getElementById('adminNav');
+    if (nav) {
+        nav.classList.toggle('collapsed');
+    }
+}
 
 // =====================================================
 // ZOHO SDK INITIALIZATION
