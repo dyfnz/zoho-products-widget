@@ -133,7 +133,7 @@ body {
    ===================================================== */
 .widget-header {
     display: grid;
-    grid-template-columns: 1fr 1fr auto;
+    grid-template-columns: 1fr 1fr auto auto;
     align-items: center;
     padding: var(--space-1) var(--space-4);
     background: var(--color-primary);
