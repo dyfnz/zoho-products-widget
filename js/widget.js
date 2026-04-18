@@ -103,6 +103,13 @@ const state = {
     adminClickTimes: [],
     adminPanelOpen: false,
     currentAdminPage: 'mfr-filters',
+    // Admin - Name Resolution
+    adminResolutionTab: 'tdsynnex',
+    adminResolutionAllData: [],
+    adminResolutionData: [],
+    adminResolutionFilter: 'unmapped',
+    adminResolutions: new Map(),
+    adminCanonicalNames: [],
 };
 
 let currentMfrList = [];
@@ -161,12 +168,743 @@ function selectAdminPage(pageId) {
     if (headerActions) {
         headerActions.style.display = (pageId === 'name-resolution') ? 'none' : 'flex';
     }
+    if (pageId === 'name-resolution') {
+        loadAdminResolutionData(state.adminResolutionTab);
+    }
 }
 
 function toggleAdminNav() {
     const nav = document.getElementById('adminNav');
     if (nav) {
         nav.classList.toggle('collapsed');
+    }
+}
+
+// =====================================================
+// ADMIN: NAME RESOLUTION
+// =====================================================
+function selectAdminResolutionTab(dist) {
+    state.adminResolutionTab = dist;
+    state.adminResolutions = new Map();
+    document.querySelectorAll('#adminResolutionTabs .mfr-admin-tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.dist === dist);
+    });
+    loadAdminResolutionData(dist);
+}
+
+async function loadAdminResolutionData(dist) {
+    const loading = document.getElementById('adminResolutionLoading');
+    const empty = document.getElementById('adminResolutionEmpty');
+    const content = document.getElementById('adminResolutionContent');
+    const stats = document.getElementById('adminResolutionStats');
+
+    if (loading) loading.style.display = '';
+    if (empty) empty.style.display = 'none';
+    if (content) content.style.display = 'none';
+
+    try {
+        // Fetch all manufacturer names for this distributor
+        let rpcName, fieldName;
+        if (dist === 'tdsynnex') {
+            rpcName = 'get_tdsynnex_manufacturers';
+            fieldName = 'manufacturer_name';
+        } else if (dist === 'ingram') {
+            rpcName = 'get_ingram_manufacturers';
+            fieldName = 'manufacturer';
+        } else {
+            rpcName = 'get_arrow_manufacturers';
+            fieldName = 'manufacturer';
+        }
+
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${rpcName}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            },
+            body: JSON.stringify(dist === 'ingram' ? { p_search: null } : {})
+        });
+
+        if (!response.ok) throw new Error(`RPC failed: ${response.status}`);
+        const data = await response.json();
+        const allNames = data.map(r => r[fieldName]).filter(Boolean).sort();
+
+        // Reload mappings to ensure fresh data
+        await loadManufacturerMappings();
+
+        // Determine which alias field to check
+        let aliasField;
+        if (dist === 'tdsynnex') aliasField = 'td_synnex_aliases';
+        else if (dist === 'ingram') aliasField = 'ingram_micro_aliases';
+        else aliasField = 'arrow_aliases';
+
+        // Build map of distributor name (uppercase) → canonical name
+        const mappedLookup = new Map();
+        (state.manufacturerMappingsData || []).forEach(mapping => {
+            const aliases = mapping[aliasField] || [];
+            aliases.forEach(alias => mappedLookup.set(alias.toUpperCase(), mapping.canonical_name));
+        });
+
+        // Build full data array with mapped status
+        state.adminResolutionAllData = allNames.map(name => {
+            const canonical = mappedLookup.get(name.toUpperCase());
+            return { name, mapped: !!canonical, canonicalName: canonical || '' };
+        });
+
+        // Use Zoho Manufacturers module names for dropdown (prefetched via client script)
+        // Fall back to Supabase canonical names only if Zoho list not available
+        if (state.prefetchedManufacturers && state.prefetchedManufacturers.length > 0) {
+            state.adminCanonicalNames = [...state.prefetchedManufacturers];
+        } else {
+            const canonicalSet = new Set();
+            (state.manufacturerMappingsData || []).forEach(mapping => {
+                if (mapping.canonical_name) canonicalSet.add(mapping.canonical_name);
+            });
+            state.adminCanonicalNames = [...canonicalSet].sort();
+        }
+
+        state.adminResolutions = new Map();
+
+        // Count stats
+        const mappedCount = state.adminResolutionAllData.filter(d => d.mapped).length;
+        const unmappedCount = state.adminResolutionAllData.filter(d => !d.mapped).length;
+
+        // Render stats
+        if (stats) {
+            stats.innerHTML = `
+                <div class="mfr-admin-stat">
+                    <span class="mfr-admin-stat-label">Total</span>
+                    <span class="mfr-admin-stat-val">${allNames.length}</span>
+                </div>
+                <div class="mfr-admin-stat-separator"></div>
+                <div class="mfr-admin-stat">
+                    <span class="mfr-admin-stat-label">Mapped</span>
+                    <span class="mfr-admin-stat-val mfr-admin-stat-val--accent">${mappedCount}</span>
+                </div>
+                <div class="mfr-admin-stat-separator"></div>
+                <div class="mfr-admin-stat">
+                    <span class="mfr-admin-stat-label">Unmapped</span>
+                    <span class="mfr-admin-stat-val" style="${unmappedCount > 0 ? 'color: var(--color-warning);' : ''}">${unmappedCount}</span>
+                </div>
+            `;
+        }
+
+        if (loading) loading.style.display = 'none';
+
+        // Apply filter and render
+        applyAdminResolutionFilter();
+    } catch (error) {
+        console.error('[AdminResolution] Error loading data:', error);
+        if (loading) loading.style.display = 'none';
+        if (stats) stats.innerHTML = '<span style="color: var(--color-error); font-size: var(--font-size-xs);">Error loading manufacturer data</span>';
+    }
+}
+
+function setAdminResolutionFilter(filter) {
+    state.adminResolutionFilter = filter;
+    state.adminResolutions = new Map();
+    // Update filter button active states
+    document.querySelectorAll('.admin-resolution-filter-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.filter === filter);
+    });
+    applyAdminResolutionFilter();
+}
+
+function applyAdminResolutionFilter() {
+    const empty = document.getElementById('adminResolutionEmpty');
+    const content = document.getElementById('adminResolutionContent');
+    const filter = state.adminResolutionFilter;
+
+    let filtered;
+    if (filter === 'mapped') {
+        filtered = state.adminResolutionAllData.filter(d => d.mapped);
+    } else if (filter === 'unmapped') {
+        filtered = state.adminResolutionAllData.filter(d => !d.mapped);
+    } else {
+        filtered = [...state.adminResolutionAllData];
+    }
+
+    state.adminResolutionData = filtered;
+
+    if (filtered.length === 0) {
+        if (empty) {
+            empty.style.display = '';
+            // Update empty message based on filter
+            const p = empty.querySelector('p');
+            const span = empty.querySelector('span');
+            if (filter === 'unmapped') {
+                if (p) p.textContent = 'All manufacturers are mapped!';
+                if (span) span.textContent = 'No unmapped manufacturer names found for this distributor.';
+            } else if (filter === 'mapped') {
+                if (p) p.textContent = 'No mapped manufacturers yet';
+                if (span) span.textContent = 'No manufacturer names have been mapped for this distributor.';
+            } else {
+                if (p) p.textContent = 'No manufacturers found';
+                if (span) span.textContent = 'No manufacturer data available for this distributor.';
+            }
+        }
+        if (content) content.style.display = 'none';
+    } else {
+        if (empty) empty.style.display = 'none';
+        if (content) content.style.display = '';
+        renderAdminResolutionTable();
+    }
+}
+
+function renderAdminResolutionTable() {
+    const tbody = document.getElementById('adminResolutionTableBody');
+    if (!tbody) return;
+
+    let html = '';
+    state.adminResolutionData.forEach((entry, index) => {
+        const escaped = entry.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+        if (entry.mapped) {
+            const canonEscaped = entry.canonicalName.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            const resolution = state.adminResolutions.get(index);
+
+            if (resolution) {
+                // Mapped row being edited — show editable controls
+                const inputDisabled = resolution.type === 'existing' ? ' disabled' : '';
+                const inputValue = resolution.type === 'new' ? resolution.value : '';
+                const ddDisabled = resolution.type === 'new' ? ' dd-disabled' : '';
+                const ddText = resolution.type === 'existing' ? escapeHtml(resolution.value) : '-- Select From Zoho --';
+                const ddPlaceholder = resolution.type === 'existing' ? '' : ' placeholder';
+                const ddClearBtn = resolution.type === 'existing' ? `<span class="res-dropdown-clear" onclick="event.stopPropagation(); clearResSelection('admin', ${index})" title="Clear selection"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>` : '';
+
+                html += `<tr class="mfr-row row-valid row-editing" id="admin-res-row-${index}">
+                    <td class="col-source">
+                        <span class="mfr-name-cell">${escaped}</span>
+                    </td>
+                    <td>
+                        <div class="res-dropdown${ddDisabled}" id="admin-res-dd-${index}">
+                            <button type="button" class="res-dropdown-trigger" id="admin-res-dd-trigger-${index}" onclick="toggleResDropdown('admin', ${index})">
+                                <span class="res-dropdown-text${ddPlaceholder}" id="admin-res-dd-text-${index}">${ddText}</span>
+                                ${ddClearBtn}
+                                <svg class="mfr-dropdown-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                            </button>
+                        </div>
+                    </td>
+                    <td class="td-or"></td>
+                    <td>
+                        <div class="mfr-input-wrapper">
+                            <input type="text" class="mfr-input" id="admin-res-input-${index}" data-index="${index}" placeholder="Enter new name..." oninput="handleAdminResInput(${index})" value="${inputValue}"${inputDisabled}>
+                            <span id="admin-res-status-${index}" class="mfr-row-status show valid">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                                    <path d="M5 12l5 5L20 7"/>
+                                </svg>
+                            </span>
+                            <button class="admin-res-cancel-btn" onclick="cancelAdminResEdit(${index})" title="Cancel edit">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </td>
+                </tr>`;
+            } else {
+                // Mapped row — read-only with edit button
+                html += `<tr class="mfr-row row-valid" id="admin-res-row-${index}">
+                    <td class="col-source">
+                        <span class="mfr-name-cell">${escaped}</span>
+                    </td>
+                    <td>
+                        <span class="admin-res-mapped-value">${canonEscaped}</span>
+                    </td>
+                    <td class="td-or"></td>
+                    <td>
+                        <div class="admin-res-mapped-actions">
+                            <span class="mfr-row-status show valid">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                                    <path d="M5 12l5 5L20 7"/>
+                                </svg>
+                            </span>
+                            <button class="admin-res-edit-btn" onclick="editAdminResMapping(${index})" title="Edit mapping">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </td>
+                </tr>`;
+            }
+        } else {
+            // Unmapped row — editable dropdown + create new
+            const resolution = state.adminResolutions.get(index);
+            const isResolved = !!resolution;
+            const rowClass = isResolved ? ' row-valid' : '';
+            const inputDisabled = resolution && resolution.type === 'existing' ? ' disabled' : '';
+            const inputValue = resolution && resolution.type === 'new' ? resolution.value : '';
+            const ddDisabled = resolution && resolution.type === 'new' ? ' dd-disabled' : '';
+            const ddText = resolution && resolution.type === 'existing' ? escapeHtml(resolution.value) : '-- Select From Zoho --';
+            const ddPlaceholder = resolution && resolution.type === 'existing' ? '' : ' placeholder';
+            const ddClearBtn = resolution && resolution.type === 'existing' ? `<span class="res-dropdown-clear" onclick="event.stopPropagation(); clearResSelection('admin', ${index})" title="Clear selection"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>` : '';
+
+            html += `<tr class="mfr-row${rowClass}" id="admin-res-row-${index}">
+                <td class="col-source">
+                    <span class="mfr-name-cell">${escaped}</span>
+                </td>
+                <td>
+                    <div class="res-dropdown${ddDisabled}" id="admin-res-dd-${index}">
+                        <button type="button" class="res-dropdown-trigger" id="admin-res-dd-trigger-${index}" onclick="toggleResDropdown('admin', ${index})">
+                            <span class="res-dropdown-text${ddPlaceholder}" id="admin-res-dd-text-${index}">${ddText}</span>
+                            ${ddClearBtn}
+                            <svg class="mfr-dropdown-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                        </button>
+                    </div>
+                </td>
+                <td class="td-or"></td>
+                <td>
+                    <div class="mfr-input-wrapper">
+                        <input type="text" class="mfr-input" id="admin-res-input-${index}" data-index="${index}" placeholder="Enter new name..." oninput="handleAdminResInput(${index})" value="${inputValue}"${inputDisabled}>
+                        <span id="admin-res-status-${index}" class="mfr-row-status${isResolved ? ' show valid' : ''}">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                                <path d="M5 12l5 5L20 7"/>
+                            </svg>
+                        </span>
+                    </div>
+                </td>
+            </tr>`;
+        }
+    });
+
+    tbody.innerHTML = html;
+    updateAdminResolutionStatus();
+}
+
+function handleAdminResInput(index) {
+    const input = document.getElementById(`admin-res-input-${index}`);
+    const row = document.getElementById(`admin-res-row-${index}`);
+    const status = document.getElementById(`admin-res-status-${index}`);
+    const existing = state.adminResolutions.get(index);
+    const oldCanonical = existing ? existing.oldCanonicalName : undefined;
+
+    if (input.value.trim()) {
+        // Disable dropdown, clear its selection
+        const dd = document.getElementById(`admin-res-dd-${index}`);
+        if (dd) dd.classList.add('dd-disabled');
+        clearResDropdownSelection('admin', index);
+        const resolution = { type: 'new', value: input.value.trim() };
+        if (oldCanonical) resolution.oldCanonicalName = oldCanonical;
+        state.adminResolutions.set(index, resolution);
+        if (row) row.classList.add('row-valid');
+        if (status) status.classList.add('show', 'valid');
+    } else {
+        // Re-enable dropdown
+        const dd = document.getElementById(`admin-res-dd-${index}`);
+        if (dd) dd.classList.remove('dd-disabled');
+        // If this was a mapped row being edited, deleting means cancel edit — re-render
+        if (oldCanonical) {
+            state.adminResolutions.delete(index);
+            renderAdminResolutionTable();
+            return;
+        }
+        state.adminResolutions.delete(index);
+        if (row) row.classList.remove('row-valid');
+        if (status) status.classList.remove('show', 'valid');
+    }
+    updateAdminResolutionStatus();
+}
+
+function editAdminResMapping(index) {
+    const entry = state.adminResolutionData[index];
+    if (!entry || !entry.mapped) return;
+
+    // Pre-set the resolution to the current canonical name so the dropdown shows it selected
+    state.adminResolutions.set(index, {
+        type: 'existing',
+        value: entry.canonicalName,
+        oldCanonicalName: entry.canonicalName
+    });
+
+    // Re-render the table to show editable controls for this row
+    renderAdminResolutionTable();
+}
+
+function cancelAdminResEdit(index) {
+    state.adminResolutions.delete(index);
+    renderAdminResolutionTable();
+}
+
+function updateAdminResolutionStatus() {
+    const unmappedCount = state.adminResolutionData.filter(d => !d.mapped).length;
+    const allResolutions = Array.from(state.adminResolutions.values());
+    const resolved = state.adminResolutions.size;
+    const removals = allResolutions.filter(r => r.type === 'remove').length;
+    const edits = allResolutions.filter(r => r.oldCanonicalName && r.type !== 'remove' && r.type !== 'pending').length;
+    const pending = allResolutions.filter(r => r.type === 'pending').length;
+    const newResolutions = resolved - edits - removals - pending;
+    const saveable = resolved - pending; // Everything except pending can be saved
+    const dot = document.getElementById('adminResolutionDot');
+    const text = document.getElementById('adminResolutionStatusText');
+    const btn = document.getElementById('adminResolutionSaveBtn');
+
+    if (unmappedCount === 0 && resolved === 0) {
+        if (dot) { dot.classList.add('complete'); dot.classList.remove('incomplete'); }
+        if (text) text.textContent = 'All mapped';
+        if (btn) btn.disabled = true;
+    } else {
+        if (dot) {
+            dot.classList.toggle('complete', saveable > 0);
+            dot.classList.toggle('incomplete', saveable === 0);
+        }
+        const parts = [];
+        if (unmappedCount > 0 && newResolutions > 0) parts.push(`${newResolutions} of ${unmappedCount} resolved`);
+        if (edits > 0) parts.push(`${edits} edit${edits > 1 ? 's' : ''}`);
+        if (removals > 0) parts.push(`${removals} removal${removals > 1 ? 's' : ''}`);
+        if (text) text.textContent = parts.length > 0 ? parts.join(', ') : (unmappedCount > 0 ? `0 of ${unmappedCount} resolved` : 'All mapped');
+        if (btn) btn.disabled = saveable === 0;
+    }
+}
+
+async function saveAdminResolutions() {
+    const btn = document.getElementById('adminResolutionSaveBtn');
+    if (!btn || btn.disabled) return;
+
+    const origHTML = btn.innerHTML;
+    btn.innerHTML = '<div class="mfr-admin-spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;"></div> Saving...';
+    btn.disabled = true;
+
+    try {
+        const dist = state.adminResolutionTab;
+        const mappings = [];
+
+        for (const [index, resolution] of state.adminResolutions) {
+            if (resolution.type === 'pending') continue; // Incomplete edit, skip
+            const entry = state.adminResolutionData[index];
+            if (resolution.type === 'remove') {
+                // Unmap: remove alias from old canonical, no new canonical
+                mappings.push({
+                    distributor_name: entry.name,
+                    canonical_name: '',
+                    distributor: dist,
+                    old_canonical_name: resolution.oldCanonicalName
+                });
+                continue;
+            }
+            const mapping = {
+                distributor_name: entry.name,
+                canonical_name: resolution.value,
+                distributor: dist
+            };
+            if (resolution.oldCanonicalName && resolution.oldCanonicalName !== resolution.value) {
+                mapping.old_canonical_name = resolution.oldCanonicalName;
+            }
+            mappings.push(mapping);
+        }
+
+        const result = await saveManufacturerMappingsBatch(mappings);
+
+        if (result.success || result.saved_count >= 0) {
+            console.log(`[AdminResolution] Saved ${result.saved_count} mappings`);
+            // Reload to refresh the unmapped list
+            await loadAdminResolutionData(dist);
+            // Restore button after successful reload
+            btn.innerHTML = origHTML;
+            btn.disabled = true;
+        } else {
+            throw new Error('Save failed');
+        }
+    } catch (error) {
+        console.error('[AdminResolution] Save error:', error);
+        btn.innerHTML = origHTML;
+        btn.disabled = false;
+    }
+}
+
+// =====================================================
+// SHARED RESOLUTION DROPDOWN (used by admin + submit-flow)
+// =====================================================
+
+let resDropdownState = { open: false, prefix: null, index: null };
+
+function ensureResDropdownPanel() {
+    if (document.getElementById('resDropdownPanel')) return;
+    const panel = document.createElement('div');
+    panel.id = 'resDropdownPanel';
+    panel.className = 'mfr-dropdown-panel res-dropdown-floating';
+    panel.style.display = 'none';
+    panel.innerHTML = `
+        <div class="mfr-dropdown-search-wrap">
+            <input type="text" class="mfr-dropdown-search" id="resDropdownSearch" placeholder="Filter names..." autocomplete="off">
+        </div>
+        <div class="mfr-dropdown-list" id="resDropdownList"></div>
+    `;
+    document.body.appendChild(panel);
+
+    // Search input filtering
+    panel.querySelector('#resDropdownSearch').addEventListener('input', function() {
+        renderResDropdownOptions(this.value);
+    });
+
+    // Escape to close
+    panel.querySelector('#resDropdownSearch').addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') closeResDropdown();
+    });
+
+    // Click on option
+    panel.querySelector('#resDropdownList').addEventListener('click', function(e) {
+        const option = e.target.closest('.mfr-dropdown-option');
+        if (option) {
+            selectResDropdownOption(option.dataset.value);
+        }
+    });
+
+    // Click outside to close
+    document.addEventListener('click', function(e) {
+        if (!resDropdownState.open) return;
+        const panel = document.getElementById('resDropdownPanel');
+        // Check if click is on the panel or on any trigger button
+        if (panel && panel.contains(e.target)) return;
+        if (e.target.closest('.res-dropdown-trigger')) return;
+        closeResDropdown();
+    });
+}
+
+function toggleResDropdown(prefix, index) {
+    const ddContainer = document.getElementById(`${prefix === 'admin' ? 'admin-res' : 'mfr-res'}-dd-${index}`);
+    if (ddContainer && ddContainer.classList.contains('dd-disabled')) return;
+
+    // If same dropdown is open, close it
+    if (resDropdownState.open && resDropdownState.prefix === prefix && resDropdownState.index === index) {
+        closeResDropdown();
+        return;
+    }
+
+    ensureResDropdownPanel();
+    closeResDropdown(); // close any other open dropdown
+
+    const triggerId = `${prefix === 'admin' ? 'admin-res' : 'mfr-res'}-dd-trigger-${index}`;
+    const trigger = document.getElementById(triggerId);
+    const panel = document.getElementById('resDropdownPanel');
+    if (!trigger || !panel) return;
+
+    // Position panel relative to trigger, flipping above if insufficient space below
+    const rect = trigger.getBoundingClientRect();
+    const panelMaxH = 330; // ~280px list + ~36px search + padding
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const flipAbove = spaceBelow < panelMaxH && spaceAbove > spaceBelow;
+
+    panel.style.position = 'fixed';
+    panel.style.left = rect.left + 'px';
+    panel.style.width = Math.max(rect.width, 280) + 'px';
+
+    if (flipAbove) {
+        panel.style.top = 'auto';
+        panel.style.bottom = (window.innerHeight - rect.top + 2) + 'px';
+        panel.style.maxHeight = Math.min(spaceAbove - 10, panelMaxH) + 'px';
+    } else {
+        panel.style.bottom = 'auto';
+        panel.style.top = (rect.bottom + 2) + 'px';
+        panel.style.maxHeight = Math.min(spaceBelow - 10, panelMaxH) + 'px';
+    }
+
+    resDropdownState = { open: true, prefix, index };
+
+    // Get current selected value
+    let selectedValue = '';
+    if (prefix === 'admin') {
+        const res = state.adminResolutions.get(index);
+        if (res && res.type === 'existing') selectedValue = res.value;
+    } else {
+        const res = state.mfrResolutions.get(index);
+        if (res && res.type === 'zoho') selectedValue = res.value;
+    }
+
+    renderResDropdownOptions('', selectedValue);
+    panel.style.display = '';
+
+    const search = document.getElementById('resDropdownSearch');
+    if (search) { search.value = ''; setTimeout(() => search.focus(), 0); }
+
+    // Mark trigger as open
+    trigger.closest('.res-dropdown').classList.add('open');
+}
+
+function closeResDropdown() {
+    const panel = document.getElementById('resDropdownPanel');
+    if (panel) {
+        panel.style.display = 'none';
+        panel.style.bottom = '';
+        panel.style.maxHeight = '';
+    }
+
+    if (resDropdownState.open) {
+        const ddId = `${resDropdownState.prefix === 'admin' ? 'admin-res' : 'mfr-res'}-dd-${resDropdownState.index}`;
+        const dd = document.getElementById(ddId);
+        if (dd) dd.classList.remove('open');
+    }
+
+    resDropdownState = { open: false, prefix: null, index: null };
+}
+
+function renderResDropdownOptions(filter, selectedOverride) {
+    const list = document.getElementById('resDropdownList');
+    if (!list) return;
+
+    // Both panels use Zoho Manufacturers list; admin falls back to Supabase canonical names
+    const options = state.prefetchedManufacturers.length > 0
+        ? state.prefetchedManufacturers
+        : (state.adminCanonicalNames || []);
+    const filterLower = (filter || '').toLowerCase();
+    const filtered = filterLower
+        ? options.filter(m => m.toLowerCase().includes(filterLower))
+        : options;
+
+    // Determine selected value
+    let selectedValue = selectedOverride;
+    if (selectedValue === undefined && resDropdownState.open) {
+        if (resDropdownState.prefix === 'admin') {
+            const res = state.adminResolutions.get(resDropdownState.index);
+            if (res && res.type === 'existing') selectedValue = res.value;
+        } else {
+            const res = state.mfrResolutions.get(resDropdownState.index);
+            if (res && res.type === 'zoho') selectedValue = res.value;
+        }
+    }
+
+    if (filtered.length === 0) {
+        list.innerHTML = '<div class="mfr-dropdown-empty">' +
+            (options.length === 0 ? 'No manufacturers loaded' : 'No matches found') +
+            '</div>';
+        return;
+    }
+
+    list.innerHTML = filtered.map(m => {
+        const isSelected = m === selectedValue;
+        const esc = m.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        return `<div class="mfr-dropdown-option${isSelected ? ' selected' : ''}" data-value="${esc}" title="${esc}">${esc}</div>`;
+    }).join('');
+}
+
+function selectResDropdownOption(value) {
+    const { prefix, index } = resDropdownState;
+
+    // Toggle: clicking the already-selected value deselects it
+    const currentRes = prefix === 'admin'
+        ? state.adminResolutions.get(index)
+        : state.mfrResolutions.get(index);
+    const currentValue = currentRes && (currentRes.type === 'existing' || currentRes.type === 'zoho') ? currentRes.value : null;
+
+    closeResDropdown();
+
+    if (value === currentValue) {
+        // Deselect — clear dropdown, re-enable input
+        clearResDropdownSelection(prefix, index);
+        const dd = document.getElementById(`${prefix === 'admin' ? 'admin-res' : 'mfr-res'}-dd-${index}`);
+        if (dd) dd.classList.remove('dd-disabled');
+
+        if (prefix === 'admin') {
+            const input = document.getElementById(`admin-res-input-${index}`);
+            const row = document.getElementById(`admin-res-row-${index}`);
+            const status = document.getElementById(`admin-res-status-${index}`);
+            if (input) input.disabled = false;
+            const existing = state.adminResolutions.get(index);
+            const oldCanonical = existing ? existing.oldCanonicalName : undefined;
+            // If editing a mapped row, keep resolution with oldCanonical but clear value
+            if (oldCanonical) {
+                state.adminResolutions.delete(index);
+                renderAdminResolutionTable();
+                return;
+            }
+            state.adminResolutions.delete(index);
+            if (row) row.classList.remove('row-valid');
+            if (status) status.classList.remove('show', 'valid');
+            updateAdminResolutionStatus();
+        } else {
+            const input = document.getElementById(`mfr-input-${index}`);
+            const row = document.getElementById(`mfr-row-${index}`);
+            const status = document.getElementById(`mfr-status-${index}`);
+            if (input) input.disabled = false;
+            state.mfrResolutions.delete(index);
+            if (row) row.classList.remove('row-valid');
+            if (status) status.classList.remove('show', 'valid');
+            updateMfrResolutionStatus();
+        }
+        return;
+    }
+
+    if (prefix === 'admin') {
+        // Update trigger text
+        const text = document.getElementById(`admin-res-dd-text-${index}`);
+        if (text) { text.textContent = value; text.classList.remove('placeholder'); }
+
+        // Call existing handler logic
+        const input = document.getElementById(`admin-res-input-${index}`);
+        const row = document.getElementById(`admin-res-row-${index}`);
+        const status = document.getElementById(`admin-res-status-${index}`);
+        const existing = state.adminResolutions.get(index);
+        const oldCanonical = existing ? existing.oldCanonicalName : undefined;
+
+        if (input) { input.value = ''; input.disabled = true; }
+        const resolution = { type: 'existing', value: value };
+        if (oldCanonical) resolution.oldCanonicalName = oldCanonical;
+        state.adminResolutions.set(index, resolution);
+        if (row) row.classList.add('row-valid');
+        if (status) status.classList.add('show', 'valid');
+        updateAdminResolutionStatus();
+    } else {
+        // Submit-flow resolution
+        const text = document.getElementById(`mfr-res-dd-text-${index}`);
+        if (text) { text.textContent = value; text.classList.remove('placeholder'); }
+
+        const input = document.getElementById(`mfr-input-${index}`);
+        const row = document.getElementById(`mfr-row-${index}`);
+        const status = document.getElementById(`mfr-status-${index}`);
+
+        if (input) { input.value = ''; input.disabled = true; }
+        state.mfrResolutions.set(index, { type: 'zoho', value: value });
+        if (row) row.classList.add('row-valid');
+        if (status) status.classList.add('show', 'valid');
+        updateMfrResolutionStatus();
+    }
+}
+
+function clearResDropdownSelection(prefix, index) {
+    const textEl = document.getElementById(`${prefix === 'admin' ? 'admin-res' : 'mfr-res'}-dd-text-${index}`);
+    if (textEl) {
+        textEl.textContent = '-- Select From Zoho --';
+        textEl.classList.add('placeholder');
+    }
+    const ddEl = document.getElementById(`${prefix === 'admin' ? 'admin-res' : 'mfr-res'}-dd-${index}`);
+    if (ddEl) ddEl.classList.remove('dd-disabled');
+}
+
+function clearResSelection(prefix, index) {
+    closeResDropdown();
+    clearResDropdownSelection(prefix, index);
+
+    if (prefix === 'admin') {
+        const input = document.getElementById(`admin-res-input-${index}`);
+        const row = document.getElementById(`admin-res-row-${index}`);
+        const status = document.getElementById(`admin-res-status-${index}`);
+        const existing = state.adminResolutions.get(index);
+        const oldCanonical = existing ? existing.oldCanonicalName : undefined;
+        if (input) input.disabled = false;
+        if (oldCanonical) {
+            // Editing a mapped row — mark for removal (unmap)
+            state.adminResolutions.set(index, { type: 'remove', oldCanonicalName: oldCanonical });
+            if (row) row.classList.remove('row-valid');
+            if (row) row.classList.add('row-remove');
+            if (status) status.classList.remove('show', 'valid');
+        } else {
+            state.adminResolutions.delete(index);
+            if (row) row.classList.remove('row-valid');
+            if (status) status.classList.remove('show', 'valid');
+        }
+        updateAdminResolutionStatus();
+    } else {
+        const input = document.getElementById(`mfr-input-${index}`);
+        const row = document.getElementById(`mfr-row-${index}`);
+        const status = document.getElementById(`mfr-status-${index}`);
+        if (input) input.disabled = false;
+        state.mfrResolutions.delete(index);
+        if (row) row.classList.remove('row-valid');
+        if (status) status.classList.remove('show', 'valid');
+        updateMfrResolutionStatus();
     }
 }
 

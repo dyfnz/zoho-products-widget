@@ -120,12 +120,75 @@
                         </div>
                     </div>
                     <div class="admin-page" id="adminPage-name-resolution">
-                        <div class="admin-page-placeholder">
+                        <div class="admin-resolution-tabs" id="adminResolutionTabs">
+                            <button class="mfr-admin-tab active" data-dist="tdsynnex" onclick="selectAdminResolutionTab('tdsynnex')">
+                                <span class="mfr-admin-tab-dot" style="background: #10b981;"></span>TD Synnex
+                            </button>
+                            <button class="mfr-admin-tab" data-dist="ingram" onclick="selectAdminResolutionTab('ingram')">
+                                <span class="mfr-admin-tab-dot" style="background: #0ea5e9;"></span>Ingram Micro
+                            </button>
+                            <button class="mfr-admin-tab" data-dist="arrow" onclick="selectAdminResolutionTab('arrow')">
+                                <span class="mfr-admin-tab-dot" style="background: #f59e0b;"></span>Arrow ECS
+                            </button>
+                        </div>
+
+                        <div class="admin-resolution-stats" id="adminResolutionStats"></div>
+                        <div class="admin-resolution-filter-bar">
+                            <span class="admin-resolution-filter-label">Show:</span>
+                            <button class="admin-resolution-filter-btn active" data-filter="unmapped" onclick="setAdminResolutionFilter('unmapped')">Unmapped</button>
+                            <button class="admin-resolution-filter-btn" data-filter="mapped" onclick="setAdminResolutionFilter('mapped')">Mapped</button>
+                            <button class="admin-resolution-filter-btn" data-filter="all" onclick="setAdminResolutionFilter('all')">All</button>
+                            <button class="admin-resolution-refresh-btn" onclick="loadAdminResolutionData(state.adminResolutionTab)" title="Refresh data">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                                </svg>
+                                Refresh
+                            </button>
+                        </div>
+
+                        <div class="admin-resolution-loading" id="adminResolutionLoading" style="display: none;">
+                            <div class="mfr-admin-spinner"></div>
+                            <p>Loading manufacturer data...</p>
+                        </div>
+
+                        <div class="admin-resolution-empty" id="adminResolutionEmpty" style="display: none;">
                             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                <polyline points="22 4 12 14.01 9 11.01"></polyline>
                             </svg>
-                            <p>Name Resolution</p>
-                            <span>Map distributor manufacturer names to canonical Zoho names</span>
+                            <p>All manufacturers are mapped!</p>
+                            <span>No unmapped manufacturer names found for this distributor.</span>
+                        </div>
+
+                        <div class="admin-resolution-content" id="adminResolutionContent" style="display: none;">
+                            <div class="admin-resolution-table-container">
+                                <table class="mfr-resolution-table admin-resolution-table">
+                                    <thead>
+                                        <tr>
+                                            <th class="th-mfr-names">Manufacturer Name</th>
+                                            <th class="th-zoho">Select From Zoho</th>
+                                            <th class="th-or"><span class="th-or-text">OR</span></th>
+                                            <th class="th-create">Create New</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="adminResolutionTableBody"></tbody>
+                                </table>
+                            </div>
+                            <div class="admin-resolution-footer">
+                                <div class="admin-resolution-footer-status">
+                                    <span class="mfr-status-dot incomplete" id="adminResolutionDot"></span>
+                                    <span id="adminResolutionStatusText">0 of 0 resolved</span>
+                                </div>
+                                <button class="mfr-btn mfr-btn-primary" id="adminResolutionSaveBtn" onclick="saveAdminResolutions()" disabled>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                                        <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                                        <polyline points="7 3 7 8 15 8"></polyline>
+                                    </svg>
+                                    Save Mappings
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
