@@ -6279,11 +6279,9 @@ button.sel-btn .sel-btn-icon {
     display: block;
 }
 
-#adminPage-name-resolution.active {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
+/* Lock viewport height when admin panel is visible — prevents content overflow */
+.widget-container.admin-open {
+    height: 100vh;
     overflow: hidden;
 }
 
@@ -6299,6 +6297,14 @@ button.sel-btn .sel-btn-icon {
     padding: 0;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
+}
+
+#adminPage-name-resolution.active {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
     overflow: hidden;
 }
 

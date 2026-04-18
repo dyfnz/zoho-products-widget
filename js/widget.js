@@ -261,8 +261,7 @@ function openAdminPanel() {
     document.querySelector('.content-wrapper').style.display = 'none';
     document.querySelector('.header-buttons').style.display = 'none';
     document.getElementById('adminCogBtn').style.display = 'none';
-    const footer = document.querySelector('.action-footer');
-    if (footer) footer.style.display = 'none';
+    document.querySelector('.widget-container').classList.add('admin-open');
     state.adminPanelOpen = true;
 }
 
@@ -271,8 +270,7 @@ function closeAdminPanel() {
     document.querySelector('.content-wrapper').style.display = '';
     document.querySelector('.header-buttons').style.display = '';
     document.getElementById('adminCogBtn').style.display = '';
-    const footer = document.querySelector('.action-footer');
-    if (footer) footer.style.display = '';
+    document.querySelector('.widget-container').classList.remove('admin-open');
     state.adminPanelOpen = false;
 }
 
@@ -829,10 +827,8 @@ function renderMfrStats(dist, data) {
     const details = data.manufacturer_details || {};
     let filteredSkus = 0;
     for (const name of activeSet) filteredSkus += (details[name]?.sku_count || 0);
-    let totalSkus = s.total_skus || s.total_skus_in_file || 0;
-    if (!totalSkus && details) {
-        for (const name of Object.keys(details)) totalSkus += (details[name]?.sku_count || 0);
-    }
+    let totalSkus = 0;
+    for (const name of Object.keys(details)) totalSkus += (details[name]?.sku_count || 0);
     el.innerHTML = `
         <div class="mfr-admin-stat"><span class="mfr-admin-stat-label">Known</span><span class="mfr-admin-stat-val">${fmtNum(s.total_manufacturers || s.total_known || (data.all_known_manufacturers || []).length)}</span></div>
         <div class="mfr-admin-stat-separator"></div>
@@ -842,7 +838,7 @@ function renderMfrStats(dist, data) {
         <div class="mfr-admin-stat-separator"></div>
         <div class="mfr-admin-stat"><span class="mfr-admin-stat-label">Filtered SKUs</span><span class="mfr-admin-stat-val">${fmtNum(filteredSkus)}</span></div>
         <div class="mfr-admin-stat-separator"></div>
-        <div class="mfr-admin-stat"><span class="mfr-admin-stat-label">Last Run</span><span class="mfr-admin-stat-val">${s.last_run ? fmtRelDate(s.last_run) : '--'}</span></div>
+        <div class="mfr-admin-stat"><span class="mfr-admin-stat-label">Last Run</span><span class="mfr-admin-stat-val">${(s.last_run || data.last_updated) ? fmtRelDate(s.last_run || data.last_updated) : '--'}</span></div>
     `;
 }
 
