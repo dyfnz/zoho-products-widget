@@ -15,6 +15,115 @@ const TDSYNNEX_BASE = 'https://tydxdpntshbobomemzxj.supabase.co/functions/v1';
 const TDSYNNEX_PROXY_BASE = 'https://tydxdpntshbobomemzxj.supabase.co/functions/v1/tdsynnex-proxy';
 const SUPABASE_URL = 'https://tydxdpntshbobomemzxj.supabase.co';
 const ARROW_PROXY_BASE = `${SUPABASE_URL}/functions/v1/arrow-proxy`;
+const GITHUB_PROXY_BASE = `${SUPABASE_URL}/functions/v1/github-proxy`;
+const DIST_LABELS = { tdsynnex: 'TD Synnex', ingram: 'Ingram Micro', arrow: 'Arrow ECS' };
+
+// ---- Admin Filter Helper Functions ----
+function escHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function escAttr(str) {
+    return str.replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function fmtNum(n) {
+    return (n || 0).toLocaleString();
+}
+
+function fmtRelDate(dateStr) {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '--';
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' +
+           d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+function sharedWordPrefix(a, b) {
+    const wordsA = a.split(/\s+/);
+    const wordsB = b.split(/\s+/);
+    const common = [];
+    for (let i = 0; i < Math.min(wordsA.length, wordsB.length); i++) {
+        if (wordsA[i].toUpperCase() === wordsB[i].toUpperCase()) {
+            common.push(wordsA[i]);
+        } else {
+            break;
+        }
+    }
+    return common.length >= 2 ? common.join(' ') : null;
+}
+
+function groupManufacturers(names, details) {
+    if (names.length === 0) return [];
+    const sorted = [...names].sort();
+    const groups = [];
+    let i = 0;
+    while (i < sorted.length) {
+        let bestPrefix = null;
+        let groupEnd = i;
+        for (let j = i + 1; j < sorted.length; j++) {
+            const prefix = sharedWordPrefix(sorted[i], sorted[j]);
+            if (prefix && prefix.split(/\s+/).length >= 2) {
+                let allShare = true;
+                for (let k = i; k <= j; k++) {
+                    if (!sorted[k].toUpperCase().startsWith(prefix.toUpperCase())) {
+                        allShare = false;
+                        break;
+                    }
+                }
+                if (allShare) {
+                    bestPrefix = prefix;
+                    groupEnd = j;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        if (bestPrefix && groupEnd > i) {
+            const members = sorted.slice(i, groupEnd + 1);
+            let totalSkus = 0;
+            for (const m of members) totalSkus += (details[m]?.sku_count || 0);
+            groups.push({ type: 'group', prefix: bestPrefix, members: members, totalSkus: totalSkus });
+            i = groupEnd + 1;
+        } else {
+            groups.push({ type: 'single', name: sorted[i], skuCount: details[sorted[i]]?.sku_count || 0 });
+            i++;
+        }
+    }
+    return groups;
+}
+
+function isGroupedDistributor(dist) {
+    return dist === 'ingram';
+}
+
+function showMfrLoading(show) {
+    document.getElementById('mfrAdminLoading').style.display = show ? 'flex' : 'none';
+}
+
+function showMfrColumns(show) {
+    document.getElementById('mfrAdminColumns').style.display = show ? 'grid' : 'none';
+}
+
+function showMfrEmpty(show) {
+    document.getElementById('mfrAdminEmpty').style.display = show ? 'flex' : 'none';
+}
+
+function selectMfrLetter(letter) {
+    state.adminLetterFilter = letter;
+    renderLetterBar();
+    renderMfrColumns();
+}
+
+function setMfrLetterScope(scope) {
+    state.adminLetterScope = scope;
+    renderLetterBar();
+    renderMfrColumns();
+}
+
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5ZHhkcG50c2hib2JvbWVtenhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4MTg0MjcsImV4cCI6MjA3NjM5NDQyN30.cVcmS7yKqAF1LBOTz0ZNgxgaEILLi7FuWX9E8eZjZac';
 const PAGE_SIZE = 50;
 
@@ -110,6 +219,17 @@ const state = {
     adminResolutionFilter: 'unmapped',
     adminResolutions: new Map(),
     adminCanonicalNames: [],
+    // ---- Admin Filter State ----
+    adminActiveTab: 'tdsynnex',
+    adminFilterData: {},
+    adminPending: {},
+    adminLetterFilter: 'All',
+    adminLetterScope: 'both',
+    adminExpandedGroups: new Set(),
+    adminFilterLoading: false,
+    workflowState: { tdsynnex: { running: false, status: null, conclusion: null, runId: null }, ingram: { running: false, status: null, conclusion: null, runId: null }, arrow: { running: false, status: null, conclusion: null, runId: null } },
+    workflowPollingTimers: {},
+    workflowLastRun: {},
 };
 
 let currentMfrList = [];
@@ -170,6 +290,9 @@ function selectAdminPage(pageId) {
     }
     if (pageId === 'name-resolution') {
         loadAdminResolutionData(state.adminResolutionTab);
+    }
+    if (pageId === 'mfr-filters') {
+        loadMfrFilterData(state.adminActiveTab);
     }
 }
 
@@ -612,6 +735,684 @@ async function saveAdminResolutions() {
         btn.innerHTML = origHTML;
         btn.disabled = false;
     }
+}
+
+// =====================================================
+// ADMIN — MANUFACTURER FILTER MANAGEMENT (Phase D)
+// =====================================================
+
+function ensurePending(dist) {
+    if (!state.adminPending[dist]) {
+        state.adminPending[dist] = { additions: new Set(), removals: new Set() };
+    }
+}
+
+function getEffectiveActiveSet(dist) {
+    const data = state.adminFilterData[dist];
+    if (!data) return new Set();
+    const active = new Set(data.active_manufacturers || []);
+    const pending = state.adminPending[dist] || { additions: new Set(), removals: new Set() };
+    for (const n of pending.additions) active.add(n);
+    for (const n of pending.removals) active.delete(n);
+    return active;
+}
+
+function selectMfrAdminTab(dist) {
+    state.adminActiveTab = dist;
+    state.adminExpandedGroups.clear();
+    state.adminLetterFilter = 'All';
+    document.querySelectorAll('.mfr-admin-tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.dist === dist);
+    });
+    const availSearch = document.getElementById('mfrAvailSearch');
+    const inclSearch = document.getElementById('mfrIncludedSearch');
+    if (availSearch) availSearch.value = '';
+    if (inclSearch) inclSearch.value = '';
+    loadMfrFilterData(dist);
+}
+
+async function loadMfrFilterData(dist) {
+    state.adminFilterLoading = true;
+    showMfrLoading(true);
+    showMfrColumns(false);
+    showMfrEmpty(false);
+
+    try {
+        const res = await fetch(`${GITHUB_PROXY_BASE}?action=get-filters&distributor=${dist}`);
+        if (res.status === 404 || !res.ok) {
+            state.adminFilterData[dist] = null;
+            showMfrLoading(false);
+            showMfrEmpty(true);
+            renderMfrStats(dist, null);
+            updateMfrPendingBar();
+            return;
+        }
+        const data = await res.json();
+        if (data.error) {
+            state.adminFilterData[dist] = null;
+            showMfrLoading(false);
+            showMfrEmpty(true);
+            renderMfrStats(dist, null);
+            updateMfrPendingBar();
+            return;
+        }
+        state.adminFilterData[dist] = data;
+
+        if (!state.adminPending[dist]) {
+            state.adminPending[dist] = { additions: new Set(), removals: new Set() };
+        }
+
+        showMfrLoading(false);
+        showMfrColumns(true);
+        renderMfrStats(dist, data);
+        renderLetterBar();
+        renderMfrColumns();
+        updateMfrPendingBar();
+    } catch (err) {
+        console.error('Failed to load mfr filter data:', err);
+        state.adminFilterData[dist] = null;
+        showMfrLoading(false);
+        showMfrEmpty(true);
+        renderMfrStats(dist, null);
+    } finally {
+        state.adminFilterLoading = false;
+    }
+}
+
+function renderMfrStats(dist, data) {
+    const el = document.getElementById('mfrAdminStats');
+    if (!data) { el.innerHTML = ''; return; }
+    const s = data.stats || {};
+    const pending = state.adminPending[dist] || { additions: new Set(), removals: new Set() };
+    const activeCount = (data.active_manufacturers || []).length + pending.additions.size - pending.removals.size;
+    const activeSet = getEffectiveActiveSet(dist);
+    const details = data.manufacturer_details || {};
+    let filteredSkus = 0;
+    for (const name of activeSet) filteredSkus += (details[name]?.sku_count || 0);
+    let totalSkus = s.total_skus || s.total_skus_in_file || 0;
+    if (!totalSkus && details) {
+        for (const name of Object.keys(details)) totalSkus += (details[name]?.sku_count || 0);
+    }
+    el.innerHTML = `
+        <div class="mfr-admin-stat"><span class="mfr-admin-stat-label">Known</span><span class="mfr-admin-stat-val">${fmtNum(s.total_manufacturers || s.total_known || (data.all_known_manufacturers || []).length)}</span></div>
+        <div class="mfr-admin-stat-separator"></div>
+        <div class="mfr-admin-stat"><span class="mfr-admin-stat-label">Active</span><span class="mfr-admin-stat-val mfr-admin-stat-val--accent">${fmtNum(Math.max(0, activeCount))}</span></div>
+        <div class="mfr-admin-stat-separator"></div>
+        <div class="mfr-admin-stat"><span class="mfr-admin-stat-label">Total SKUs</span><span class="mfr-admin-stat-val">${fmtNum(totalSkus)}</span></div>
+        <div class="mfr-admin-stat-separator"></div>
+        <div class="mfr-admin-stat"><span class="mfr-admin-stat-label">Filtered SKUs</span><span class="mfr-admin-stat-val">${fmtNum(filteredSkus)}</span></div>
+        <div class="mfr-admin-stat-separator"></div>
+        <div class="mfr-admin-stat"><span class="mfr-admin-stat-label">Last Run</span><span class="mfr-admin-stat-val">${s.last_run ? fmtRelDate(s.last_run) : '--'}</span></div>
+    `;
+}
+
+function renderLetterBar() {
+    const dist = state.adminActiveTab;
+    const data = state.adminFilterData[dist];
+    const bar = document.getElementById('mfrLetterBar');
+    if (!bar) return;
+    if (!data) { bar.innerHTML = ''; return; }
+
+    const allNames = data.all_known_manufacturers || [];
+    const letterCounts = {};
+    for (const name of allNames) {
+        const letter = name.charAt(0).toUpperCase();
+        if (/[A-Z]/.test(letter)) letterCounts[letter] = (letterCounts[letter] || 0) + 1;
+    }
+
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+    const currentFilter = state.adminLetterFilter;
+    let html = `<button class="mfr-admin-letter-btn mfr-admin-letter-btn--all${currentFilter === 'All' ? ' active' : ''}" onclick="selectMfrLetter('All')">All</button>`;
+    for (const letter of letters) {
+        const hasItems = letterCounts[letter] > 0;
+        const isActive = currentFilter === letter;
+        html += `<button class="mfr-admin-letter-btn${isActive ? ' active' : ''}" ${!hasItems ? 'disabled' : ''} onclick="selectMfrLetter('${letter}')">${letter}</button>`;
+    }
+    html += `<span class="mfr-letter-scope-divider"></span>`;
+    html += `<span class="mfr-letter-scope-group">`;
+    html += `<span class="mfr-letter-scope-label">Applies to:</span>`;
+    const scope = state.adminLetterScope;
+    html += `<button class="mfr-letter-scope-btn${scope === 'available' ? ' active' : ''}" onclick="setMfrLetterScope('available')">Available</button>`;
+    html += `<button class="mfr-letter-scope-btn${scope === 'included' ? ' active' : ''}" onclick="setMfrLetterScope('included')">Included</button>`;
+    html += `<button class="mfr-letter-scope-btn${scope === 'both' ? ' active' : ''}" onclick="setMfrLetterScope('both')">Both</button>`;
+    html += `</span>`;
+    bar.innerHTML = html;
+}
+
+function renderMfrColumns() {
+    const dist = state.adminActiveTab;
+    const data = state.adminFilterData[dist];
+    if (!data) return;
+
+    const activeSet = getEffectiveActiveSet(dist);
+    const pending = state.adminPending[dist] || { additions: new Set(), removals: new Set() };
+    const details = data.manufacturer_details || {};
+    const allNames = data.all_known_manufacturers || [];
+
+    const availSearch = (document.getElementById('mfrAvailSearch')?.value || '').toUpperCase();
+    const inclSearch = (document.getElementById('mfrIncludedSearch')?.value || '').toUpperCase();
+
+    const availNames = allNames.filter(n => !activeSet.has(n));
+    const inclNames = allNames.filter(n => activeSet.has(n));
+
+    const letterFilter = state.adminLetterFilter;
+    const scope = state.adminLetterScope;
+    const applyLetter = letterFilter && letterFilter !== 'All';
+    const letterAvail = (applyLetter && (scope === 'available' || scope === 'both')) ? availNames.filter(n => n.charAt(0).toUpperCase() === letterFilter) : availNames;
+    const letterIncl = (applyLetter && (scope === 'included' || scope === 'both')) ? inclNames.filter(n => n.charAt(0).toUpperCase() === letterFilter) : inclNames;
+
+    const filteredAvail = availSearch ? letterAvail.filter(n => n.toUpperCase().includes(availSearch)) : letterAvail;
+    const filteredIncl = inclSearch ? letterIncl.filter(n => n.toUpperCase().includes(inclSearch)) : letterIncl;
+
+    const availList = document.getElementById('mfrAvailList');
+    const inclList = document.getElementById('mfrIncludedList');
+
+    if (isGroupedDistributor(dist)) {
+        availList.innerHTML = renderGroupedList(filteredAvail, details, 'avail', pending);
+        inclList.innerHTML = renderGroupedList(filteredIncl, details, 'included', pending);
+    } else {
+        availList.innerHTML = renderFlatList(filteredAvail, details, 'avail', pending);
+        inclList.innerHTML = renderFlatList(filteredIncl, details, 'included', pending);
+    }
+
+    document.getElementById('mfrAvailCount').textContent = filteredAvail.length;
+    document.getElementById('mfrIncludedCount').textContent = filteredIncl.length;
+
+    renderMfrStats(dist, data);
+    updateMfrPendingBar();
+}
+
+function renderFlatList(names, details, side, pending) {
+    if (names.length === 0) return '<div class="mfr-admin-list-empty">No manufacturers found</div>';
+    const sorted = [...names].sort();
+    const arrowSvg = side === 'avail'
+        ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>'
+        : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>';
+
+    const pendingItems = [];
+    const normalItems = [];
+    sorted.forEach(name => {
+        const isPendingAdd = pending.additions.has(name);
+        const isPendingRemove = pending.removals.has(name);
+        if ((side === 'included' && isPendingAdd) || (side === 'avail' && isPendingRemove)) {
+            pendingItems.push(name);
+        } else {
+            normalItems.push(name);
+        }
+    });
+
+    const renderItem = (name, showBadge) => {
+        const sku = details[name]?.sku_count || 0;
+        const pendClass = pending.additions.has(name) ? ' mfr-admin-item--pending-add'
+                        : pending.removals.has(name) ? ' mfr-admin-item--pending-remove' : '';
+        const action = side === 'avail' ? `mfrIncludeName('${escAttr(name)}')` : `mfrExcludeName('${escAttr(name)}')`;
+        const badge = showBadge
+            ? (side === 'included'
+                ? '<span class="mfr-admin-pending-badge mfr-admin-pending-badge--add">+</span>'
+                : '<span class="mfr-admin-pending-badge mfr-admin-pending-badge--remove">\u2212</span>')
+            : '';
+        return `<div class="mfr-admin-item${pendClass}" onclick="${action}">
+            ${badge}<span class="mfr-admin-item-name" title="${escAttr(name)}">${escHtml(name)}</span>
+            <span class="mfr-admin-item-sku">${fmtNum(sku)}</span>
+            <span class="mfr-admin-item-arrow">${arrowSvg}</span>
+        </div>`;
+    };
+
+    let html = '';
+    if (pendingItems.length > 0) {
+        html += pendingItems.map(n => renderItem(n, true)).join('');
+        if (normalItems.length > 0) html += '<div class="mfr-admin-pending-separator">All Manufacturers</div>';
+    }
+    html += normalItems.map(n => renderItem(n, false)).join('');
+    return html;
+}
+
+function renderGroupedList(names, details, side, pending) {
+    if (names.length === 0) return '<div class="mfr-admin-list-empty">No manufacturers found</div>';
+    const groups = groupManufacturers(names, details);
+    const arrowSvg = side === 'avail'
+        ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>'
+        : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>';
+    const chevronSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>';
+
+    const renderSingle = (g, showBadge) => {
+        const pendClass = pending.additions.has(g.name) ? ' mfr-admin-item--pending-add'
+                        : pending.removals.has(g.name) ? ' mfr-admin-item--pending-remove' : '';
+        const action = side === 'avail' ? `mfrIncludeName('${escAttr(g.name)}')` : `mfrExcludeName('${escAttr(g.name)}')`;
+        const badge = showBadge
+            ? (side === 'included'
+                ? '<span class="mfr-admin-pending-badge mfr-admin-pending-badge--add">+</span>'
+                : '<span class="mfr-admin-pending-badge mfr-admin-pending-badge--remove">\u2212</span>')
+            : '';
+        return `<div class="mfr-admin-item${pendClass}" onclick="${action}">
+            ${badge}<span class="mfr-admin-item-name" title="${escAttr(g.name)}">${escHtml(g.name)}</span>
+            <span class="mfr-admin-item-sku">${fmtNum(g.skuCount)}</span>
+            <span class="mfr-admin-item-arrow">${arrowSvg}</span>
+        </div>`;
+    };
+
+    const renderGroup = (g, showBadge) => {
+        const groupId = `grp-${side}-${escAttr(g.prefix).replace(/\s+/g, '-')}`;
+        const isExpanded = state.adminExpandedGroups.has(groupId);
+        const allPendingAdd = g.members.every(m => pending.additions.has(m));
+        const allPendingRemove = g.members.every(m => pending.removals.has(m));
+        const anyPending = g.members.some(m => pending.additions.has(m) || pending.removals.has(m));
+        let groupPendClass = '';
+        if (allPendingAdd) groupPendClass = ' mfr-admin-group--pending-add';
+        else if (allPendingRemove) groupPendClass = ' mfr-admin-group--pending-remove';
+        else if (anyPending) groupPendClass = ' mfr-admin-group--partial';
+
+        const badge = showBadge
+            ? (side === 'included'
+                ? '<span class="mfr-admin-pending-badge mfr-admin-pending-badge--add">+</span>'
+                : '<span class="mfr-admin-pending-badge mfr-admin-pending-badge--remove">\u2212</span>')
+            : '';
+
+        const groupAction = side === 'avail' ? `mfrIncludeGroup(event, ${JSON.stringify(g.members).replace(/"/g, '&quot;')})` : `mfrExcludeGroup(event, ${JSON.stringify(g.members).replace(/"/g, '&quot;')})`;
+
+        const children = g.members.map(name => {
+            const sku = details[name]?.sku_count || 0;
+            const pendClass = pending.additions.has(name) ? ' mfr-admin-item--pending-add'
+                            : pending.removals.has(name) ? ' mfr-admin-item--pending-remove' : '';
+            const action = side === 'avail' ? `mfrIncludeName('${escAttr(name)}')` : `mfrExcludeName('${escAttr(name)}')`;
+            const suffix = name.substring(g.prefix.length).trim() || name;
+            return `<div class="mfr-admin-item${pendClass}" onclick="event.stopPropagation(); ${action}">
+                <span class="mfr-admin-item-name" title="${escAttr(name)}">${escHtml(suffix)}</span>
+                <span class="mfr-admin-item-sku">${fmtNum(sku)}</span>
+                <span class="mfr-admin-item-arrow">${arrowSvg}</span>
+            </div>`;
+        }).join('');
+
+        return `<div class="mfr-admin-group${groupPendClass}">
+            <div class="mfr-admin-group-header" onclick="${groupAction}">
+                ${badge}<span class="mfr-admin-group-chevron${isExpanded ? ' expanded' : ''}" onclick="event.stopPropagation(); toggleMfrGroup('${groupId}')">
+                    ${chevronSvg}
+                </span>
+                <span class="mfr-admin-group-name" title="${escAttr(g.prefix)}">${escHtml(g.prefix)}</span>
+                <span class="mfr-admin-group-meta">
+                    <span class="mfr-admin-group-badge">${g.members.length} variants</span>
+                    <span class="mfr-admin-group-sku">${fmtNum(g.totalSkus)}</span>
+                </span>
+                <span class="mfr-admin-group-arrow">${arrowSvg}</span>
+            </div>
+            <div class="mfr-admin-group-children${isExpanded ? ' open' : ''}" id="${groupId}">
+                ${children}
+            </div>
+        </div>`;
+    };
+
+    const pendingGroups = [];
+    const normalGroups = [];
+    groups.forEach(g => {
+        if (g.type === 'single') {
+            const isPendingAdd = pending.additions.has(g.name);
+            const isPendingRemove = pending.removals.has(g.name);
+            if ((side === 'included' && isPendingAdd) || (side === 'avail' && isPendingRemove)) pendingGroups.push(g);
+            else normalGroups.push(g);
+        } else {
+            const allPendingAdd = g.members.every(m => pending.additions.has(m));
+            const allPendingRemove = g.members.every(m => pending.removals.has(m));
+            if ((side === 'included' && allPendingAdd) || (side === 'avail' && allPendingRemove)) pendingGroups.push(g);
+            else normalGroups.push(g);
+        }
+    });
+
+    let html = '';
+    if (pendingGroups.length > 0) {
+        html += pendingGroups.map(g => g.type === 'single' ? renderSingle(g, true) : renderGroup(g, true)).join('');
+        if (normalGroups.length > 0) html += '<div class="mfr-admin-pending-separator">All Manufacturers</div>';
+    }
+    html += normalGroups.map(g => g.type === 'single' ? renderSingle(g, false) : renderGroup(g, false)).join('');
+    return html;
+}
+
+function updateMfrPendingBar() {
+    const dist = state.adminActiveTab;
+    const p = state.adminPending[dist];
+    const bar = document.getElementById('adminHeaderActions');
+    const summary = document.getElementById('adminHeaderPendingText');
+    const dot = bar ? bar.querySelector('.admin-header-pending-dot') : null;
+    const discardBtn = bar ? bar.querySelector('.admin-header-btn-discard') : null;
+    const saveBtn = bar ? bar.querySelector('.admin-header-btn-save') : null;
+
+    if (!bar) return;
+    bar.style.display = 'flex';
+
+    const hasChanges = p && (p.additions.size > 0 || p.removals.size > 0);
+    if (!hasChanges) {
+        if (discardBtn) discardBtn.disabled = true;
+        if (saveBtn) saveBtn.disabled = true;
+        if (dot) dot.style.display = 'none';
+        summary.textContent = 'No pending changes';
+        return;
+    }
+
+    if (discardBtn) discardBtn.disabled = false;
+    if (saveBtn) saveBtn.disabled = false;
+    if (dot) dot.style.display = '';
+    const parts = [];
+    if (p.additions.size > 0) parts.push(`${p.additions.size} addition${p.additions.size !== 1 ? 's' : ''}`);
+    if (p.removals.size > 0) parts.push(`${p.removals.size} removal${p.removals.size !== 1 ? 's' : ''}`);
+    summary.textContent = parts.join(', ');
+}
+
+// ---- Interaction Functions ----
+
+function mfrIncludeName(name) {
+    const dist = state.adminActiveTab;
+    ensurePending(dist);
+    const p = state.adminPending[dist];
+    const data = state.adminFilterData[dist];
+    const origActive = new Set(data?.active_manufacturers || []);
+    if (origActive.has(name)) { p.removals.delete(name); } else { p.additions.add(name); }
+    renderMfrColumns();
+}
+
+function mfrExcludeName(name) {
+    const dist = state.adminActiveTab;
+    ensurePending(dist);
+    const p = state.adminPending[dist];
+    const data = state.adminFilterData[dist];
+    const origActive = new Set(data?.active_manufacturers || []);
+    if (origActive.has(name)) { p.removals.add(name); } else { p.additions.delete(name); }
+    renderMfrColumns();
+}
+
+function mfrIncludeGroup(event, members) {
+    event.stopPropagation();
+    const dist = state.adminActiveTab;
+    ensurePending(dist);
+    const p = state.adminPending[dist];
+    const data = state.adminFilterData[dist];
+    const origActive = new Set(data?.active_manufacturers || []);
+    for (const name of members) {
+        if (origActive.has(name)) { p.removals.delete(name); } else { p.additions.add(name); }
+    }
+    renderMfrColumns();
+}
+
+function mfrExcludeGroup(event, members) {
+    event.stopPropagation();
+    const dist = state.adminActiveTab;
+    ensurePending(dist);
+    const p = state.adminPending[dist];
+    const data = state.adminFilterData[dist];
+    const origActive = new Set(data?.active_manufacturers || []);
+    for (const name of members) {
+        if (origActive.has(name)) { p.removals.add(name); } else { p.additions.delete(name); }
+    }
+    renderMfrColumns();
+}
+
+function mfrAddAllVisible() {
+    const dist = state.adminActiveTab;
+    const data = state.adminFilterData[dist];
+    if (!data) return;
+    ensurePending(dist);
+    const activeSet = getEffectiveActiveSet(dist);
+    const allNames = data.all_known_manufacturers || [];
+    const availNames = allNames.filter(n => !activeSet.has(n));
+    const search = (document.getElementById('mfrAvailSearch')?.value || '').toUpperCase();
+    const filtered = search ? availNames.filter(n => n.toUpperCase().includes(search)) : availNames;
+    const p = state.adminPending[dist];
+    const origActive = new Set(data.active_manufacturers || []);
+    for (const name of filtered) {
+        if (origActive.has(name)) { p.removals.delete(name); } else { p.additions.add(name); }
+    }
+    renderMfrColumns();
+}
+
+function mfrRemoveAllVisible() {
+    const dist = state.adminActiveTab;
+    const data = state.adminFilterData[dist];
+    if (!data) return;
+    ensurePending(dist);
+    const activeSet = getEffectiveActiveSet(dist);
+    const allNames = data.all_known_manufacturers || [];
+    const inclNames = allNames.filter(n => activeSet.has(n));
+    const search = (document.getElementById('mfrIncludedSearch')?.value || '').toUpperCase();
+    const filtered = search ? inclNames.filter(n => n.toUpperCase().includes(search)) : inclNames;
+    const p = state.adminPending[dist];
+    const origActive = new Set(data.active_manufacturers || []);
+    for (const name of filtered) {
+        if (origActive.has(name)) { p.removals.add(name); } else { p.additions.delete(name); }
+    }
+    renderMfrColumns();
+}
+
+function mfrDiscardChanges() {
+    const dist = state.adminActiveTab;
+    state.adminPending[dist] = { additions: new Set(), removals: new Set() };
+    renderMfrColumns();
+}
+
+function toggleMfrGroup(groupId) {
+    const el = document.getElementById(groupId);
+    if (!el) return;
+    const chevron = el.previousElementSibling?.querySelector('.mfr-admin-group-chevron');
+    if (el.classList.contains('open')) {
+        el.classList.remove('open');
+        if (chevron) chevron.classList.remove('expanded');
+        state.adminExpandedGroups.delete(groupId);
+    } else {
+        el.classList.add('open');
+        if (chevron) chevron.classList.add('expanded');
+        state.adminExpandedGroups.add(groupId);
+    }
+}
+
+// ---- Save & Workflow Functions ----
+
+async function mfrSaveChanges() {
+    const dist = state.adminActiveTab;
+    const p = state.adminPending[dist];
+    if (!p || (p.additions.size === 0 && p.removals.size === 0)) return;
+
+    const saveBtn = document.querySelector('.admin-header-btn-save');
+    const origText = saveBtn.innerHTML;
+    saveBtn.innerHTML = '<div class="mfr-admin-spinner" style="width:14px;height:14px;border-width:2px;"></div> Saving...';
+    saveBtn.disabled = true;
+
+    try {
+        const res = await fetch(`${GITHUB_PROXY_BASE}?action=save-filters`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                distributor: dist,
+                additions: [...p.additions],
+                removals: [...p.removals],
+            }),
+        });
+        const result = await res.json();
+        if (result.error) {
+            console.error('Save failed:', result.error);
+            saveBtn.innerHTML = origText;
+            saveBtn.disabled = false;
+            return;
+        }
+
+        const effectiveActive = [...getEffectiveActiveSet(dist)];
+        state.adminFilterData[dist].active_manufacturers = effectiveActive;
+        state.adminPending[dist] = { additions: new Set(), removals: new Set() };
+        updateMfrPendingBar();
+        renderMfrColumns();
+        renderMfrStats(dist, state.adminFilterData[dist]);
+
+        document.getElementById('mfrSaveModal').style.display = 'flex';
+        saveBtn.innerHTML = origText;
+        saveBtn.disabled = false;
+    } catch (err) {
+        console.error('Save error:', err);
+        saveBtn.innerHTML = origText;
+        saveBtn.disabled = false;
+    }
+}
+
+function mfrCancelModal() {
+    document.getElementById('mfrSaveModal').style.display = 'none';
+}
+
+function mfrDismissModal() {
+    document.getElementById('mfrSaveModal').style.display = 'none';
+    renderMfrColumns();
+}
+
+async function mfrApplyNow() {
+    document.getElementById('mfrSaveModal').style.display = 'none';
+    const dist = state.adminActiveTab;
+    const wf = state.workflowState[dist];
+    if (wf.running) return;
+
+    wf.running = true;
+    wf.status = 'dispatching';
+    wf.conclusion = null;
+    wf.runId = null;
+
+    try {
+        const res = await fetch(`${GITHUB_PROXY_BASE}?action=dispatch-workflow`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ distributor: dist }),
+        });
+        const result = await res.json();
+
+        if (!result.success) {
+            wf.running = false;
+            wf.status = 'error';
+            showWorkflowToast(dist, false, result.error || 'Dispatch failed');
+            return;
+        }
+
+        if (result.run_id) {
+            wf.runId = result.run_id;
+            wf.status = result.status || 'queued';
+        } else {
+            await new Promise(r => setTimeout(r, 3000));
+            const foundId = await findLatestRunId(dist);
+            if (foundId) { wf.runId = foundId; wf.status = 'queued'; }
+            else { wf.status = 'queued'; }
+        }
+
+        startWorkflowPolling(dist);
+        showWorkflowRunningToast(dist);
+    } catch (err) {
+        console.error('Workflow dispatch error:', err);
+        wf.running = false;
+        wf.status = 'error';
+        showWorkflowToast(dist, false, 'Network error dispatching workflow');
+    }
+}
+
+async function findLatestRunId(dist) {
+    try {
+        const res = await fetch(`${GITHUB_PROXY_BASE}?action=list-runs&distributor=${dist}`);
+        const data = await res.json();
+        if (data.runs && data.runs.length > 0) {
+            const recent = data.runs[0];
+            const createdAt = new Date(recent.created_at);
+            const now = new Date();
+            if (now - createdAt < 30000 && recent.status !== 'completed') return recent.run_id;
+        }
+    } catch (err) { console.error('list-runs fallback error:', err); }
+    return null;
+}
+
+function startWorkflowPolling(dist) {
+    stopWorkflowPolling(dist);
+    state.workflowPollingTimers[dist] = setInterval(() => pollWorkflowStatus(dist), 8000);
+}
+
+function stopWorkflowPolling(dist) {
+    if (state.workflowPollingTimers[dist]) {
+        clearInterval(state.workflowPollingTimers[dist]);
+        delete state.workflowPollingTimers[dist];
+    }
+}
+
+async function pollWorkflowStatus(dist) {
+    const wf = state.workflowState[dist];
+    if (!wf.running) { stopWorkflowPolling(dist); return; }
+
+    try {
+        if (wf.runId) {
+            const res = await fetch(`${GITHUB_PROXY_BASE}?action=workflow-status&run_id=${wf.runId}`);
+            const data = await res.json();
+            wf.status = data.status;
+            wf.conclusion = data.conclusion;
+
+            const runningToastEl = document.querySelector(`[data-workflow-dist="${dist}"] .workflow-toast-body span`);
+            if (runningToastEl) {
+                if (data.status === 'queued') runningToastEl.textContent = 'Import queued, waiting to start...';
+                else if (data.status === 'in_progress') runningToastEl.textContent = 'Import workflow running...';
+            }
+
+            if (data.status === 'completed') {
+                wf.running = false;
+                stopWorkflowPolling(dist);
+                const runningToast = document.querySelector(`[data-workflow-dist="${dist}"]`);
+                if (runningToast) runningToast.remove();
+                const success = data.conclusion === 'success';
+                showWorkflowToast(dist, success, success ? 'Import completed successfully' : `Import ${data.conclusion || 'failed'}`);
+                state.workflowLastRun[dist] = new Date().toISOString();
+                const filterData = state.adminFilterData[dist];
+                if (filterData) {
+                    if (!filterData.stats) filterData.stats = {};
+                    filterData.stats.last_run = state.workflowLastRun[dist];
+                    renderMfrStats(dist, filterData);
+                }
+            }
+        } else {
+            const foundId = await findLatestRunId(dist);
+            if (foundId) wf.runId = foundId;
+        }
+    } catch (err) { console.error('Poll workflow status error:', err); }
+}
+
+function showWorkflowToast(dist, success, message) {
+    const container = document.getElementById('workflowToastContainer');
+    if (!container) return;
+    const label = DIST_LABELS[dist] || dist;
+    const toast = document.createElement('div');
+    toast.className = `workflow-toast ${success ? 'workflow-toast--success' : 'workflow-toast--failure'}`;
+    toast.innerHTML = `
+        <div class="workflow-toast-icon">${success
+            ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>'
+            : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>'
+        }</div>
+        <div class="workflow-toast-body">
+            <strong>${label}</strong>
+            <span>${escHtml(message)}</span>
+        </div>
+        <button class="workflow-toast-close" onclick="this.parentElement.remove()">&times;</button>
+    `;
+    container.appendChild(toast);
+    setTimeout(() => {
+        if (toast.parentElement) {
+            toast.classList.add('workflow-toast--fading');
+            setTimeout(() => toast.remove(), 300);
+        }
+    }, 10000);
+}
+
+function showWorkflowRunningToast(dist) {
+    const container = document.getElementById('workflowToastContainer');
+    if (!container) return;
+    const existing = container.querySelector(`[data-workflow-dist="${dist}"]`);
+    if (existing) existing.remove();
+    const label = DIST_LABELS[dist] || dist;
+    const toast = document.createElement('div');
+    toast.className = 'workflow-toast workflow-toast--running';
+    toast.setAttribute('data-workflow-dist', dist);
+    toast.innerHTML = `
+        <div class="workflow-toast-icon workflow-toast-icon--running">
+            <div class="mfr-workflow-spinner-sm"></div>
+        </div>
+        <div class="workflow-toast-body">
+            <strong>${label}</strong>
+            <span>Import workflow running...</span>
+        </div>
+    `;
+    container.appendChild(toast);
 }
 
 // =====================================================
