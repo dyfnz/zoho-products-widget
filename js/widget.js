@@ -96,8 +96,35 @@ function groupManufacturers(names, details) {
     return groups;
 }
 
+function groupArrowManufacturers(names, details) {
+    if (names.length === 0) return [];
+    const mfrMap = {};
+    const singles = [];
+    for (const name of names) {
+        const sep = name.indexOf('||');
+        if (sep >= 0) {
+            const mfr = name.substring(0, sep);
+            if (!mfrMap[mfr]) mfrMap[mfr] = [];
+            mfrMap[mfr].push(name);
+        } else {
+            singles.push(name);
+        }
+    }
+    const groups = [];
+    for (const mfr of Object.keys(mfrMap).sort()) {
+        const members = mfrMap[mfr].sort();
+        let totalSkus = 0;
+        for (const m of members) totalSkus += (details[m]?.sku_count || 0);
+        groups.push({ type: 'group', prefix: mfr, members, totalSkus });
+    }
+    for (const s of singles.sort()) {
+        groups.push({ type: 'single', name: s, skuCount: details[s]?.sku_count || 0 });
+    }
+    return groups;
+}
+
 function isGroupedDistributor(dist) {
-    return dist === 'ingram';
+    return dist === 'ingram' || dist === 'arrow';
 }
 
 function showMfrLoading(show) {
@@ -796,6 +823,49 @@ async function loadMfrFilterData(dist) {
         }
         state.adminFilterData[dist] = data;
 
+        // Normalize Arrow brand-hierarchy into qualified names
+        if (dist === 'arrow' && data.all_known_manufacturers && typeof data.all_known_manufacturers === 'object' && !Array.isArray(data.all_known_manufacturers)) {
+            data._arrowRaw = {
+                all_known: data.all_known_manufacturers,
+                active: data.active_manufacturers || {},
+                mfrCount: Object.keys(data.all_known_manufacturers).length,
+            };
+            // Flatten to qualified brand names
+            const qualifiedNames = [];
+            const qualifiedDetails = {};
+            for (const [mfr, info] of Object.entries(data._arrowRaw.all_known)) {
+                const brands = info.brands;
+                if (brands && Object.keys(brands).length > 0) {
+                    for (const [brand, skuCount] of Object.entries(brands)) {
+                        const qName = mfr + '||' + brand;
+                        qualifiedNames.push(qName);
+                        qualifiedDetails[qName] = { sku_count: skuCount };
+                    }
+                } else {
+                    qualifiedNames.push(mfr);
+                    qualifiedDetails[mfr] = { sku_count: info.sku_count || 0 };
+                }
+            }
+            // Flatten active to qualified brand names
+            const activeQualified = [];
+            for (const [mfr, config] of Object.entries(data._arrowRaw.active)) {
+                const mfrInfo = data._arrowRaw.all_known[mfr];
+                if (!mfrInfo) continue;
+                const brands = mfrInfo.brands ? Object.keys(mfrInfo.brands) : [];
+                if (config.filter_mode === 'all_brands') {
+                    for (const brand of brands) activeQualified.push(mfr + '||' + brand);
+                    if (brands.length === 0) activeQualified.push(mfr);
+                } else {
+                    for (const brand of (config.active_brands || [])) {
+                        activeQualified.push(mfr + '||' + brand);
+                    }
+                }
+            }
+            data.all_known_manufacturers = qualifiedNames;
+            data.active_manufacturers = activeQualified;
+            data.manufacturer_details = qualifiedDetails;
+        }
+
         if (!state.adminPending[dist]) {
             state.adminPending[dist] = { additions: new Set(), removals: new Set() };
         }
@@ -830,7 +900,7 @@ function renderMfrStats(dist, data) {
     let totalSkus = 0;
     for (const name of Object.keys(details)) totalSkus += (details[name]?.sku_count || 0);
     el.innerHTML = `
-        <div class="mfr-admin-stat"><span class="mfr-admin-stat-label">Known</span><span class="mfr-admin-stat-val">${fmtNum(s.total_manufacturers || s.total_known || (data.all_known_manufacturers || []).length)}</span></div>
+        <div class="mfr-admin-stat"><span class="mfr-admin-stat-label">Known</span><span class="mfr-admin-stat-val">${fmtNum(s.total_manufacturers || s.total_known || data._arrowRaw?.mfrCount || (data.all_known_manufacturers || []).length)}</span></div>
         <div class="mfr-admin-stat-separator"></div>
         <div class="mfr-admin-stat"><span class="mfr-admin-stat-label">Active</span><span class="mfr-admin-stat-val mfr-admin-stat-val--accent">${fmtNum(Math.max(0, activeCount))}</span></div>
         <div class="mfr-admin-stat-separator"></div>
@@ -965,7 +1035,8 @@ function renderFlatList(names, details, side, pending) {
 
 function renderGroupedList(names, details, side, pending) {
     if (names.length === 0) return '<div class="mfr-admin-list-empty">No manufacturers found</div>';
-    const groups = groupManufacturers(names, details);
+    const dist = state.adminActiveTab;
+    const groups = dist === 'arrow' ? groupArrowManufacturers(names, details) : groupManufacturers(names, details);
     const arrowSvg = side === 'avail'
         ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>'
         : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>';
@@ -1011,7 +1082,7 @@ function renderGroupedList(names, details, side, pending) {
             const pendClass = pending.additions.has(name) ? ' mfr-admin-item--pending-add'
                             : pending.removals.has(name) ? ' mfr-admin-item--pending-remove' : '';
             const action = side === 'avail' ? `mfrIncludeName('${escAttr(name)}')` : `mfrExcludeName('${escAttr(name)}')`;
-            const suffix = name.substring(g.prefix.length).trim() || name;
+            const suffix = name.includes('||') ? name.substring(name.indexOf('||') + 2) : (name.substring(g.prefix.length).trim() || name);
             return `<div class="mfr-admin-item${pendClass}" onclick="event.stopPropagation(); ${action}">
                 <span class="mfr-admin-item-name" title="${escAttr(name)}">${escHtml(suffix)}</span>
                 <span class="mfr-admin-item-sku">${fmtNum(sku)}</span>
@@ -1199,6 +1270,69 @@ function toggleMfrGroup(groupId) {
 
 // ---- Save & Workflow Functions ----
 
+function generateArrowCommands(pending, arrowRaw) {
+    const commands = [];
+    const allKnown = arrowRaw.all_known;
+    const origActive = arrowRaw.active;
+    // Group pending changes by manufacturer
+    const mfrChanges = {};
+    for (const qname of pending.additions) {
+        const sep = qname.indexOf('||');
+        const mfr = sep >= 0 ? qname.substring(0, sep) : qname;
+        if (!mfrChanges[mfr]) mfrChanges[mfr] = { adds: new Set(), removes: new Set() };
+        mfrChanges[mfr].adds.add(qname);
+    }
+    for (const qname of pending.removals) {
+        const sep = qname.indexOf('||');
+        const mfr = sep >= 0 ? qname.substring(0, sep) : qname;
+        if (!mfrChanges[mfr]) mfrChanges[mfr] = { adds: new Set(), removes: new Set() };
+        mfrChanges[mfr].removes.add(qname);
+    }
+    for (const [mfr, changes] of Object.entries(mfrChanges)) {
+        const wasActive = mfr in origActive;
+        const allBrands = Object.keys(allKnown[mfr]?.brands || {});
+        const allQualified = allBrands.map(b => mfr + '||' + b);
+        // Compute baseline active brands
+        let baseBrands;
+        if (!wasActive) {
+            baseBrands = new Set();
+        } else if (origActive[mfr].filter_mode === 'all_brands') {
+            baseBrands = new Set(allQualified);
+        } else {
+            baseBrands = new Set((origActive[mfr].active_brands || []).map(b => mfr + '||' + b));
+        }
+        // Apply pending
+        const effectiveBrands = new Set(baseBrands);
+        for (const q of changes.adds) effectiveBrands.add(q);
+        for (const q of changes.removes) effectiveBrands.delete(q);
+        const isNowActive = effectiveBrands.size > 0;
+        const allSelected = effectiveBrands.size === allBrands.length;
+        if (!wasActive && isNowActive) {
+            commands.push('+"' + mfr + '"');
+            if (!allSelected) {
+                commands.push('~"' + mfr + ':include_brands"');
+                for (const q of effectiveBrands) {
+                    const brand = q.substring(q.indexOf('||') + 2);
+                    commands.push('+"' + mfr + ':' + brand + '"');
+                }
+            }
+        } else if (wasActive && !isNowActive) {
+            commands.push('-"' + mfr + '"');
+        } else if (wasActive && isNowActive) {
+            if (allSelected) {
+                commands.push('~"' + mfr + ':all_brands"');
+            } else {
+                commands.push('~"' + mfr + ':include_brands"');
+                for (const q of effectiveBrands) {
+                    const brand = q.substring(q.indexOf('||') + 2);
+                    commands.push('+"' + mfr + ':' + brand + '"');
+                }
+            }
+        }
+    }
+    return commands;
+}
+
 async function mfrSaveChanges() {
     const dist = state.adminActiveTab;
     const p = state.adminPending[dist];
@@ -1210,14 +1344,14 @@ async function mfrSaveChanges() {
     saveBtn.disabled = true;
 
     try {
+        const data = state.adminFilterData[dist];
         const res = await fetch(`${GITHUB_PROXY_BASE}?action=save-filters`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                distributor: dist,
-                additions: [...p.additions],
-                removals: [...p.removals],
-            }),
+            body: JSON.stringify(dist === 'arrow' && data._arrowRaw
+                ? { distributor: dist, commands: generateArrowCommands(p, data._arrowRaw) }
+                : { distributor: dist, additions: [...p.additions], removals: [...p.removals] }
+            ),
         });
         const result = await res.json();
         if (result.error) {
@@ -1229,6 +1363,28 @@ async function mfrSaveChanges() {
 
         const effectiveActive = [...getEffectiveActiveSet(dist)];
         state.adminFilterData[dist].active_manufacturers = effectiveActive;
+        if (dist === 'arrow' && state.adminFilterData[dist]._arrowRaw) {
+            // Rebuild _arrowRaw.active from effective qualified names
+            const rawActive = {};
+            const allKnown = state.adminFilterData[dist]._arrowRaw.all_known;
+            for (const qname of effectiveActive) {
+                const sep = qname.indexOf('||');
+                if (sep < 0) continue;
+                const mfr = qname.substring(0, sep);
+                const brand = qname.substring(sep + 2);
+                if (!rawActive[mfr]) rawActive[mfr] = { filter_mode: 'include_brands', active_brands: [] };
+                rawActive[mfr].active_brands.push(brand);
+            }
+            // Check if all brands selected -> set to all_brands mode
+            for (const [mfr, config] of Object.entries(rawActive)) {
+                const totalBrands = Object.keys(allKnown[mfr]?.brands || {}).length;
+                if (config.active_brands.length >= totalBrands) {
+                    config.filter_mode = 'all_brands';
+                    config.active_brands = [];
+                }
+            }
+            state.adminFilterData[dist]._arrowRaw.active = rawActive;
+        }
         state.adminPending[dist] = { additions: new Set(), removals: new Set() };
         updateMfrPendingBar();
         renderMfrColumns();
